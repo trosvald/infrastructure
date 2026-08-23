@@ -1,0 +1,10 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "github>home-operations/renovate-presets#2.1.0",
+    "github>monosense-io/infrastructure//.renovate/autoMerge.json5",
+    "github>monosense-io/infrastructure//.renovate/groups.json5",
+    "github>monosense-io/infrastructure//.renovate/labels.json5",
+    ":timezone(Asia/Jakarta)",
+  ],
+}
