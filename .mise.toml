@@ -1,5 +1,54 @@
+min_version = { hard = "2026.8.11" }
+
 [env]
+BAO_ADDR = "https://vault.monosense.io"
 FLATE_PATH = '{{config_root}}/kubernetes/flux/cluster'
 KUBECONFIG = '{{config_root}}/kubernetes/kubeconfig'
 MINIJINJA_CONFIG_FILE = '{{config_root}}/.minijinja.toml'
+SOPS_AGE_KEY_FILE = '{{env.HOME}}/.config/sops/age/keys.txt'
 TALOSCONFIG = '{{config_root}}/talos/talosconfig'
+
+[settings]
+lockfile = true
+lockfile_platforms = ["macos-arm64", "linux-x64"]
+pipx.uvx = true
+aqua.cosign = true
+aqua.github_attestations = true
+aqua.minisign = true
+aqua.slsa = true
+
+[tool_config]
+locked = true
+
+[tools]
+python = "3.13"
+"aqua:astral-sh/uv" = "0.12"
+
+# Python CLIs are deliberately isolated. The deployment runtime carries the
+# complete Juniper controller dependency lock; linters cannot mutate it.
+"pipx:ansible-core" = { version = "2.21", depends = ["python", "aqua:astral-sh/uv"], uvx_args = "--python 3.13 --with-requirements ansible/junos/requirements-controller.lock" }
+"pipx:ansible-lint" = { version = "26", depends = ["python", "aqua:astral-sh/uv"], uvx_args = "--python 3.13 --with 'ansible-core~=2.21.0'" }
+"pipx:yamllint" = { version = "1", depends = ["python", "aqua:astral-sh/uv"], uvx_args = "--python 3.13" }
+"pipx:zstd-bin" = { version = "1.5.5", depends = ["python", "aqua:astral-sh/uv"], uvx_args = "--python 3.13" }
+
+# Compatible selectors are resolved to reviewed artifacts in mise.lock.
+"aqua:casey/just" = "1"
+"aqua:charmbracelet/gum" = "0.17"
+"aqua:1password/cli" = "2.39.0"
+"aqua:kubernetes/kubectl" = "1.36"
+"aqua:kubernetes-sigs/kustomize" = "5"
+"aqua:helm/helm" = "4"
+"aqua:helmfile/helmfile" = "1"
+"github:home-operations/flate" = "0.4"
+"aqua:mitsuhiko/minijinja" = "2"
+"aqua:rhysd/actionlint" = "1"
+"aqua:google/yamlfmt" = "0.21"
+"aqua:siderolabs/talos" = "1.13"
+
+# Junos security and secret-management CLIs.
+"aqua:FiloSottile/age" = "1"
+"aqua:getsops/sops" = "3"
+"aqua:openbao/openbao/bao" = "2.6"
+"aqua:jqlang/jq" = "1"
+"aqua:mikefarah/yq" = "4"
+"aqua:gitleaks/gitleaks" = "8.30.0"

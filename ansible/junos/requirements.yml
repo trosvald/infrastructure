@@ -1,0 +1,6 @@
+---
+collections:
+  - name: juniper.device
+    version: 2.0.2
+  - name: ansible.netcommon
+    version: 8.6.1

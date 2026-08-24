@@ -1,0 +1,32 @@
+---
+- name: Detect group drift and direct shadowing
+  hosts: junos
+  gather_facts: false
+  serial: 1
+  tasks:
+    - name: Read device identity for drift inspection
+      juniper.device.facts:
+      register: drift_device_facts
+      no_log: true
+
+    - name: Enforce approved device identity and release train
+      ansible.builtin.assert:
+        that:
+          - drift_device_facts.facts.model | upper == junos_expected_model
+          - drift_device_facts.facts.hostname == junos_expected_hostname
+          - junos_expected_release_train in drift_device_facts.facts.version
+
+    - name: Retrieve managed and effective inherited configuration
+      juniper.device.command:
+        commands:
+          - show configuration groups ANSIBLE_SRX1500 | display set
+          - show configuration | display inheritance | display set
+      register: drift_configuration
+      no_log: true
+    - name: Save sensitive drift evidence locally
+      ansible.builtin.copy:
+        content: "{{ drift_configuration.stdout | join('\n') }}"
+        dest: "{{ playbook_dir }}/../.build/{{ inventory_hostname }}.drift.set"
+        mode: "0600"
+      delegate_to: localhost
+      no_log: true

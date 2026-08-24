@@ -1,0 +1,16 @@
+---
+# Reserved documentation ranges; never used by live actions.
+management_address: 192.0.2.10
+dns:
+  primary: 192.0.2.53
+  secondary: 198.51.100.53
+  internal: 192.0.2.53
+  internal_cidr: 192.0.2.53/32
+ntp: { preferred: 192.0.2.123, secondary: 198.51.100.123 }
+wan: { primary_mac: "02:00:00:00:00:01", secondary_mac: "02:00:00:00:00:02" }
+networks:
+  mgmt: { subnet: 192.0.2.0/27, gateway: 192.0.2.1, gateway_cidr: 192.0.2.1/27, dhcp_low: 192.0.2.10, dhcp_high: 192.0.2.20 }
+  prod: { subnet: 198.51.100.0/27, gateway: 198.51.100.1, gateway_cidr: 198.51.100.1/27, dhcp_low: 198.51.100.10, dhcp_high: 198.51.100.20 }
+  home: { subnet: 203.0.113.0/27, gateway_cidr: 203.0.113.1/27 }
+  dev: { subnet: 192.0.2.32/27, gateway: 192.0.2.33, gateway_cidr: 192.0.2.33/27, dhcp_low: 192.0.2.40, dhcp_high: 192.0.2.50 }
+reservations: { mgmt: [], prod: [], dev: [] }

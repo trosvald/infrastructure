@@ -1,0 +1,5 @@
+---
+junos_operation: check
+junos_commit_comment: "Ansible intent deployment"
+junos_candidate_path: "{{ playbook_dir }}/../.build/{{ inventory_hostname }}.set"
+junos_diff_path: "{{ playbook_dir }}/../.build/{{ inventory_hostname }}.diff"

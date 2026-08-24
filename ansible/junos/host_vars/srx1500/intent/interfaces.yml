@@ -1,0 +1,44 @@
+---
+interfaces:
+  - name: ge-0/0/0
+    description: WAN-PRIMARY
+    mac: { topology: wan.primary_mac }
+    units: [{ unit: 0, family: inet, dhcp: true }]
+  - name: ge-0/0/1
+    description: WAN-SECONDARY
+    mac: { topology: wan.secondary_mac }
+    units: [{ unit: 0, family: inet, dhcp: true }]
+  - name: ge-0/0/6
+    description: ACCESS-SWITCH
+    native_vlan: 2510
+    units: [{ unit: 0, family: ethernet-switching, mode: trunk, vlans: [VLAN-MGMT, VLAN-PROD, VLAN-HOME, VLAN-DEV] }]
+  - { name: ge-0/0/2, description: SERVICE-ACCESS, units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-MGMT] }] }
+  - { name: ge-0/0/3, description: PROD-ACCESS-0, units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-PROD] }] }
+  - { name: ge-0/0/4, description: PROD-ACCESS-1, units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-PROD] }] }
+  - { name: ge-0/0/5, description: PROD-ACCESS-2, units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-PROD] }] }
+  - { name: ge-0/0/8, description: MGMT-ACCESS-0, units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-MGMT] }] }
+  - { name: ge-0/0/9, description: PROD-ACCESS-3, units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-PROD] }] }
+  - { name: ge-0/0/10, description: PROD-ACCESS-4, units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-PROD] }] }
+  - { name: ge-0/0/11, description: MGMT-ACCESS-1, units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-MGMT] }] }
+  - name: ge-0/0/14
+    description: SWITCH-TRUNK-0
+    native_vlan: 2510
+    units: [{ unit: 0, family: ethernet-switching, mode: trunk, vlans: [VLAN-MGMT, VLAN-PROD, VLAN-HOME, VLAN-DEV] }]
+  - name: ge-0/0/15
+    description: SWITCH-TRUNK-1
+    native_vlan: 2510
+    units: [{ unit: 0, family: ethernet-switching, mode: trunk, vlans: [VLAN-MGMT, VLAN-PROD, VLAN-HOME, VLAN-DEV] }]
+  - name: xe-0/0/18
+    description: TOR-1
+    native_vlan: 2510
+    units: [{ unit: 0, family: ethernet-switching, mode: trunk, vlans: [VLAN-MGMT, VLAN-PROD, VLAN-HOME, VLAN-DEV] }]
+  - name: xe-0/0/19
+    description: TOR-2
+    native_vlan: 2510
+    units: [{ unit: 0, family: ethernet-switching, mode: trunk, vlans: [VLAN-MGMT, VLAN-PROD, VLAN-HOME, VLAN-DEV] }]
+  - name: irb
+    units:
+      - { unit: 2510, family: inet, mtu: 1496, address: { topology: networks.mgmt.gateway_cidr } }
+      - { unit: 2511, family: inet, mtu: 1496, address: { topology: networks.prod.gateway_cidr } }
+      - { unit: 2512, family: inet, mtu: 1496, address: { topology: networks.home.gateway_cidr } }
+      - { unit: 2513, family: inet, mtu: 1496, address: { topology: networks.dev.gateway_cidr } }

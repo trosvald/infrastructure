@@ -1,0 +1,28 @@
+---
+security:
+  address_books:
+    - { name: INTERNAL-DNS, value: { topology: dns.internal_cidr } }
+  screens:
+    - name: WAN-SCREEN
+      options:
+        - [icmp, ping-death]
+        - [ip, source-route-option]
+        - [ip, tear-drop]
+        - [tcp, land]
+  zones:
+    - { name: MGMT, interfaces: [irb.2510], services: [dhcp, https, ping, ssh] }
+    - { name: PROD, interfaces: [irb.2511], services: [dhcp, ping] }
+    - { name: HOME, interfaces: [irb.2512], services: [ping] }
+    - { name: DEV, interfaces: [irb.2513], services: [dhcp, ping] }
+    - { name: WAN-PRIMARY, interfaces: [ge-0/0/0.0], screen: WAN-SCREEN, services: [dhcp] }
+    - { name: WAN-SECONDARY, interfaces: [ge-0/0/1.0], screen: WAN-SCREEN, services: [dhcp] }
+  policies:
+    - { from: HOME, to: WAN-PRIMARY, name: HOME-OUT, source: [any], destination: [any], applications: [any], action: permit }
+    - { from: MGMT, to: WAN-SECONDARY, name: MGMT-OUT, source: [any], destination: [any], applications: [any], action: permit }
+    - { from: PROD, to: WAN-SECONDARY, name: PROD-OUT, source: [any], destination: [any], applications: [any], action: permit }
+    - { from: DEV, to: WAN-SECONDARY, name: DEV-OUT, source: [any], destination: [any], applications: [any], action: permit }
+    - { from: MGMT, to: PROD, name: MGMT-TO-PROD, source: [any], destination: [any], applications: [any], action: permit }
+    - { from: MGMT, to: DEV, name: MGMT-TO-DEV, source: [any], destination: [any], applications: [any], action: permit }
+    - { from: MGMT, to: HOME, name: MGMT-TO-HOME, source: [any], destination: [any], applications: [any], action: permit }
+  default_policy: deny-all
+

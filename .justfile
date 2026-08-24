@@ -18,6 +18,10 @@ mod kube "kubernetes"
 [group: 'Talos']
 mod talos "talos"
 
+# Ansible project dispatcher
+[group: 'Ansible']
+mod ansible "ansible"
+
 [private]
 default:
     just -l

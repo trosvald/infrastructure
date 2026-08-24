@@ -3,3 +3,9 @@
 Thumbs.db
 kubeconfig
 talosconfig
+__pycache__/
+*.py[cod]
+
+# Ansible/Junos local state and sensitive output
+ansible/junos/.ansible/
+ansible/junos/.build/

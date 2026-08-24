@@ -1,0 +1,85 @@
+---
+- name: Require an approved operation and commit comment
+  ansible.builtin.assert:
+    that:
+      - junos_operation in ['check', 'diff', 'deploy']
+      - junos_operation != 'deploy' or junos_commit_comment | length >= 12
+
+- name: Create protected build directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - "{{ playbook_dir }}/../.build"
+  delegate_to: localhost
+
+- name: Render and validate deterministic candidate
+  ansible.builtin.command:
+    argv:
+      - python
+      - "{{ role_path }}/../../scripts/junos_intent.py"
+      - --intent-dir
+      - "{{ role_path }}/../../host_vars/srx1500/intent"
+      - --topology
+      - "{{ lookup('ansible.builtin.env', 'JUNOS_TOPOLOGY_FILE') }}"
+      - --output
+      - "{{ junos_candidate_path }}"
+      - --check
+  register: render_result
+  changed_when: false
+  no_log: true
+  delegate_to: localhost
+
+- name: Verify device identity before candidate modification
+  juniper.device.facts:
+  register: device_facts
+  no_log: true
+
+- name: Enforce device identity and release
+  ansible.builtin.assert:
+    that:
+      - device_facts.facts.model | upper == junos_expected_model
+      - device_facts.facts.hostname == junos_expected_hostname
+      - junos_expected_release_train in device_facts.facts.version
+    fail_msg: Connected device identity or Junos release does not match the approved target.
+
+- name: Load candidate exclusively and perform commit check
+  juniper.device.config:
+    src: "{{ junos_candidate_path }}"
+    format: set
+    load: merge
+    config_mode: exclusive
+    check: true
+    commit: false
+    diff: true
+    diffs_file: "{{ junos_diff_path }}"
+  no_log: true
+
+- name: Commit confirmed for ten minutes
+  juniper.device.config:
+    src: "{{ junos_candidate_path }}"
+    format: set
+    load: merge
+    config_mode: exclusive
+    check: true
+    commit: true
+    confirmed: 10
+    comment: "{{ junos_commit_comment }}"
+  when: junos_operation == 'deploy'
+  no_log: true
+
+- name: Reconnect and verify managed configuration presence
+  juniper.device.command:
+    commands:
+      - show system commit
+      - show configuration groups ANSIBLE_SRX1500 | display set
+      - show interfaces terse
+      - show route summary
+      - show security policies summary
+  when: junos_operation == 'deploy'
+  no_log: true
+
+- name: Report safe candidate identity
+  ansible.builtin.debug:
+    msg: "Candidate validated ({{ render_result.stderr | trim }}); transient diff is at {{ junos_diff_path }}"

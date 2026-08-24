@@ -1,0 +1,3 @@
+---
+# Connection data is injected from the ephemeral OpenBao runtime.
+junos_expected_hostname: srx1500

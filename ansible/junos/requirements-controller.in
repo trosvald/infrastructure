@@ -1,0 +1,12 @@
+# Direct controller dependencies documented by juniper.device 2.0.2.
+# Regenerate requirements-controller.lock only with:
+#   mise exec -- uv pip compile --python-version 3.13 --universal \
+#     --generate-hashes --output-file requirements-controller.lock \
+#     requirements-controller.in
+junos-eznc==2.8.2
+ncclient==0.7.0
+jxmlease==1.0.3
+PyYAML==6.0.3
+xmltodict==1.0.4
+JSNAPy==1.3.8
+packaging==26.3

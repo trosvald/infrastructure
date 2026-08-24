@@ -1,0 +1,28 @@
+---
+- name: Verify SRX operational state without modification
+  hosts: junos
+  gather_facts: false
+  serial: 1
+  tasks:
+    - name: Read device identity for verification
+      juniper.device.facts:
+      register: verify_device_facts
+      no_log: true
+
+    - name: Enforce approved device identity and release train
+      ansible.builtin.assert:
+        that:
+          - verify_device_facts.facts.model | upper == junos_expected_model
+          - verify_device_facts.facts.hostname == junos_expected_hostname
+          - junos_expected_release_train in verify_device_facts.facts.version
+
+    - name: Gather operational verification commands
+      juniper.device.command:
+        commands:
+          - show system commit
+          - show interfaces terse
+          - show vlans
+          - show route summary
+          - show security nat source rule all
+          - show security policies summary
+      no_log: true

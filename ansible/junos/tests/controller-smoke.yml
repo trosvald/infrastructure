@@ -1,0 +1,13 @@
+---
+- name: Validate the isolated Junos controller runtime
+  hosts: localhost
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  tasks:
+    - name: Import pinned libraries and parse representative Junos XML
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/controller_smoke.py"
+      changed_when: false

@@ -1,0 +1,36 @@
+name: Junos offline validation
+
+on:
+  pull_request:
+    paths: ['ansible/**', 'docs/SOPS.md', 'scripts/gitleaks-scan.sh', '.mise.toml', 'mise.lock', '.justfile', '.github/workflows/junos.yaml', '.gitignore', '.gitleaks.toml']
+  push:
+    branches: [main]
+    paths: ['ansible/**', 'docs/SOPS.md', 'scripts/gitleaks-scan.sh', '.mise.toml', 'mise.lock', '.justfile', '.github/workflows/junos.yaml', '.gitignore', '.gitleaks.toml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install locked mise toolchain
+        uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+        with:
+          version: 2026.8.11
+          cache: true
+      - name: Verify scanner canary and scan repository
+        run: scripts/gitleaks-scan.sh
+      - name: Bootstrap pinned Junos dependencies
+        run: just ansible junos bootstrap
+      - name: Test synthetic intent
+        run: just ansible junos test
+      - name: Lint Junos project
+        run: just ansible junos lint

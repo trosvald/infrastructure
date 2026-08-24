@@ -1,0 +1,14 @@
+---
+- name: Encrypt a verified committed Junos configuration backup
+  hosts: localhost
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  tasks:
+    - name: Read through PyEZ and stream the configuration to age
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/backup.py"
+      changed_when: true
+      no_log: true

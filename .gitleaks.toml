@@ -1,0 +1,15 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Downloaded Junos collections and ignored runtime output are not repository source"
+paths = [
+  '''(^|/)ansible/junos/\.ansible/''',
+  '''(^|/)ansible/junos/\.build/''',
+]
+
+[[rules]]
+id = "junos-secret-data"
+description = "Junos obfuscated credentials or SECRET-DATA markers"
+regex = '''(?:\$[0-9]\$[A-Za-z0-9./$]+|##\s+SECRET-DATA)'''
+keywords = ["$9$", "$6$", "$1$", "SECRET-DATA"]

@@ -1,0 +1,11 @@
+---
+ansible_connection: ansible.netcommon.netconf
+ansible_network_os: juniper.device.junos
+ansible_port: 830
+ansible_host_key_checking: true
+ansible_host: "{{ lookup('ansible.builtin.env', 'JUNOS_MANAGEMENT_ADDRESS') }}"
+ansible_user: "{{ lookup('ansible.builtin.env', 'JUNOS_NETCONF_USERNAME') }}"
+ansible_private_key_file: "{{ lookup('ansible.builtin.env', 'JUNOS_NETCONF_PRIVATE_KEY_FILE') }}"
+ansible_netconf_ssh_config: "{{ lookup('ansible.builtin.env', 'JUNOS_NETCONF_SSH_CONFIG') }}"
+junos_expected_model: SRX1500
+junos_expected_release_train: 23.4R2

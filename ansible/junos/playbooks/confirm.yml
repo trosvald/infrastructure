@@ -1,0 +1,29 @@
+---
+- name: Explicitly confirm a verified pending Junos commit
+  hosts: junos
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Require an auditable confirmation comment
+      ansible.builtin.assert:
+        that:
+          - junos_commit_comment | default('') | length >= 24
+
+    - name: Verify device identity before confirmation
+      juniper.device.facts:
+      register: confirm_device_facts
+      no_log: true
+
+    - name: Enforce approved device identity and release train
+      ansible.builtin.assert:
+        that:
+          - confirm_device_facts.facts.model | upper == junos_expected_model
+          - confirm_device_facts.facts.hostname == junos_expected_hostname
+          - junos_expected_release_train in confirm_device_facts.facts.version
+
+    - name: Confirm the already-verified pending commit
+      juniper.device.config:
+        commit: true
+        comment: "{{ junos_commit_comment }}"
+      no_log: true

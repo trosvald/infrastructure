@@ -1,0 +1,7 @@
+---
+vlans:
+  - { name: VLAN-MGMT, id: 2510, irb_unit: 2510, description: Management VLAN }
+  - { name: VLAN-PROD, id: 2511, irb_unit: 2511, description: Production VLAN }
+  - { name: VLAN-HOME, id: 2512, irb_unit: 2512, description: Home VLAN }
+  - { name: VLAN-DEV, id: 2513, irb_unit: 2513, description: Development VLAN }
+
