@@ -51,8 +51,10 @@ The API secret is `/opt/doco-cd/secrets/api_secret`, owned by root with mode `06
 copy from c0, or commit it. Doco-CD owns the persistent named volume `doco-cd-data`; rollback must
 not remove that volume.
 
-Doco-CD is not deployed yet. BIND and OpenBao also remain undeployed; this bootstrap does not add
-cAdvisor, native observability, or a c0 SERVICES address.
+Doco-CD is deployed on c0 and reboot-verified as of 2026-08-24. Its container, startup
+poll, named volume, and loopback-only bindings survived a controlled reboot. BIND and OpenBao
+remain undeployed; this bootstrap does not add cAdvisor, native observability, or a c0 SERVICES
+address.
 
 ## Storage
 
