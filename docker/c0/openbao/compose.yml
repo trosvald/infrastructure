@@ -1,0 +1,200 @@
+---
+name: openbao-c0
+
+services:
+  volume-init:
+    # yamllint disable-line rule:line-length
+    image: docker.io/openbao/openbao:2.6.2@sha256:e29524ba7c3f20d01f562c481e3eccbad6c91df45a2f2531433da4951e408cff
+    platform: linux/amd64
+    user: "0:0"
+    network_mode: none
+    entrypoint: ["/bin/sh", "-ec"]
+    command: >-
+      mkdir -p /openbao/data &&
+      chown 100:1000 /openbao/data &&
+      chmod 0700 /openbao/data
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    volumes:
+      - openbao-data:/openbao/data
+
+  certificate-init:
+    # yamllint disable-line rule:line-length
+    image: certbot/dns-cloudflare:v5.7.0@sha256:ed5e95feb4d64690df77b4628876f3b72ae856d6e0acd51927a2fd45baf1ccd2
+    platform: linux/amd64
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        source_credentials=/run/secrets/cloudflare.ini
+        runtime_credentials=/run/certbot/cloudflare.ini
+        test "$$(stat -c '%a' "$$source_credentials")" = 600
+        install -m 0600 "$$source_credentials" "$$runtime_credentials"
+        trap 'rm -f "$$runtime_credentials"' EXIT HUP INT TERM
+        if [ ! -e /etc/letsencrypt/live/vault.monosense.io/fullchain.pem ]; then
+          certbot certonly --dry-run --non-interactive --agree-tos \
+            --email "$$ACME_EMAIL" --dns-cloudflare \
+            --dns-cloudflare-credentials "$$runtime_credentials" \
+            --dns-cloudflare-propagation-seconds 60 \
+            --cert-name vault.monosense.io -d vault.monosense.io
+          certbot certonly --non-interactive --agree-tos \
+            --email "$$ACME_EMAIL" --dns-cloudflare \
+            --dns-cloudflare-credentials "$$runtime_credentials" \
+            --dns-cloudflare-propagation-seconds 60 \
+            --cert-name vault.monosense.io -d vault.monosense.io \
+            --keep-until-expiring
+        fi
+        python3 /usr/local/bin/install_certificate.py install \
+          --lineage /etc/letsencrypt/live/vault.monosense.io \
+          --target /openbao/tls --hostname vault.monosense.io
+    env_file:
+      - encrypted/acme.env
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    tmpfs:
+      - /run/certbot:mode=0700
+      - /var/lib/letsencrypt:mode=0700
+      - /var/log/letsencrypt:mode=0700
+    secrets:
+      - source: cloudflare_ini
+        target: cloudflare.ini
+    volumes:
+      - openbao-acme:/etc/letsencrypt
+      - openbao-tls:/openbao/tls
+      - ./scripts/install_certificate.py:/usr/local/bin/install_certificate.py:ro
+
+  openbao:
+    # yamllint disable-line rule:line-length
+    image: docker.io/openbao/openbao:2.6.2@sha256:e29524ba7c3f20d01f562c481e3eccbad6c91df45a2f2531433da4951e408cff
+    platform: linux/amd64
+    user: "100:1000"
+    command: server
+    depends_on:
+      volume-init:
+        condition: service_completed_successfully
+      certificate-init:
+        condition: service_completed_successfully
+    environment:
+      BAO_ADDR: https://vault.monosense.io:8200
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_swappiness: 0
+    restart: unless-stopped
+    extra_hosts:
+      - vault.monosense.io:10.25.13.34
+    volumes:
+      - ./config/openbao.hcl:/openbao/config/openbao.hcl:ro
+      - ./policies:/openbao/policies:ro
+      - openbao-data:/openbao/data
+      - openbao-tls:/openbao/tls:ro
+    networks:
+      c0_services:
+        ipv4_address: 10.25.13.34
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          bao status >/dev/null 2>&1;
+          code=$$?;
+          [ $$code -eq 0 ] || [ $$code -eq 2 ]
+      start_period: 15s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  certificate-renewer:
+    # yamllint disable-line rule:line-length
+    image: certbot/dns-cloudflare:v5.7.0@sha256:ed5e95feb4d64690df77b4628876f3b72ae856d6e0acd51927a2fd45baf1ccd2
+    platform: linux/amd64
+    user: "0:0"
+    pid: service:openbao
+    depends_on:
+      certificate-init:
+        condition: service_completed_successfully
+      openbao:
+        condition: service_started
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        source_credentials=/run/secrets/cloudflare.ini
+        runtime_credentials=/run/certbot/cloudflare.ini
+        child=
+        test "$$(stat -c '%a' "$$source_credentials")" = 600
+        install -m 0600 "$$source_credentials" "$$runtime_credentials"
+        cleanup() {
+          rm -f "$$runtime_credentials"
+          if [ -n "$$child" ]; then
+            kill "$$child" 2>/dev/null || true
+            wait "$$child" 2>/dev/null || true
+          fi
+        }
+        trap cleanup EXIT
+        trap 'exit 0' HUP INT TERM
+        while :; do
+          if ! /usr/local/bin/renew_certificate.sh renew; then
+            printf '%s\n' 'certificate renewal failed; retrying in 12 hours' >&2
+          fi
+          sleep 43200 &
+          child=$$!
+          wait "$$child" || exit 0
+          child=
+        done
+    cap_drop: [ALL]
+    cap_add: [CHOWN, KILL]
+    tmpfs:
+      - /run/certbot:mode=0700
+      - /var/lib/letsencrypt:mode=0700
+      - /var/log/letsencrypt:mode=0700
+    secrets:
+      - source: cloudflare_ini
+        target: cloudflare.ini
+    volumes:
+      - openbao-acme:/etc/letsencrypt
+      - openbao-tls:/openbao/tls
+      - ./scripts/install_certificate.py:/usr/local/bin/install_certificate.py:ro
+      - ./scripts/renew_certificate.sh:/usr/local/bin/renew_certificate.sh:ro
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - /usr/local/bin/install_certificate.py
+        - check
+        - --target
+        - /openbao/tls/current
+        - --hostname
+        - vault.monosense.io
+        - --min-valid-days
+        - "21"
+      start_period: 30s
+      interval: 12h
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+secrets:
+  cloudflare_ini:
+    file: ./encrypted/cloudflare.ini
+
+volumes:
+  openbao-data:
+    name: openbao-data
+  openbao-acme:
+    name: openbao-acme
+  openbao-tls:
+    name: openbao-tls
+
+networks:
+  c0_services:
+    external: true
+    name: c0_services

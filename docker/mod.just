@@ -9,7 +9,47 @@ default:
     just -l docker
 
 [doc('Validate the c0 Doco-CD bootstrap configuration')]
-validate-c0:
+validate-c0: validate-openbao
     cd "{{ source_directory() }}/.."
     yamllint .doco-cd.c0.yml .sops.yaml docker/bootstrap/c0/doco-cd/compose.yml docker/bootstrap/c0/doco-cd/poll-config.yml
     DOCO_CD_API_SECRET_FILE=/dev/null DOCO_CD_SOPS_AGE_KEY_FILE=/dev/null docker compose -f docker/bootstrap/c0/doco-cd/compose.yml config --quiet
+
+[private]
+validate-openbao:
+    cd "{{ source_directory() }}/.."
+    yamllint .sops.yaml docker/c0/openbao/compose.yml
+    test "$(sops filestatus docker/c0/openbao/encrypted/acme.env | jq -r '.encrypted')" = true
+    test "$(sops filestatus docker/c0/openbao/encrypted/cloudflare.ini | jq -r '.encrypted')" = true
+    python3 - <<'PY'
+    from pathlib import Path
+
+    dotenv = Path("docker/c0/openbao/encrypted/acme.env").read_text()
+    ini = Path("docker/c0/openbao/encrypted/cloudflare.ini").read_text()
+    assert dotenv.startswith("ACME_EMAIL=ENC[AES256_GCM,")
+    assert "sops_age__list_0__map_enc=-----BEGIN AGE ENCRYPTED FILE-----" in dotenv
+    assert "sops_mac=ENC[AES256_GCM," in dotenv
+    assert ini.startswith("dns_cloudflare_api_token = ENC[AES256_GCM,")
+    assert "\n[sops]\n" in ini
+    assert "age__list_0__map_enc       = -----BEGIN AGE ENCRYPTED FILE-----" in ini
+    assert "\nmac                        = ENC[AES256_GCM," in ini
+    PY
+    docker run --rm --platform linux/amd64 --entrypoint python3 \
+        --mount type=bind,src="$PWD/docker/c0/openbao",dst=/src,readonly \
+        --tmpfs /tmp:mode=1777 \
+        certbot/dns-cloudflare:v5.7.0@sha256:ed5e95feb4d64690df77b4628876f3b72ae856d6e0acd51927a2fd45baf1ccd2 \
+        -m unittest discover -s /src/tests -v
+    rendered="$(mktemp)"
+    trap 'rm -f "$rendered"' EXIT
+    docker compose -f docker/c0/openbao/compose.yml config --format json >"$rendered"
+    jq -e '
+        all(.services[]; ((.ports // []) | length) == 0)
+        and .services.openbao.networks.c0_services.ipv4_address == "10.25.13.34"
+        and ([.services | to_entries[] | select(.value.networks.c0_services? != null) | .key] == ["openbao"])
+        and .services["certificate-init"].secrets[0].target == "cloudflare.ini"
+        and .services["certificate-renewer"].secrets[0].target == "cloudflare.ini"
+        and .services["certificate-renewer"].pid == "service:openbao"
+        and .volumes["openbao-data"].name == "openbao-data"
+        and .volumes["openbao-acme"].name == "openbao-acme"
+        and .volumes["openbao-tls"].name == "openbao-tls"
+        and all(.services[]; all((.volumes // [])[]; .source != "/var/run/docker.sock"))
+    ' "$rendered" >/dev/null
