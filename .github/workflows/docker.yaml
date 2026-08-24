@@ -41,6 +41,7 @@ jobs:
         with:
           version: 2026.8.11
           install_args: >-
+            aqua:astral-sh/uv
             aqua:casey/just
             aqua:getsops/sops
             aqua:gitleaks/gitleaks
