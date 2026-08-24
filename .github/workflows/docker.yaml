@@ -5,6 +5,7 @@ on:
     paths:
       - docker/**
       - .doco-cd*.yml
+      - .sops.yaml
       - .justfile
       - .mise.toml
       - mise.lock
@@ -15,6 +16,7 @@ on:
     paths:
       - docker/**
       - .doco-cd*.yml
+      - .sops.yaml
       - .justfile
       - .mise.toml
       - mise.lock

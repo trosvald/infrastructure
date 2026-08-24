@@ -13,6 +13,7 @@ services:
       LOG_LEVEL: info
       METRICS_PORT: "9120"
       POLL_CONFIG_FILE: /etc/doco-cd/poll-config.yml
+      SOPS_AGE_KEY_FILE: /run/secrets/sops_age_key
       SCHEDULER_ENABLED: "false"
       TZ: Asia/Jakarta
     ports:
@@ -24,6 +25,7 @@ services:
       - ./poll-config.yml:/etc/doco-cd/poll-config.yml:ro
     secrets:
       - api_secret
+      - sops_age_key
     healthcheck:
       test: ["CMD", "/doco-cd", "healthcheck"]
       start_period: 15s
@@ -39,6 +41,8 @@ services:
 secrets:
   api_secret:
     file: ${DOCO_CD_API_SECRET_FILE:-/opt/doco-cd/secrets/api_secret}
+  sops_age_key:
+    file: ${DOCO_CD_SOPS_AGE_KEY_FILE:-/opt/doco-cd/secrets/sops_age_key}
 
 volumes:
   doco-cd-data:
