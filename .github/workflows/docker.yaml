@@ -40,6 +40,13 @@ jobs:
         uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
         with:
           version: 2026.8.11
+          install_args: >-
+            aqua:casey/just
+            aqua:getsops/sops
+            aqua:gitleaks/gitleaks
+            aqua:jqlang/jq
+            pipx:yamllint
+            python
           cache: true
       - name: Verify scanner canary and scan repository
         run: scripts/gitleaks-scan.sh
