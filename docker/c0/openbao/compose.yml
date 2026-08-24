@@ -30,8 +30,16 @@ services:
       - |
         source_credentials=/run/secrets/cloudflare.ini
         runtime_credentials=/run/certbot/cloudflare.ini
-        test "$$(stat -c '%a' "$$source_credentials")" = 600
+        source_mode=$$(stat -c '%a' "$$source_credentials")
+        case "$$source_mode" in
+          400|440|444|600|640|644) ;;
+          *)
+            printf '%s\n' 'credential source is writable by group or other' >&2
+            exit 1
+            ;;
+        esac
         install -m 0600 "$$source_credentials" "$$runtime_credentials"
+        test "$$(stat -c '%a' "$$runtime_credentials")" = 600
         trap 'rm -f "$$runtime_credentials"' EXIT HUP INT TERM
         if [ ! -e /etc/letsencrypt/live/vault.monosense.io/fullchain.pem ]; then
           certbot certonly --dry-run --non-interactive --agree-tos \
@@ -127,8 +135,16 @@ services:
         source_credentials=/run/secrets/cloudflare.ini
         runtime_credentials=/run/certbot/cloudflare.ini
         child=
-        test "$$(stat -c '%a' "$$source_credentials")" = 600
+        source_mode=$$(stat -c '%a' "$$source_credentials")
+        case "$$source_mode" in
+          400|440|444|600|640|644) ;;
+          *)
+            printf '%s\n' 'credential source is writable by group or other' >&2
+            exit 1
+            ;;
+        esac
         install -m 0600 "$$source_credentials" "$$runtime_credentials"
+        test "$$(stat -c '%a' "$$runtime_credentials")" = 600
         cleanup() {
           rm -f "$$runtime_credentials"
           if [ -n "$$child" ]; then
