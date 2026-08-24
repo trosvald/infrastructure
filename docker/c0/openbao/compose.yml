@@ -191,7 +191,8 @@ services:
         - --min-valid-days
         - "21"
       start_period: 30s
-      interval: 12h
+      start_interval: 5s
+      interval: 5m
       timeout: 10s
       retries: 3
     logging:
