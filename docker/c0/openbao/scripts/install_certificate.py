@@ -54,11 +54,10 @@ def validate_pair(
     threshold = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
         days=min_valid_days
     )
-    not_valid_after = getattr(
-        certificate,
-        "not_valid_after_utc",
-        certificate.not_valid_after.replace(tzinfo=datetime.timezone.utc),
-    )
+    if hasattr(certificate, "not_valid_after_utc"):
+        not_valid_after = certificate.not_valid_after_utc
+    else:
+        not_valid_after = certificate.not_valid_after.replace(tzinfo=datetime.timezone.utc)
     if not_valid_after <= threshold:
         raise CertificateError("certificate validity is below the required threshold")
 
@@ -135,7 +134,9 @@ def _replace_link(target_dir: pathlib.Path, name: str, target: str) -> None:
 def _switch_current(target_dir: pathlib.Path, new_target: str) -> bool:
     old_target = _read_link(target_dir, "current")
     if old_target == new_target:
-        return False
+        _replace_link(target_dir, "current", new_target)
+        _fsync_directory(target_dir)
+        return True
     if old_target is not None:
         _replace_link(target_dir, "previous", old_target)
     _replace_link(target_dir, "current", new_target)
@@ -216,8 +217,6 @@ def rollback_pair(target_dir: pathlib.Path, reload_pid: int | None) -> None:
         os.kill(reload_pid, signal.SIGHUP)
 
 
-def _current_target(target_dir: pathlib.Path) -> str | None:
-    return _read_link(target_dir, "current")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -253,10 +252,8 @@ def main() -> int:
                 arguments.hostname,
                 arguments.min_valid_days,
             )
-            old_target = _current_target(arguments.target)
             install_pair(cert_pem, key_pem, serial, arguments.target)
-            new_target = _current_target(arguments.target)
-            if arguments.reload_pid is not None and new_target != old_target:
+            if arguments.reload_pid is not None:
                 os.kill(arguments.reload_pid, signal.SIGHUP)
         elif arguments.command == "check":
             validate_pair(

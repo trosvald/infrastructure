@@ -60,7 +60,7 @@ services:
     env_file:
       - encrypted/acme.env
     cap_drop: [ALL]
-    cap_add: [CHOWN]
+    cap_add: [CHOWN, DAC_OVERRIDE]
     tmpfs:
       - /run/certbot:mode=0700
       - /var/lib/letsencrypt:mode=0700
@@ -164,7 +164,7 @@ services:
           child=
         done
     cap_drop: [ALL]
-    cap_add: [CHOWN, KILL]
+    cap_add: [CHOWN, DAC_OVERRIDE, KILL]
     tmpfs:
       - /run/certbot:mode=0700
       - /var/lib/letsencrypt:mode=0700

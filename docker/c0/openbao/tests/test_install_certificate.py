@@ -238,6 +238,11 @@ class CertificateInstallerTests(unittest.TestCase):
         ) as kill:
             self.assertEqual(installer.main(), 0)
             kill.assert_called_once_with(1, signal.SIGHUP)
+        with mock.patch.object(sys, "argv", arguments), mock.patch.object(
+            installer.os, "kill", side_effect=assert_switched
+        ) as repeated_kill:
+            self.assertEqual(installer.main(), 0)
+            repeated_kill.assert_called_once_with(1, signal.SIGHUP)
 
         failed_lineage = self.root / "failed-signal-lineage"
         write_pair(failed_lineage, make_pair(0x71))
