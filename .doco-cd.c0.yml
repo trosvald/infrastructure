@@ -1,0 +1,8 @@
+working_dir: ./docker/c0
+auto_discovery:
+  enabled: true
+  depth: 1
+  delete: false
+force_recreate: false
+reconciliation:
+  enabled: false

@@ -1,0 +1,45 @@
+name: doco-cd-c0
+
+services:
+  doco-cd:
+    # yamllint disable-line rule:line-length
+    image: ghcr.io/kimdre/doco-cd:0.111.0@sha256:8c31f63f6bde1b67f0802619bad0599bf5e41503f5532be9cc58d0f063b1eeea
+    container_name: doco-cd
+    restart: unless-stopped
+    environment:
+      API_SECRET_FILE: /run/secrets/api_secret
+      DEPLOY_CONFIG_BASE_DIR: /
+      HTTP_PORT: "80"
+      LOG_LEVEL: info
+      METRICS_PORT: "9120"
+      POLL_CONFIG_FILE: /etc/doco-cd/poll-config.yml
+      SCHEDULER_ENABLED: "false"
+      TZ: Asia/Jakarta
+    ports:
+      - 127.0.0.1:8080:80
+      - 127.0.0.1:9120:9120
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - doco-cd-data:/data
+      - ./poll-config.yml:/etc/doco-cd/poll-config.yml:ro
+    secrets:
+      - api_secret
+    healthcheck:
+      test: ["CMD", "/doco-cd", "healthcheck"]
+      start_period: 15s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+secrets:
+  api_secret:
+    file: ${DOCO_CD_API_SECRET_FILE:-/opt/doco-cd/secrets/api_secret}
+
+volumes:
+  doco-cd-data:
+    name: doco-cd-data

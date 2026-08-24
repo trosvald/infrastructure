@@ -9,3 +9,8 @@ __pycache__/
 # Ansible/Junos local state and sensitive output
 ansible/junos/.ansible/
 ansible/junos/.build/
+
+# Docker local secrets and mutable state
+docker/**/.env
+docker/**/secrets/
+docker/**/data/

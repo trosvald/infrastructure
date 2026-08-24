@@ -22,6 +22,10 @@ mod talos "talos"
 [group: 'Ansible']
 mod ansible "ansible"
 
+# Docker Recipes
+[group: 'Docker']
+mod docker "docker"
+
 [private]
 default:
     just -l
