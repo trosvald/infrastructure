@@ -9,10 +9,11 @@ services:
     user: "0:0"
     network_mode: none
     entrypoint: ["/bin/sh", "-ec"]
-    command: >-
-      mkdir -p /openbao/data &&
-      chown 100:1000 /openbao/data &&
-      chmod 0700 /openbao/data
+    command:
+      - >-
+        mkdir -p /openbao/data &&
+        chmod 0700 /openbao/data &&
+        chown 100:1000 /openbao/data
     cap_drop: [ALL]
     cap_add: [CHOWN]
     volumes:

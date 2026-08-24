@@ -17,7 +17,7 @@ validate-c0: validate-openbao
 [private]
 validate-openbao:
     cd "{{ source_directory() }}/.."
-    yamllint .sops.yaml docker/c0/openbao/compose.yml
+    yamllint .sops.yaml docker/c0/openbao/.doco-cd.yaml docker/c0/openbao/compose.yml
     test "$(sops filestatus docker/c0/openbao/encrypted/acme.env | jq -r '.encrypted')" = true
     test "$(sops filestatus docker/c0/openbao/encrypted/cloudflare.ini | jq -r '.encrypted')" = true
     python3 - <<'PY'
