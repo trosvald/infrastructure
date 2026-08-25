@@ -58,7 +58,7 @@ validate-openbao:
 validate-powerdns:
     cd "{{ source_directory() }}/.."
     yamllint docker/c0/powerdns/.doco-cd.yaml docker/c0/powerdns/compose.yml
-    yq -e '.name == "powerdns-c0" and .force_recreate == true' docker/c0/powerdns/.doco-cd.yaml >/dev/null
+    yq -e '.name == "powerdns-c0" and has("force_recreate") == false' docker/c0/powerdns/.doco-cd.yaml >/dev/null
     docker/c0/powerdns/tests/validate.sh
     rendered="$(mktemp)"
     trap 'rm -f "$rendered"' EXIT

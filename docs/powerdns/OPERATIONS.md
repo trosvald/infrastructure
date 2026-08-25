@@ -57,9 +57,10 @@ API and web server are not mutation paths.
 
 ## Doco-CD deployment and rollback
 
-Doco-CD polls `origin/main` every three minutes. The project-local `force_recreate: true` causes
-every changed PowerDNS project deployment to run reconciliation. A successful deployment leaves
-`data-init` and `zone-reconcile` exited with code zero and `powerdns` healthy.
+Doco-CD polls `origin/main` every three minutes. The read-only zone and script bind sources belong
+to both `zone-reconcile` and `powerdns`, so a changed canonical input recreates both services. A
+successful deployment leaves `data-init` and `zone-reconcile` exited with code zero and `powerdns`
+healthy.
 
 If reconciliation fails before the atomic rename:
 
