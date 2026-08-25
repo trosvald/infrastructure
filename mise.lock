@@ -173,6 +173,21 @@ url = "https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-macos-arm64"
 url_api = "https://api.github.com/repos/jqlang/jq/releases/assets/453012783"
 provenance = "github-attestations"
 
+[[tools."aqua:kubernetes-sigs/kind"]]
+version = "0.32.0"
+backend = "aqua:kubernetes-sigs/kind"
+specifiers = ["0.32.0"]
+
+[tools."aqua:kubernetes-sigs/kind"."platforms.linux-x64"]
+checksum = "sha256:50030de23cf40a18505f20426f6a8506bedf13c6e509244bd1fa9463721b0f54"
+url = "https://github.com/kubernetes-sigs/kind/releases/download/v0.32.0/kind-linux-amd64"
+url_api = "https://api.github.com/repos/kubernetes-sigs/kind/releases/assets/436442498"
+
+[tools."aqua:kubernetes-sigs/kind"."platforms.macos-arm64"]
+checksum = "sha256:dca67911095a110c2b5c36e26df6cac860c602033e456c0db47be498cdef1ebb"
+url = "https://github.com/kubernetes-sigs/kind/releases/download/v0.32.0/kind-darwin-arm64"
+url_api = "https://api.github.com/repos/kubernetes-sigs/kind/releases/assets/436442412"
+
 [[tools."aqua:kubernetes-sigs/kustomize"]]
 version = "5.8.1"
 backend = "aqua:kubernetes-sigs/kustomize"
@@ -270,7 +285,7 @@ provenance = "github-attestations"
 [[tools."aqua:siderolabs/talos"]]
 version = "1.13.9"
 backend = "aqua:siderolabs/talos"
-specifiers = ["1.13"]
+specifiers = ["1.13.9"]
 
 [tools."aqua:siderolabs/talos"."platforms.linux-x64"]
 checksum = "sha256:7e1d4b7d5846964bdcf63a794e3c8161bb6ef2983d5ace58ea5322f3bf32a27e"
