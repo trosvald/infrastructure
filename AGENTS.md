@@ -44,6 +44,9 @@ are direct children of `docker/c0/`, and host prerequisites live under `docker/c
 - PowerDNS: five canonical files under `docker/c0/powerdns/zones/` are the only zone-content source.
   `reconcile.sh` builds and validates a fresh SQLite candidate, then atomically replaces the live
   database. API, webserver, and host ports remain disabled.
+- Blocky: DNS proxy with conditional forwarding of `monosense.io` and reverse zones to
+  PowerDNS at `10.25.13.33`; external resolution via Cloudflare and Quad9 DoH; HaGeZi Multi NORMAL
+  blocklist; read-only root, no named volumes, no persistent state.
 - Omada Controller: preserved named volumes hold controller state; the rootless container attaches
   only to its dedicated external MGMT IPvlan network and publishes no host ports.
 
@@ -71,8 +74,8 @@ checks, or runtime cleanup.
 - `talos/`: node inventory and machine/network Minijinja templates.
 - `docker/c0/.doco-cd/`: bootstrap-owned Doco-CD controller source.
 - `docker/c0/.host/`: c0 host prerequisites that Doco-CD must not manage.
-- `docker/c0/`: host Doco configuration and direct-child OpenBao, PowerDNS, and Omada Controller
-  applications.
+- `docker/c0/`: host Doco configuration and direct-child OpenBao, PowerDNS, Blocky, and Omada
+  Controller applications.
 - `ansible/junos/`: isolated inventory, intent, roles, scripts, fixtures, and tests.
 - `docs/`: operational, backup/restore, secret-custody, and migration runbooks.
 - `scripts/`: repository-wide utilities, including the fail-closed Gitleaks wrapper.

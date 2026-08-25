@@ -101,11 +101,17 @@ credentials. cAdvisor and native observability remain undeployed on c0.
 | --- | --- | --- | --- | --- |
 | `c0` | `openbao-c0` | `10.25.13.34`, `c0_services` | Direct SERVICES IPvlan | Deployed |
 | `c0` | `powerdns-c0` | `10.25.13.33`, `c0_services` | Direct SERVICES IPvlan | Deployed |
+| `c0` | `blocky-c0` | `10.25.13.35`, `c0_services` | Direct SERVICES IPvlan | Gated deployment |
 | `c0` | `omada-controller-c0` | `10.25.10.26`, `c0_omada_mgmt` | Direct MGMT IPvlan; no host ports | Deployed |
 
 Omada runs Controller `6.2.14.11` with a manually configured local owner and site. The operator
 confirmed successful device adoption after correcting the previous Device Account credentials; see
 [`docs/OMADA.md`](../docs/OMADA.md).
+Blocky is a DNS proxy and ad-blocker that will run on c0, parallel to production DNS at
+`10.25.10.100` (AdGuard) and private authoritative PowerDNS at `10.25.13.33`. It resolves
+external queries via Cloudflare and Quad9 over DoH, conditionally forwards `monosense.io` and
+reverse zones to PowerDNS, and applies the HaGeZi Multi NORMAL blocklist. DNSSEC validation is
+disabled for split-horizon safety. See [`docs/BLOCKY.md`](../docs/BLOCKY.md).
 
 ## Storage
 
@@ -184,10 +190,11 @@ Management addresses remain unchanged during the initial deployment:
 | `c0` | `10.25.10.20/24` | `enp0s31f6.2513` | `c0_services` | `10.25.13.16/32` | `10.25.13.33-62` | Network and shim deployed |
 | `c1` | `10.25.10.101/24` | `bond0.2513` | `c1_services` | `10.25.13.17/32` | `10.25.13.65-94` | VLAN parent ready; network and shim pending |
 
-SERVICES uses VLAN 2513, subnet `10.25.13.0/24`, gateway `10.25.13.1`, static addressing, Docker IPvlan L2, and MTU 1496. Deployed c0 assignments are:
+SERVICES uses VLAN 2513, subnet `10.25.13.0/24`, gateway `10.25.13.1`, static addressing, Docker IPvlan L2, and MTU 1496. Assigned and reserved c0 addresses are:
 
 - PowerDNS Authoritative: `10.25.13.33`
 - OpenBao: `10.25.13.34`
+- Blocky (reserved, gated): `10.25.13.35`
 
 PowerDNS is authoritative-only for one private forward zone and four `/24` reverse zones. Git owns
 the canonical content; the API, web server, and host port mappings are disabled. AdGuard Home at

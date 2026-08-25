@@ -9,7 +9,7 @@ default:
     just -l docker
 
 [doc('Validate the c0 host-scoped Doco-CD configuration')]
-validate-c0: validate-openbao validate-powerdns validate-omada-controller
+validate-c0: validate-openbao validate-powerdns validate-blocky validate-omada-controller
     cd "{{ source_directory() }}/.."
     yamllint .sops.yaml docker/c0/.doco-cd.yaml docker/c0/.doco-cd/docker-compose.app.yaml docker/c0/.doco-cd/poll-config.yml
     yq -e '.working_dir == "./docker/c0" and .auto_discovery.enabled == true and .auto_discovery.depth == 1 and .auto_discovery.delete == false and .force_recreate == false and .reconciliation.enabled == false' docker/c0/.doco-cd.yaml >/dev/null
@@ -94,6 +94,134 @@ validate-powerdns:
         and (.services.powerdns.command | index("--webserver=no")) != null
         and all(.services[]; (.environment // {}) == {})
         and all(.services[]; (.secrets // []) == [])
+        and all(.services[]; all((.volumes // [])[]; .source != "/var/run/docker.sock"))
+        and all(.services[]; all((.volumes // [])[]; (.source | contains("openbao")) | not))
+    ' "$rendered" >/dev/null
+
+[private]
+validate-blocky:
+    cd "{{ source_directory() }}/.."
+    yamllint docker/c0/blocky/.doco-cd.yaml docker/c0/blocky/compose.yml docker/c0/blocky/config.yml
+    bash -n docker/c0/blocky/tests/validate.sh
+    yq -e '.name == "blocky-c0" and has("force_recreate") == false' docker/c0/blocky/.doco-cd.yaml >/dev/null
+    yq -e '
+        length == 11
+        and has("blocking")
+        and has("caching")
+        and has("conditional")
+        and has("connectIPVersion")
+        and has("dnssec")
+        and has("log")
+        and has("ports")
+        and has("prometheus")
+        and has("queryLog")
+        and has("statistics")
+        and has("upstreams")
+        and .upstreams.init.strategy == "blocking"
+        and (.upstreams.groups.default | length) == 2
+        and .upstreams.groups.default[0] == "https://1.1.1.1/dns-query#cloudflare-dns.com"
+        and .upstreams.groups.default[1] == "https://9.9.9.9/dns-query#dns.quad9.net"
+        and .upstreams.strategy == "random"
+        and .upstreams.timeout == "3s"
+        and .connectIPVersion == "v4"
+        and .conditional.fallbackUpstream == false
+        and (.conditional.mapping | length) == 5
+        and .conditional.mapping."monosense.io" == "10.25.13.33"
+        and .conditional.mapping."10.25.10.in-addr.arpa" == "10.25.13.33"
+        and .conditional.mapping."11.25.10.in-addr.arpa" == "10.25.13.33"
+        and .conditional.mapping."12.25.10.in-addr.arpa" == "10.25.13.33"
+        and .conditional.mapping."13.25.10.in-addr.arpa" == "10.25.13.33"
+        and (.blocking.denylists.default | length) == 1
+        and .blocking.denylists.default[0] == "https://raw.githubusercontent.com/hagezi/dns-blocklists/a3d0c5c7a0402f669f3f1392527b8a50622128cf/wildcard/multi.txt"
+        and (.blocking.allowlists.default | length) == 1
+        and (.blocking.allowlists.default[0] | contains("monosense.io\n*.monosense.io\n"))
+        and (.blocking.allowlists.default[0] | contains("10.25.10.in-addr.arpa\n*.10.25.10.in-addr.arpa\n"))
+        and (.blocking.allowlists.default[0] | contains("11.25.10.in-addr.arpa\n*.11.25.10.in-addr.arpa\n"))
+        and (.blocking.allowlists.default[0] | contains("12.25.10.in-addr.arpa\n*.12.25.10.in-addr.arpa\n"))
+        and (.blocking.allowlists.default[0] | contains("13.25.10.in-addr.arpa\n*.13.25.10.in-addr.arpa\n"))
+        and (.blocking.clientGroupsBlock.default | length) == 1
+        and .blocking.clientGroupsBlock.default[0] == "default"
+        and .blocking.blockType == "nxDomain"
+        and .blocking.blockTTL == "5m"
+        and .blocking.loading.strategy == "fast"
+        and .blocking.loading.refreshPeriod == "12h"
+        and (.blocking.loading.downloads | length) == 3
+        and .blocking.loading.downloads.timeout == "10s"
+        and .blocking.loading.downloads.attempts == 3
+        and .blocking.loading.downloads.cooldown == "1s"
+        and (.caching | length) == 5
+        and .caching.minTime == "0s"
+        and .caching.maxTime == "0s"
+        and .caching.cacheTimeNegative == "5m"
+        and .caching.maxItemsCount == 10000
+        and .caching.prefetching == false
+        and (.queryLog | length) == 1
+        and .queryLog.type == "none"
+        and (.ports | length) == 4
+        and (.ports.dns | length) == 1
+        and .ports.dns[0] == ":53"
+        and (.ports.http | length) == 0
+        and (.ports.https | length) == 0
+        and (.ports.tls | length) == 0
+        and (.dnssec | length) == 1
+        and .dnssec.validate == false
+        and (.prometheus | length) == 1
+        and .prometheus.enable == false
+        and (.statistics | length) == 1
+        and .statistics.enable == false
+        and (.log | length) == 3
+        and .log.level == "info"
+        and .log.format == "json"
+        and .log.privacy == true
+    ' docker/c0/blocky/config.yml >/dev/null
+    docker/c0/blocky/tests/validate.sh
+    rendered="$(mktemp)"
+    trap 'rm -f "$rendered"' EXIT
+    docker compose -f docker/c0/blocky/compose.yml config --format json >"$rendered"
+    jq -e '
+        .name == "blocky-c0"
+        and (.services | keys) == ["blocky"]
+        and .services.blocky.image == "docker.io/spx01/blocky:v0.34.0@sha256:595136fb127f4c952b621113e668c09acdcf15ac054d96ee6d4c51a76c35f5fd"
+        and .services.blocky.platform == "linux/amd64"
+        and .services.blocky.user == "100:100"
+        and .services.blocky.read_only == true
+        and .services.blocky.privileged != true
+        and .services.blocky.cap_drop == ["ALL"]
+        and ((.services.blocky.cap_add // []) | length) == 0
+        and .services.blocky.security_opt == ["no-new-privileges:true"]
+        and .services.blocky.sysctls == {"net.ipv4.ip_unprivileged_port_start": "53"}
+        and ((.services.blocky.mem_swappiness // 0) == 0)
+        and .services.blocky.restart == "unless-stopped"
+        and .services.blocky.stop_grace_period == "15s"
+        and .services.blocky.cpus == 0.5
+        and (.services.blocky.mem_limit | tonumber) == 268435456
+        and (.services.blocky.memswap_limit | tonumber) == 268435456
+        and .services.blocky.ulimits.nofile == {"soft": 4096, "hard": 8192}
+        and ((.services.blocky.ports // []) | length) == 0
+        and ((.services.blocky.expose // []) | length) == 0
+        and ((.services.blocky.environment // {}) | length) == 0
+        and ((.services.blocky.secrets // []) | length) == 0
+        and ((.services.blocky.configs // []) | length) == 0
+        and ((.services.blocky.tmpfs // []) | length) == 0
+        and (.services.blocky.volumes | length) == 1
+        and .services.blocky.volumes[0].type == "bind"
+        and (.services.blocky.volumes[0].source | endswith("/docker/c0/blocky/config.yml"))
+        and .services.blocky.volumes[0].target == "/app/config.yml"
+        and .services.blocky.volumes[0].read_only == true
+        and (.services.blocky.networks | keys) == ["c0_services"]
+        and .services.blocky.networks.c0_services.ipv4_address == "10.25.13.35"
+        and .services.blocky.healthcheck.test == ["CMD", "/app/blocky", "healthcheck"]
+        and .services.blocky.healthcheck.start_period == "1m0s"
+        and .services.blocky.healthcheck.start_interval == "2s"
+        and .services.blocky.healthcheck.interval == "30s"
+        and .services.blocky.healthcheck.timeout == "3s"
+        and .services.blocky.healthcheck.retries == 3
+        and .services.blocky.logging.driver == "json-file"
+        and .services.blocky.logging.options == {"max-file": "3", "max-size": "10m"}
+        and (.networks | keys) == ["c0_services"]
+        and .networks.c0_services.name == "c0_services"
+        and .networks.c0_services.external == true
+        and ((.volumes // {}) | length) == 0
         and all(.services[]; all((.volumes // [])[]; .source != "/var/run/docker.sock"))
         and all(.services[]; all((.volumes // [])[]; (.source | contains("openbao")) | not))
     ' "$rendered" >/dev/null

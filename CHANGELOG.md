@@ -8,7 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Added a pinned, polling-only Doco-CD bootstrap configuration for c0 with c0-scoped discovery and loopback-only management endpoints.
+- Added Blocky DNS proxy (`blocky-c0`) for c0: Cloudflare and Quad9 DoH upstreams, HaGeZi Multi
+  NORMAL blocklist, conditional forwarding of `monosense.io` and reverse zones to local PowerDNS,
+  DNSSEC validation disabled, read-only root, no persistent state.
+- Added a pinned, polling-only Doco-CD bootstrap configuration for c0 with c0-scoped discovery and
+  loopback-only management endpoints.
 
 ### Changed
 
