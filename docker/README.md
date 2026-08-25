@@ -65,8 +65,8 @@ on 2026-08-25 for manual operator setup. cAdvisor and native observability remai
 | `c0` | `powerdns-c0` | `10.25.13.33`, `c0_services` | Direct SERVICES IPvlan | Deployed |
 | `c0` | `omada-controller-c0` | `10.25.10.26`, `c0_omada_mgmt` | Direct MGMT IPvlan; no host ports | Deployed |
 
-Omada runs a fresh Controller `6.2.14.11` deployment. No old backup is restored into the active
-volumes. The setup wizard is available for manual account, site, and device configuration; see
+Omada runs Controller `6.2.14.11` with a manually configured local owner and site. The operator
+confirmed successful device adoption after correcting the previous Device Account credentials; see
 [`docs/OMADA.md`](../docs/OMADA.md).
 
 ## Storage

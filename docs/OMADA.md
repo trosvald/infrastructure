@@ -1,8 +1,8 @@
 # Omada Software Controller
 
 Omada Software Controller is deployed on c0 and reconciled by Doco-CD from commit `8948d1e`.
-Controller `6.2.14.11` was reset to clean named volumes on 2026-08-25. No old backup is restored;
-the operator owns manual account, site, and device configuration.
+Controller `6.2.14.11` was reset to clean named volumes and configured manually on 2026-08-25.
+No old backup is attached to the active volumes.
 
 ## Evidence boundary
 
@@ -25,10 +25,11 @@ the operator owns manual account, site, and device configuration.
 - The container is healthy at `10.25.10.26/24` with gateway `10.25.10.1`, no published ports, and
   only the approved network attachment.
 - The controller reached `10.25.10.1:443` from its network namespace.
-- The active named volumes are fresh and contain no imported old-controller configuration.
-- The UI presents the first-run setup wizard and `Create a Local Account`.
-- Historical recovery attempts were preserved in quarantine volumes and are not attached to the
-  running project.
+- The active named volumes contain the new manually configured controller, not imported
+  old-controller configuration.
+- The operator confirmed successful device adoption after correcting the previous Device Account
+  username/password; controller logs had identified the earlier failure as an authentication
+  mismatch.
 - Listener inspection confirmed the documented TCP/UDP ports and loopback-only MongoDB
   `127.0.0.1:27217`.
 
@@ -38,9 +39,8 @@ The following evidence is still required for complete operational closure:
 
 - authoritative IPAM reservation/exclusion evidence for `10.25.10.26`;
 - switch/SRX DAI, DHCP-snooping, IP-source-guard, port-security, and ARP-policy evidence;
-- completion of the first-run local owner, controller, site, and device configuration;
 - certificate identity/trust review;
-- device adoption, Omada mobile-app discovery, and OLT discovery where applicable;
+- Omada mobile-app discovery and OLT discovery where applicable;
 - post-setup backup export, encrypted off-host retention, an isolated restore drill, and rollback.
 
 IP address preservation alone is insufficient. Device adoption, site/controller identity,
