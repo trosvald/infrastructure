@@ -9,3 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Added a pinned, polling-only Doco-CD bootstrap configuration for c0 with c0-scoped discovery and loopback-only management endpoints.
+
+### Changed
+
+- Refactored c0 into a host-scoped Doco-CD layout under `docker/c0/`, separating controller source,
+  host prerequisites, and direct-child managed applications.

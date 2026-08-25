@@ -1,6 +1,0 @@
----
-- url: https://github.com/trosvald/infrastructure.git
-  reference: refs/heads/main
-  target: c0
-  interval: 180s
-  watch: false

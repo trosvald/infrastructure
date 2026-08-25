@@ -11,12 +11,11 @@ default:
 [doc('Validate the c0 host-scoped Doco-CD configuration')]
 validate-c0: validate-openbao validate-powerdns validate-omada-controller
     cd "{{ source_directory() }}/.."
-    yamllint .doco-cd.c0.yml .sops.yaml docker/bootstrap/c0/doco-cd/compose.yml docker/bootstrap/c0/doco-cd/poll-config.yml docker/c0/.doco-cd.yaml docker/c0/.doco-cd/docker-compose.app.yaml docker/c0/.doco-cd/poll-config.yml
+    yamllint .sops.yaml docker/c0/.doco-cd.yaml docker/c0/.doco-cd/docker-compose.app.yaml docker/c0/.doco-cd/poll-config.yml
     yq -e '.working_dir == "./docker/c0" and .auto_discovery.enabled == true and .auto_discovery.depth == 1 and .auto_discovery.delete == false and .force_recreate == false and .reconciliation.enabled == false' docker/c0/.doco-cd.yaml >/dev/null
     yq -e 'length == 1 and .[0].url == "https://github.com/trosvald/infrastructure.git" and .[0].reference == "refs/heads/main" and .[0].interval == "180s" and .[0].watch == false and (.[0] | has("target") | not)' docker/c0/.doco-cd/poll-config.yml >/dev/null
     yq -e '.services.doco-cd.image == "ghcr.io/kimdre/doco-cd:0.111.0@sha256:8c31f63f6bde1b67f0802619bad0599bf5e41503f5532be9cc58d0f063b1eeea" and .services.doco-cd.environment.DEPLOY_CONFIG_BASE_DIR == "./docker/c0/" and .services.doco-cd.environment.POLL_CONFIG_FILE == "/etc/doco-cd/poll-config.yml"' docker/c0/.doco-cd/docker-compose.app.yaml >/dev/null
     DOCO_CD_API_SECRET_FILE=/dev/null DOCO_CD_SOPS_AGE_KEY_FILE=/dev/null docker compose -f docker/c0/.doco-cd/docker-compose.app.yaml config --quiet
-    DOCO_CD_API_SECRET_FILE=/dev/null DOCO_CD_SOPS_AGE_KEY_FILE=/dev/null docker compose -f docker/bootstrap/c0/doco-cd/compose.yml config --quiet
     python3 - <<'PY'
     from pathlib import Path
 
