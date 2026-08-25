@@ -101,17 +101,20 @@ credentials. cAdvisor and native observability remain undeployed on c0.
 | --- | --- | --- | --- | --- |
 | `c0` | `openbao-c0` | `10.25.13.34`, `c0_services` | Direct SERVICES IPvlan | Deployed |
 | `c0` | `powerdns-c0` | `10.25.13.33`, `c0_services` | Direct SERVICES IPvlan | Deployed |
-| `c0` | `blocky-c0` | `10.25.13.35`, `c0_services` | Direct SERVICES IPvlan | Gated deployment |
+| `c0` | `blocky-c0` | `10.25.13.35`, `c0_services` | Direct SERVICES IPvlan | Deployed |
 | `c0` | `omada-controller-c0` | `10.25.10.26`, `c0_omada_mgmt` | Direct MGMT IPvlan; no host ports | Deployed |
 
 Omada runs Controller `6.2.14.11` with a manually configured local owner and site. The operator
 confirmed successful device adoption after correcting the previous Device Account credentials; see
 [`docs/OMADA.md`](../docs/OMADA.md).
-Blocky is a DNS proxy and ad-blocker that will run on c0, parallel to production DNS at
+Blocky is a DNS proxy and ad-blocker running on c0, parallel to production DNS at
 `10.25.10.100` (AdGuard) and private authoritative PowerDNS at `10.25.13.33`. It resolves
 external queries via Cloudflare and Quad9 over DoH, conditionally forwards `monosense.io` and
 reverse zones to PowerDNS, and applies the HaGeZi Multi NORMAL blocklist. DNSSEC validation is
-disabled for split-horizon safety. See [`docs/BLOCKY.md`](../docs/BLOCKY.md).
+disabled for split-horizon safety. Deployed 2026-08-25; container is healthy with zero capabilities,
+read-only root, and one read-only config mount. No client cutover — `10.25.10.100` remains
+production DNS. See [`docs/BLOCKY.md`](../docs/BLOCKY.md) and the
+Blocky runbook.
 
 ## Storage
 
@@ -194,7 +197,7 @@ SERVICES uses VLAN 2513, subnet `10.25.13.0/24`, gateway `10.25.13.1`, static ad
 
 - PowerDNS Authoritative: `10.25.13.33`
 - OpenBao: `10.25.13.34`
-- Blocky (reserved, gated): `10.25.13.35`
+- Blocky: `10.25.13.35`
 
 PowerDNS is authoritative-only for one private forward zone and four `/24` reverse zones. Git owns
 the canonical content; the API, web server, and host port mappings are disabled. AdGuard Home at
