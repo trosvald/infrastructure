@@ -1,7 +1,8 @@
 # PowerDNS Authoritative
 
 PowerDNS Authoritative Server runs on c0 as the Doco-CD project `powerdns-c0`. It owns the private,
-unsigned `monosense.io` zone at `10.25.13.33` over TCP and UDP port 53.
+unsigned `monosense.io` forward zone and reverse zones for `10.25.10.0/24` through
+`10.25.13.0/24` at `10.25.13.33` over TCP and UDP port 53.
 
 ## Current scope
 
@@ -19,27 +20,34 @@ Normal clients continue using AdGuard Home at `10.25.10.100` and do not consume 
 
 ## Zone contents
 
-The bootstrap zone contains only:
+Five canonical files under `docker/c0/powerdns/zones/` contain the complete private authoritative
+dataset:
 
-- `monosense.io. SOA ns1.monosense.io.`
-- `monosense.io. NS ns1.monosense.io.`
-- `ns1.monosense.io. A 10.25.13.33`
-- `vault.monosense.io. A 10.25.13.34`
+- `monosense.io`: `c0`, `c1`, `adguard`, `k1` through `k5`, `ns1`, and `vault`
+- `10.25.10.in-addr.arpa`: PTRs for `c0`, `adguard`, and `c1`
+- `11.25.10.in-addr.arpa`: PTRs for `k1` through `k5`
+- `12.25.10.in-addr.arpa`: SOA and NS only; unknown HOME addresses return authoritative NXDOMAIN
+- `13.25.10.in-addr.arpa`: PTRs for `ns1` and `vault`
 
-The source is `docker/c0/powerdns/zones/monosense.io.zone`. The initializer imports it only when
-`powerdns-data` has no database. Once initialized, changing the source zone does not mutate the live
-database. Follow [Operations](powerdns/OPERATIONS.md) for reviewed record changes.
+Only repository-known stable infrastructure receives records. Gateways, IPvlan shims, DHCP clients,
+and HOME devices remain unnamed until a stable mapping is reviewed. AdGuard does not forward these
+zones, so clients do not consume them without a separate resolver cutover.
 
-## Storage and initialization
+## Storage and reconciliation
 
 `powerdns-data` contains `/var/lib/powerdns/pdns.sqlite3`. Every mount uses `nocopy: true`; this is
 required because the image contains an empty layer database that must never be copied into the named
 volume.
 
-`data-init` establishes UID/GID `953:953` ownership without creating a database. `zone-init` either
-atomically creates and validates the initial database or validates the existing database and static
-record invariants. Any partial database, integrity failure, missing zone, or missing static record
-prevents the server from starting.
+Git is the only writable source of truth. On every changed PowerDNS project deployment,
+`zone-reconcile` validates the current database, builds a new SQLite candidate from the five
+canonical files and the packaged schema, checks zone, metadata, record, and SQLite invariants, then
+atomically renames the candidate over the live path. This full replacement removes out-of-band
+`pdnsutil`, SQL, API, or UI changes. A failed candidate remains as `pdns.sqlite3.tmp` and leaves the
+current database unchanged for diagnosis.
+
+`data-init` establishes UID/GID `953:953` ownership without creating a database. A corrupt current
+database or partial candidate blocks reconciliation and prevents PowerDNS from starting.
 
 The server runs as the image's `pdns` user with all capabilities dropped except `NET_BIND_SERVICE`.
 It has no Docker socket, OpenBao mount, API credential, host network, or published port.

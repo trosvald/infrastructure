@@ -58,24 +58,29 @@ validate-openbao:
 validate-powerdns:
     cd "{{ source_directory() }}/.."
     yamllint docker/c0/powerdns/.doco-cd.yaml docker/c0/powerdns/compose.yml
+    yq -e '.name == "powerdns-c0" and .force_recreate == true' docker/c0/powerdns/.doco-cd.yaml >/dev/null
     docker/c0/powerdns/tests/validate.sh
     rendered="$(mktemp)"
     trap 'rm -f "$rendered"' EXIT
     docker compose -f docker/c0/powerdns/compose.yml config --format json >"$rendered"
     jq -e '
-        (.services | keys | sort) == ["data-init", "powerdns", "zone-init"]
+        (.services | keys | sort) == ["data-init", "powerdns", "zone-reconcile"]
         and all(.services[]; ((.ports // []) | length) == 0)
         and .services.powerdns.networks.c0_services.ipv4_address == "10.25.13.33"
         and ([.services | to_entries[] | select(.value.networks.c0_services? != null) | .key] == ["powerdns"])
         and .services["data-init"].network_mode == "none"
-        and .services["zone-init"].network_mode == "none"
+        and .services["zone-reconcile"].network_mode == "none"
+        and any(.services["zone-reconcile"].volumes[]; .target == "/zones" and .type == "bind" and .read_only == true)
+        and any(.services["zone-reconcile"].volumes[]; .target == "/usr/local/bin/reconcile.sh" and .type == "bind" and .read_only == true)
         and all(.services[]; all((.volumes // [])[]; (.type != "volume") or .volume.nocopy == true))
         and .volumes["powerdns-data"].name == "powerdns-data"
         and .services.powerdns.cap_drop == ["ALL"]
         and .services.powerdns.cap_add == ["NET_BIND_SERVICE"]
         and .services.powerdns.user == null
-        and (.services.powerdns.environment // {}) == {}
-        and (.services.powerdns.secrets // []) == []
+        and (.services.powerdns.command | index("--api=no")) != null
+        and (.services.powerdns.command | index("--webserver=no")) != null
+        and all(.services[]; (.environment // {}) == {})
+        and all(.services[]; (.secrets // []) == [])
         and all(.services[]; all((.volumes // [])[]; .source != "/var/run/docker.sock"))
         and all(.services[]; all((.volumes // [])[]; (.source | contains("openbao")) | not))
     ' "$rendered" >/dev/null
