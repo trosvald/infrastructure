@@ -1,0 +1,12 @@
+$ORIGIN monosense.io.
+$TTL 300
+@ 300 IN SOA ns1.monosense.io. hostmaster.monosense.io. (
+  2026082501 ; serial
+  3600       ; refresh
+  600        ; retry
+  604800     ; expire
+  300        ; minimum
+)
+@ 300 IN NS ns1.monosense.io.
+ns1 300 IN A 10.25.13.33
+vault 300 IN A 10.25.13.34

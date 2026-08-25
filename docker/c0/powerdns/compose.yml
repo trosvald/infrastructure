@@ -1,0 +1,100 @@
+---
+name: powerdns-c0
+
+x-powerdns-image: &powerdns-image
+  # yamllint disable-line rule:line-length
+  image: docker.io/powerdns/pdns-auth-51:5.1.4@sha256:bb5b1c133bcca1dd455075321de7d55db4945a8d7f2ba23339e3c7bbe416b205
+  platform: linux/amd64
+
+x-data-volume: &data-volume
+  type: volume
+  source: powerdns-data
+  target: /var/lib/powerdns
+  volume:
+    nocopy: true
+
+services:
+  data-init:
+    <<: *powerdns-image
+    user: "0:0"
+    network_mode: none
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        pdns_uid="$$(id -u pdns)"
+        pdns_gid="$$(id -g pdns)"
+        test "$$pdns_uid" = 953
+        chown "$$pdns_uid:$$pdns_gid" /var/lib/powerdns
+        chmod 0750 /var/lib/powerdns
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - *data-volume
+
+  zone-init:
+    <<: *powerdns-image
+    network_mode: none
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+    entrypoint: ["/usr/local/bin/initialize.sh"]
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - *data-volume
+      - ./zones/monosense.io.zone:/bootstrap/monosense.io.zone:ro
+      - ./scripts/initialize.sh:/usr/local/bin/initialize.sh:ro
+
+  powerdns:
+    <<: *powerdns-image
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+      zone-init:
+        condition: service_completed_successfully
+    command:
+      - --api=no
+      - --disable-axfr=yes
+      - --gsqlite3-database=/var/lib/powerdns/pdns.sqlite3
+      - --launch=gsqlite3
+      - --local-address=0.0.0.0
+      - --version-string=anonymous
+      - --webserver=no
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    mem_swappiness: 0
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - *data-volume
+    networks:
+      c0_services:
+        ipv4_address: 10.25.13.33
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - test "$$(pdns_control rping)" = PONG
+      start_period: 15s
+      start_interval: 2s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  powerdns-data:
+    name: powerdns-data
+
+networks:
+  c0_services:
+    external: true
+    name: c0_services
