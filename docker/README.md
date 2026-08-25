@@ -9,7 +9,8 @@ Inventory last verified over SSH on 2026-08-25. The canonical hostnames are `c0`
 | `c0` | Core services | Intel Core i7-7700T, 4 cores/8 threads | 32 GiB | Debian 13.6, kernel `6.12.101+deb13-amd64` | Docker Engine 29.7.2, Compose 5.5.0 |
 | `c1` | General services | Intel Core i7-8700T, 6 cores/12 threads | 64 GiB | Debian 13.6, kernel `6.12.101+deb13-amd64` | Docker Engine 29.7.2, Compose 5.5.0 |
 
-c0 runs Doco-CD, OpenBao, its certificate renewer, and PowerDNS. c1 has no persistent containers.
+c0 runs Doco-CD, OpenBao, its certificate renewer, and PowerDNS. Omada Controller is declared but
+remains undeployed. c1 has no persistent containers.
 
 ## Doco-CD on c0
 
@@ -55,6 +56,18 @@ Doco-CD and OpenBao are deployed and reboot-verified as of 2026-08-24. PowerDNS 
 deployed on 2026-08-25 and its container restart, named-volume persistence, encrypted backup, and
 isolated c1 restore were verified. cAdvisor and native observability remain undeployed on c0.
 
+## Application inventory
+
+| Node | Doco-CD project | Address/network | Exposure | State |
+| --- | --- | --- | --- | --- |
+| `c0` | `openbao-c0` | `10.25.13.34`, `c0_services` | Direct SERVICES IPvlan | Deployed |
+| `c0` | `powerdns-c0` | `10.25.13.33`, `c0_services` | Direct SERVICES IPvlan | Deployed |
+| `c0` | `omada-controller-c0` | `10.25.10.26`, `c0_omada_mgmt` | Direct MGMT IPvlan; no host ports | **Undeployed** |
+
+The Omada declaration does not establish a live controller, Docker network, IPAM reservation,
+switch binding, migration backup, or restored application state. Those remain operator-gated live
+prerequisites; see [`docs/OMADA.md`](../docs/OMADA.md).
+
 ## Storage
 
 | Node | Device | Model | Capacity | Current use |
@@ -83,6 +96,44 @@ Both hosts use Debian `ifupdown`; persistent configuration is in `/etc/network/i
 The SRX1500 is configured manually; the live configuration is not currently owned or deployed by `ansible/junos`. Its c0-facing `ge-0/0/2` port is already `TO-C0-TRUNK`, with VLAN 2510 native/untagged and the current `VLAN-DEV` object for tagged VLAN 2513.
 
 Do not run a Junos Ansible deployment until the complete manually maintained configuration has been reconciled with the repository intent and its diff reviewed. The existing direct configuration must not be combined blindly with the renderer's `ANSIBLE_SRX1500` configuration group.
+
+## Omada MGMT network (undeployed)
+
+Omada uses a dedicated external Docker IPvlan L2 network rather than `c0_services`:
+
+| Property | Intended value |
+| --- | --- |
+| Network | `c0_omada_mgmt` |
+| Parent | `enp0s31f6` |
+| Subnet/gateway | `10.25.10.0/24`, `10.25.10.1` |
+| Dynamic range | `10.25.10.26/32` |
+| Recorded host auxiliary address | `10.25.10.20` |
+| Omada address | `10.25.10.26` |
+| Host shim | none |
+| State | **Undeployed; requires live operator preflight** |
+
+This gives the container a true endpoint on the untagged MGMT broadcast domain and preserves Omada
+UDP broadcast discovery. IPvlan uses the parent MAC on the wire, avoiding the additional upstream
+MAC required by Macvlan. Bridge plus published ports would not preserve same-LAN broadcast
+discovery, while host networking could not provide the distinct `.26` identity.
+
+Linux IPvlan isolates parent-host and child traffic in both directions. No shim is approved because
+no c0-local dependency has been demonstrated; monitoring, backup export, DNS/NTP dependencies, and
+acceptance probes must be confirmed absent before deployment. Operators and probes use a separate
+MGMT host. Any future shim requires a separately reviewed route/interface change and a newly
+reserved `/32`.
+
+`c0_omada_mgmt` is host-bootstrap-owned and external to Compose. The deterministic
+`docker/bootstrap/c0/omada-controller-network/ensure.sh` validates an exact existing network or
+creates it once; it is not run by Doco-CD and has not been run as part of this repository change.
+Authoritative IPAM must first reserve/exclude `.26`, and switch/SRX DAI, DHCP-snooping,
+IP-source-guard, port-security, and ARP policy must permit `.26` to share c0's parent MAC.
+
+Omada attaches only to `c0_omada_mgmt`, never `c0_services`, and publishes no host ports. Because
+IPvlan is direct L2 exposure, absence of `ports:` means no Docker host-port binding or DNAT; it is
+not a firewall. Required Omada listeners and network policy must be verified live. The complete
+migration, network lifecycle, port list, acceptance, backup, upgrade, and rollback procedure is in
+[`docs/OMADA.md`](../docs/OMADA.md).
 
 ## SERVICES Network
 

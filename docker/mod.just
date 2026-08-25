@@ -9,7 +9,7 @@ default:
     just -l docker
 
 [doc('Validate the c0 Doco-CD bootstrap configuration')]
-validate-c0: validate-openbao validate-powerdns
+validate-c0: validate-openbao validate-powerdns validate-omada-controller
     cd "{{ source_directory() }}/.."
     yamllint .doco-cd.c0.yml .sops.yaml docker/bootstrap/c0/doco-cd/compose.yml docker/bootstrap/c0/doco-cd/poll-config.yml
     DOCO_CD_API_SECRET_FILE=/dev/null DOCO_CD_SOPS_AGE_KEY_FILE=/dev/null docker compose -f docker/bootstrap/c0/doco-cd/compose.yml config --quiet
@@ -85,4 +85,94 @@ validate-powerdns:
         and all(.services[]; (.secrets // []) == [])
         and all(.services[]; all((.volumes // [])[]; .source != "/var/run/docker.sock"))
         and all(.services[]; all((.volumes // [])[]; (.source | contains("openbao")) | not))
+    ' "$rendered" >/dev/null
+
+[private]
+validate-omada-controller:
+    cd "{{ source_directory() }}/.."
+    yamllint docker/c0/omada-controller/.doco-cd.yaml docker/c0/omada-controller/compose.yml
+    yq -e '.name == "omada-controller-c0" and has("force_recreate") == false' docker/c0/omada-controller/.doco-cd.yaml >/dev/null
+    yq -e '.name == "omada-controller-c0" and .services["omada-controller"].mem_swappiness == 0' docker/c0/omada-controller/compose.yml >/dev/null
+    bash -n docker/bootstrap/c0/omada-controller-network/ensure.sh docker/bootstrap/c0/omada-controller-network/tests/ensure.sh
+    docker/bootstrap/c0/omada-controller-network/tests/ensure.sh
+    rendered="$(mktemp)"
+    trap 'rm -f "$rendered"' EXIT
+    docker compose -f docker/c0/omada-controller/compose.yml config --format json >"$rendered"
+    jq -e '
+        .name == "omada-controller-c0"
+        and (.services | keys | sort) == ["omada-controller", "volume-init"]
+        and all(.services[]; .image == "docker.io/mbentley/omada-controller:6.2.14.11@sha256:157f0e730e6ce4211ab5df533af656495c9803791356ced7fcec28b3caca03ad")
+        and all(.services[]; .platform == "linux/amd64")
+        and all(.services[]; ((.ports // []) | length) == 0)
+        and all(.services[]; ((.secrets // []) | length) == 0)
+        and all(.services[]; ((.configs // []) | length) == 0)
+        and all(.services[]; .privileged != true)
+        and all(.services[]; all((.volumes // [])[]; .type == "volume" and .source != "/var/run/docker.sock" and .volume.nocopy == true))
+        and .services["volume-init"].user == "0:0"
+        and .services["volume-init"].network_mode == "none"
+        and .services["volume-init"].entrypoint == ["/bin/sh", "-c"]
+        and .services["volume-init"].command == ["chown 508:508 /opt/tplink/EAPController/data /opt/tplink/EAPController/logs"]
+        and .services["volume-init"].cap_drop == ["ALL"]
+        and .services["volume-init"].cap_add == ["CHOWN"]
+        and .services["volume-init"].security_opt == ["no-new-privileges:true"]
+        and (.services["volume-init"].restart // "") == ""
+        and ((.services["volume-init"].networks // {}) | length) == 0
+        and (.services["volume-init"].volumes | length) == 2
+        and ([.services["volume-init"].volumes[].source] | sort) == ["omada-controller-data", "omada-controller-logs"]
+        and (.services["volume-init"].environment // {}) == {}
+        and any(.services["volume-init"].volumes[]; .source == "omada-controller-data" and .target == "/opt/tplink/EAPController/data")
+        and any(.services["volume-init"].volumes[]; .source == "omada-controller-logs" and .target == "/opt/tplink/EAPController/logs")
+        and .services["omada-controller"].user == "508:508"
+        and .services["omada-controller"].cap_drop == ["ALL"]
+        and (.services["omada-controller"].cap_add // []) == []
+        and .services["omada-controller"].security_opt == ["no-new-privileges:true"]
+        and .services["omada-controller"].restart == "unless-stopped"
+        and .services["omada-controller"].stop_grace_period == "1m0s"
+        and .services["omada-controller"].depends_on["volume-init"].condition == "service_completed_successfully"
+        and .services["omada-controller"].environment == {
+            "MANAGE_HTTP_PORT": "8088",
+            "MANAGE_HTTPS_PORT": "8043",
+            "PORTAL_HTTP_PORT": "8088",
+            "PORTAL_HTTPS_PORT": "8843",
+            "PORT_ADOPT_V1": "29812",
+            "PORT_APP_DISCOVERY": "27001",
+            "PORT_DEVICE_MONITOR": "29817",
+            "PORT_DISCOVERY": "29810",
+            "PORT_MANAGER_V1": "29811",
+            "PORT_MANAGER_V2": "29814",
+            "PORT_RTTY": "29816",
+            "PORT_TRANSFER_V2": "29815",
+            "PORT_UPGRADE_V1": "29813",
+            "ROOTLESS": "true",
+            "TZ": "Asia/Jakarta",
+            "UPGRADE_HTTPS_PORT": "8043",
+            "WEB_CONFIG_OVERRIDE": "false"
+        }
+        and .services["omada-controller"].healthcheck.test == ["CMD", "/healthcheck.sh"]
+        and .services["omada-controller"].healthcheck.start_period == "5m0s"
+        and .services["omada-controller"].healthcheck.interval == "30s"
+        and .services["omada-controller"].healthcheck.timeout == "5s"
+        and .services["omada-controller"].healthcheck.retries == 3
+        and .services["omada-controller"].cpus == 2
+        and .services["omada-controller"].mem_limit == 4294967296
+        and .services["omada-controller"].memswap_limit == 5368709120
+        and ((.services["omada-controller"].mem_swappiness // 0) == 0)
+        and .services["omada-controller"].ulimits.nofile.soft == 4096
+        and .services["omada-controller"].ulimits.nofile.hard == 8192
+        and .services["omada-controller"].logging.driver == "json-file"
+        and .services["omada-controller"].logging.options == {"max-file": "3", "max-size": "10m"}
+        and (.services["omada-controller"].volumes | length) == 2
+        and ([.services["omada-controller"].volumes[].source] | sort) == ["omada-controller-data", "omada-controller-logs"]
+        and any(.services["omada-controller"].volumes[]; .source == "omada-controller-data" and .target == "/opt/tplink/EAPController/data")
+        and any(.services["omada-controller"].volumes[]; .source == "omada-controller-logs" and .target == "/opt/tplink/EAPController/logs")
+        and (.services["omada-controller"].networks | keys) == ["c0_omada_mgmt"]
+        and .services["omada-controller"].networks.c0_omada_mgmt.ipv4_address == "10.25.10.26"
+        and ([.services | to_entries[] | select(.value.networks.c0_omada_mgmt? != null) | .key] == ["omada-controller"])
+        and (.networks | keys) == ["c0_omada_mgmt"]
+        and .networks.c0_omada_mgmt.name == "c0_omada_mgmt"
+        and .networks.c0_omada_mgmt.external == true
+        and (.networks.c0_services? == null)
+        and (.volumes | keys | sort) == ["omada-controller-data", "omada-controller-logs"]
+        and .volumes["omada-controller-data"].name == "omada-controller-data"
+        and .volumes["omada-controller-logs"].name == "omada-controller-logs"
     ' "$rendered" >/dev/null

@@ -5,6 +5,7 @@ on:
     paths:
       - docker/**
       - .doco-cd*.yml
+      - docs/OMADA.md
       - .sops.yaml
       - .justfile
       - .mise.toml
@@ -17,6 +18,7 @@ on:
       - docker/**
       - .doco-cd*.yml
       - .sops.yaml
+      - docs/OMADA.md
       - .justfile
       - .mise.toml
       - mise.lock
