@@ -222,7 +222,7 @@ The workstation identity path, `age-keygen` procedure, `sops updatekeys` and
 authoritative SOPS reference. The c0/OpenBao additions here only describe
 how Doco-CD consumes that work; they do not redefine author-side workflow.
 
-For OpenBao architecture, contracts, and the BIND9 gate, see
+For OpenBao architecture, contracts, and the private DNS publication gate, see
 [OPENBAO.md](OPENBAO.md). For day-2 operations and recovery procedure, see
 [openbao/BOOTSTRAP.md](openbao/BOOTSTRAP.md) and
 [openbao/OPERATIONS.md](openbao/OPERATIONS.md).

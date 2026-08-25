@@ -26,10 +26,10 @@ service:
   under `docker/c0/openbao/encrypted/` hold only the Cloudflare DNS-01 token
   and the ACME account email.
 
-Scope is intentionally narrow. BIND9 is not deployed, no native
-observability agent runs on c0, and cAdvisor is not installed. Adding any of
-those is a separate plan that must not weaken the static-address and
-no-host-port model.
+Scope is intentionally narrow. PowerDNS Authoritative is deployed independently at
+`10.25.13.33`; OpenBao does not depend on it. No native observability agent or cAdvisor is
+installed on c0. Adding resolver forwarding or observability must not weaken the static-address
+and no-host-port model.
 
 ## Component and data flow
 
@@ -148,8 +148,8 @@ The long-running server. Pinned image, `user: "100:1000"`, command
 `mem_swappiness: 0`, `restart: unless-stopped`. The static
 `BAO_ADDR=https://vault.monosense.io:8200` advertises the public client
 URL, and `extra_hosts` binds `vault.monosense.io` to `10.25.13.34` so
-pre-BIND administration works without modifying the workstation or c0 host
-resolver. Only this service attaches to `c0_services` at `10.25.13.34`.
+the pre-resolver-cutover path works without modifying the workstation or c0 host resolver. Only
+this service attaches to `c0_services` at `10.25.13.34`.
 Its healthcheck runs `bao status` and accepts documented exit codes `0`
 (unsealed) and `2` (sealed), reflecting that the first uninitialized
 response must not be treated as failure; `/v1/sys/health` HTTP
@@ -199,11 +199,10 @@ generation. `openbao-acme` is the Certbot lineage tree.
   `10.25.13.1`). Only `openbao` joins it; the three other services run on
   `none` or the default bridge. Static address: `10.25.13.34`.
 - No host port mapping. `docker port <openbao-c0-openbao-id>` returns an
-  empty list. Public DNS for `vault.monosense.io` is intentionally
-  absent; until BIND9 deploys, only the workstation and c1 use
-  `--resolve vault.monosense.io:8200:10.25.13.34` to reach the service.
-  The BIND9 plan adds the authoritative record `vault.monosense.io ->
-  10.25.13.34`.
+  empty list. Public DNS for `vault.monosense.io` is intentionally absent. PowerDNS Authoritative
+  serves the private record at `10.25.13.33`, but AdGuard does not forward to it; workstation and
+  c1 OpenBao procedures therefore continue using
+  `--resolve vault.monosense.io:8200:10.25.13.34`.
 - Listener (`config/openbao.hcl`):
     - `address = "0.0.0.0:8200"` (client), `cluster_address =
       "0.0.0.0:8201"` (cluster)
@@ -296,23 +295,20 @@ OpenBao depends on:
 2. The external `c0_services` network with `10.25.13.34` free.
 3. The named volumes `openbao-data`, `openbao-acme`, `openbao-tls` not
    in conflicting use.
-4. A reachable path to `10.25.13.34:8200` for any caller; until BIND9
-   deploys, callers use `--resolve vault.monosense.io:8200:10.25.13.34`.
-   Public DNS for `vault.monosense.io` is intentionally absent and does
-   not currently resolve to `10.25.13.34`.
+4. A reachable path to `10.25.13.34:8200` for any caller. PowerDNS serves the private record
+   directly, but AdGuard forwarding is not configured; callers use
+   `--resolve vault.monosense.io:8200:10.25.13.34`. Public DNS remains intentionally absent.
 5. The Cloudflare DNS zone for `monosense.io` delegated to the operator
    account, with a token scoped to `Zone:DNS:Edit`.
 
 OpenBao does not depend on cAdvisor, a native observability agent, or any
 c1-resident service.
 
-## BIND9 gate
+## Private DNS publication gate
 
-BIND9 is explicitly out of scope and must not be deployed until every
-completion check below passes. The BIND9 plan will add the authoritative
-`vault.monosense.io -> 10.25.13.34` record; until then public DNS for
-`vault.monosense.io` remains absent and `--resolve` is the only test
-path.
+PowerDNS deployment was prohibited until every completion check below passed. The deployed private
+zone now contains `vault.monosense.io -> 10.25.13.34`, but client resolvers are unchanged and
+`--resolve` remains the OpenBao runbook path until a separate AdGuard cutover is reviewed.
 
 OpenBao is complete only when all of the following hold:
 
@@ -342,8 +338,8 @@ OpenBao is complete only when all of the following hold:
   `certificate-renewer` auto-restart; volumes and current certificate
   persist.
 
-Only after every item above passes does the BIND9 plan begin, and that
-plan must not migrate Doco-CD away from SOPS/age.
+PowerDNS deployment began only after every item above passed and did not migrate Doco-CD away from
+SOPS/age.
 
 ## Operational runbooks
 

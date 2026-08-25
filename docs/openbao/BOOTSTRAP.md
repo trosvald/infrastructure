@@ -85,7 +85,7 @@ flowchart LR
     M --> N[Authz + root revoke]
     N --> O[Audit proof]
     O --> P[Backup + restore]
-    P --> Q[Reboot + BIND gate]
+    P --> Q[Reboot + private DNS gate]
 ```
 
 ## 1. Preflight
@@ -155,11 +155,11 @@ dig +short NS monosense.io
 dig +short vault.monosense.io
 ```
 
-`monosense.io` is Cloudflare-delegated. `dig +short vault.monosense.io`
-returns no answer while BIND9 is undeployed. The operator mailbox for
-ACME expiry notices is monitored. If `vault.monosense.io` resolves via
-public DNS, stop; BIND9 or another authoritative server has
-intervened and the bootstrap is no longer the first publisher.
+`monosense.io` is Cloudflare-delegated and public
+`vault.monosense.io` must return no answer. PowerDNS now serves the reviewed private record only
+when queried directly at `10.25.13.33`; AdGuard forwarding remains disabled. The operator mailbox
+for ACME expiry notices is monitored. If `vault.monosense.io` resolves via public DNS, stop because
+another public publisher has intervened.
 
 ### 1.5 Host swap
 
@@ -628,7 +628,7 @@ add a host-side file-share or copy step that would broaden access.
 
 ### 9.3 External reachability via `--resolve`
 
-`vault.monosense.io` remains absent from public DNS until BIND deploys, so
+`vault.monosense.io` remains absent from public DNS and AdGuard does not forward to PowerDNS, so
 clients use `curl --resolve` against the static `10.25.13.34`.
 
 `ws$`
@@ -984,9 +984,8 @@ audit stream shows any of these, stop and audit the policy.
 These three phases live in separate runbooks so each stays focused.
 Follow [BACKUP-RESTORE](BACKUP-RESTORE.md) for the encrypted snapshot,
 [OPERATIONS](OPERATIONS.md) for the controlled c0 reboot. The bootstrap
-report is complete only when all three phases pass; until they do,
-BIND9, cAdvisor, and native observability on c0, and any c1 service,
-remain undeployed.
+report is complete only when all three phases pass. PowerDNS, cAdvisor, native observability on c0,
+and any c1 service were prohibited until completion.
 
 ## 16. Completion checklist
 
@@ -1012,6 +1011,6 @@ Record timestamps (without secrets) in the operator run log.
 | 15 | Isolated c1 restore succeeds, unseals with two production shares, returns the sentinel, and confirms audit/listener HCL. | `bao status`, `bao kv get` |
 | 16 | Controlled c0 reboot returns Docker-restored `doco-cd`, `openbao`, `certificate-renewer`; OpenBao serves sealed `503`, then `200` after two shares; volume identities and served certificate serial match. | `bao status`, `docker ps` |
 
-OpenBao is not complete until all 16 pass. After they do, start a
-separate BIND9 plan that adds `vault.monosense.io -> 10.25.13.34`; never
-migrate Doco-CD away from SOPS/age after OpenBao exists.
+OpenBao is not complete until all 16 pass. After they passed, the standalone PowerDNS deployment
+added the private `vault.monosense.io -> 10.25.13.34` record without changing Doco-CD's SOPS/age
+boundary.

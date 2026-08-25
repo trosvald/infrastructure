@@ -51,10 +51,10 @@ The procedures below assume:
   static address `10.25.13.34` reserved for OpenBao.
 - The OpenBao project name is `openbao-c0`; container resolution always
   uses Compose labels, never generated names.
-- `vault.monosense.io` is **not** delegated by public DNS until BIND9 is
-  deployed. Every external probe uses `curl --resolve` or `openssl
-  -servername` against `10.25.13.34` so the public chain is verified
-  without depending on a record that does not yet exist.
+- Public DNS intentionally omits `vault.monosense.io`. PowerDNS serves the private record directly
+  at `10.25.13.33`, but AdGuard forwarding is disabled. Every external OpenBao probe therefore uses
+  `curl --resolve` or `openssl -servername` against `10.25.13.34` so the public chain is verified
+  without depending on client resolver configuration.
 - The non-root OpenBao image runs as UID `100:1000` and the
   `openbao-data` volume is owned and readable only by that user.
 - Manual Shamir 3-of-2 unseal is intentional: every restart requires two
@@ -723,13 +723,12 @@ EOF
 A non-zero exit or any line beginning with `:` followed by `8200`
 or `8201` is a containment violation.
 
-## Public reachability
+## Reachability before resolver cutover
 
-Public DNS for `vault.monosense.io` is **not** delegated until
-BIND9 is deployed. Every external probe uses `curl --resolve`
-against `10.25.13.34` so the public chain is verified without
-depending on a record that does not yet exist. From both c0 and
-c1:
+Public DNS for `vault.monosense.io` is intentionally absent. PowerDNS serves the private record
+directly, but AdGuard does not forward to it. Every external probe uses `curl --resolve` against
+`10.25.13.34` so the public chain is verified independently of client resolver configuration. From
+both c0 and c1:
 
 ```bash
 ssh monosense@10.25.10.20 'sudo bash -s' <<'EOF'

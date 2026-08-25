@@ -1,6 +1,6 @@
 # Monosense Container Services
 
-Inventory last verified over SSH on 2026-08-24. The canonical hostnames are `c0` and `c1`.
+Inventory last verified over SSH on 2026-08-25. The canonical hostnames are `c0` and `c1`.
 
 ## Nodes
 
@@ -9,7 +9,7 @@ Inventory last verified over SSH on 2026-08-24. The canonical hostnames are `c0`
 | `c0` | Core services | Intel Core i7-7700T, 4 cores/8 threads | 32 GiB | Debian 13.6, kernel `6.12.101+deb13-amd64` | Docker Engine 29.7.2, Compose 5.5.0 |
 | `c1` | General services | Intel Core i7-8700T, 6 cores/12 threads | 64 GiB | Debian 13.6, kernel `6.12.101+deb13-amd64` | Docker Engine 29.7.2, Compose 5.5.0 |
 
-Both Docker services are enabled. Both hosts currently use the `overlayfs` storage driver and `json-file` logging driver. No containers were present at inventory time.
+c0 runs Doco-CD, OpenBao, its certificate renewer, and PowerDNS. c1 has no persistent containers.
 
 ## Doco-CD on c0
 
@@ -51,10 +51,9 @@ The API secret is `/opt/doco-cd/secrets/api_secret`, owned by root with mode `06
 copy from c0, or commit it. Doco-CD owns the persistent named volume `doco-cd-data`; rollback must
 not remove that volume.
 
-Doco-CD is deployed on c0 and reboot-verified as of 2026-08-24. Its container, startup
-poll, named volume, and loopback-only bindings survived a controlled reboot. BIND and OpenBao
-remain undeployed; this bootstrap does not add cAdvisor, native observability, or a c0 SERVICES
-address.
+Doco-CD and OpenBao are deployed and reboot-verified as of 2026-08-24. PowerDNS Authoritative was
+deployed on 2026-08-25 and its container restart, named-volume persistence, encrypted backup, and
+isolated c1 restore were verified. cAdvisor and native observability remain undeployed on c0.
 
 ## Storage
 
@@ -94,10 +93,14 @@ Management addresses remain unchanged during the initial deployment:
 | `c0` | `10.25.10.20/24` | `enp0s31f6.2513` | `c0_services` | `10.25.13.16/32` | `10.25.13.33-62` | Network and shim deployed |
 | `c1` | `10.25.10.101/24` | `bond0.2513` | `c1_services` | `10.25.13.17/32` | `10.25.13.65-94` | VLAN parent ready; network and shim pending |
 
-SERVICES uses VLAN 2513, subnet `10.25.13.0/24`, gateway `10.25.13.1`, static addressing, Docker IPvlan L2, and MTU 1496. Planned c0 assignments are:
+SERVICES uses VLAN 2513, subnet `10.25.13.0/24`, gateway `10.25.13.1`, static addressing, Docker IPvlan L2, and MTU 1496. Deployed c0 assignments are:
 
-- BIND9: `10.25.13.33`
+- PowerDNS Authoritative: `10.25.13.33`
 - OpenBao: `10.25.13.34`
+
+PowerDNS is authoritative-only with its API disabled and no host port mappings. AdGuard Home at
+`10.25.10.100`, Cloudflare authority, and Kubernetes are unchanged. See
+[`docs/POWERDNS.md`](../docs/POWERDNS.md).
 
 On c0, `/etc/network/interfaces` persistently creates the VLAN parent and IPvlan shim. The host route `10.25.13.32/27 dev c0-svc-shim src 10.25.13.16` provides host-to-container access. `c0_services` uses IPvlan L2 with IPv6 disabled and no dynamic `--ip-range`; every service must declare its static address.
 
