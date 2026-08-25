@@ -54,9 +54,8 @@ not remove that volume.
 
 Doco-CD and OpenBao are deployed and reboot-verified as of 2026-08-24. PowerDNS Authoritative was
 deployed on 2026-08-25 and its container restart, named-volume persistence, encrypted backup, and
-isolated c1 restore were verified. Omada Controller was deployed and restored on 2026-08-25;
-five retained devices reconnected before and after a controlled restart. cAdvisor and native
-observability remain undeployed on c0.
+isolated c1 restore were verified. Omada Controller was reset to a fresh, unconfigured deployment
+on 2026-08-25 for manual operator setup. cAdvisor and native observability remain undeployed on c0.
 
 ## Application inventory
 
@@ -66,9 +65,9 @@ observability remain undeployed on c0.
 | `c0` | `powerdns-c0` | `10.25.13.33`, `c0_services` | Direct SERVICES IPvlan | Deployed |
 | `c0` | `omada-controller-c0` | `10.25.10.26`, `c0_omada_mgmt` | Direct MGMT IPvlan; no host ports | Deployed |
 
-Omada runs Controller `6.2.14.11` with restored `6.0.0.25` state. The live restore retained one site,
-three switches, and two APs; all five devices reported connected and healthy before the acceptance
-restart, then re-established controller sessions after it. See [`docs/OMADA.md`](../docs/OMADA.md).
+Omada runs a fresh Controller `6.2.14.11` deployment. No old backup is restored into the active
+volumes. The setup wizard is available for manual account, site, and device configuration; see
+[`docs/OMADA.md`](../docs/OMADA.md).
 
 ## Storage
 

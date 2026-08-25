@@ -1,8 +1,8 @@
 # Omada Software Controller
 
 Omada Software Controller is deployed on c0 and reconciled by Doco-CD from commit `8948d1e`.
-Controller `6.2.14.11` restored the supplied `6.0.0.25` backup on 2026-08-25. This runbook remains
-the authoritative deployment, recovery, and rollback procedure.
+Controller `6.2.14.11` was reset to clean named volumes on 2026-08-25. No old backup is restored;
+the operator owns manual account, site, and device configuration.
 
 ## Evidence boundary
 
@@ -25,14 +25,10 @@ the authoritative deployment, recovery, and rollback procedure.
 - The container is healthy at `10.25.10.26/24` with gateway `10.25.10.1`, no published ports, and
   only the approved network attachment.
 - The controller reached `10.25.10.1:443` from its network namespace.
-- The `6.0.0.25` backup checksum is
-  `b318ee5ce8031c15a869b40e0c00043c2b755dd368897d5174fe5c7206f911c4`; its ignored local custody
-  path is `docker/c0/omada-controller/data/restore/`.
-- The first-run UI reported `Restored Successfully` and opened the restored global dashboard.
-- Restored state contains one site, three switches, and two APs. All five devices reported
-  `CONNECTED` with `Good` health.
-- A controlled Docker restart used the configured shutdown path, returned to `running healthy`,
-  retained both named volumes, and logs recorded all five device sessions reconnecting.
+- The active named volumes are fresh and contain no imported old-controller configuration.
+- The UI presents the first-run setup wizard and `Create a Local Account`.
+- Historical recovery attempts were preserved in quarantine volumes and are not attached to the
+  running project.
 - Listener inspection confirmed the documented TCP/UDP ports and loopback-only MongoDB
   `127.0.0.1:27217`.
 
@@ -42,10 +38,10 @@ The following evidence is still required for complete operational closure:
 
 - authoritative IPAM reservation/exclusion evidence for `10.25.10.26`;
 - switch/SRX DAI, DHCP-snooping, IP-source-guard, port-security, and ARP-policy evidence;
-- restored administrator recovery-login verification after the acceptance restart;
+- completion of the first-run local owner, controller, site, and device configuration;
 - certificate identity/trust review;
-- Omada mobile-app discovery, OLT discovery where applicable, and a post-restore backup export;
-- encrypted off-host backup retention, an isolated restore drill, and exercised rollback.
+- device adoption, Omada mobile-app discovery, and OLT discovery where applicable;
+- post-setup backup export, encrypted off-host retention, an isolated restore drill, and rollback.
 
 IP address preservation alone is insufficient. Device adoption, site/controller identity,
 certificates, administrators, settings, and port state live in the controller database. Raw v5 data
