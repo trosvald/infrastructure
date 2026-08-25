@@ -40,25 +40,27 @@ services:
     volumes:
       - *data-volume
 
-  zone-reconcile:
+  zone-init:
     <<: *powerdns-image
     network_mode: none
     depends_on:
       data-init:
         condition: service_completed_successfully
-    entrypoint: ["/usr/local/bin/reconcile.sh"]
+    entrypoint: ["/usr/local/bin/initialize.sh"]
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
     volumes:
       - *data-volume
-      - ./zones:/zones:ro
-      - ./scripts/reconcile.sh:/usr/local/bin/reconcile.sh:ro
+      - ./zones/monosense.io.zone:/bootstrap/monosense.io.zone:ro
+      - ./scripts/initialize.sh:/usr/local/bin/initialize.sh:ro
 
   powerdns:
     <<: *powerdns-image
     depends_on:
-      zone-reconcile:
+      data-init:
+        condition: service_completed_successfully
+      zone-init:
         condition: service_completed_successfully
     command:
       - --api=no

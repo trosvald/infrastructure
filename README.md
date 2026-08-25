@@ -190,9 +190,9 @@ The Kubernetes manifests define two ExternalDNS instances for future DNS automat
   PowerDNS.
 - **Public** — The current manifest targets Cloudflare for routes on the `external` Gateway.
 
-PowerDNS Authoritative runs independently on c0 at `10.25.13.33`. Git manages one static private
-forward zone and four reverse `/24` zones; its API is disabled. AdGuard, Cloudflare, and Kubernetes
-remain unchanged; see [`docs/POWERDNS.md`](docs/POWERDNS.md).
+PowerDNS Authoritative currently runs independently on c0 at `10.25.13.33` with only static private
+bootstrap records. AdGuard, Cloudflare, and Kubernetes remain unchanged; see
+[`docs/POWERDNS.md`](docs/POWERDNS.md).
 
 ---
 
