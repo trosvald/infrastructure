@@ -34,8 +34,9 @@ existing `Secret` resources. Images are normally digest-pinned.
 
 ### Docker on c0
 
-`docker/bootstrap/c0/doco-cd/` is host-bootstrap-owned and must remain outside `docker/c0/`.
-Doco-CD polls published `origin/main`; application projects are direct children of `docker/c0/`.
+`docker/c0/.doco-cd.yaml` owns host deployment settings, while the bootstrap-owned controller
+source lives in `docker/c0/.doco-cd/`. Doco-CD polls published `origin/main`; application projects
+are direct children of `docker/c0/`, and host prerequisites live under `docker/c0/.host/`.
 
 - OpenBao: Git → Doco-CD → Compose control plane; Raft and ACME data live in preserved named
   volumes. Certificate installation uses validated, fsynced generations and atomic symlink changes.
@@ -65,8 +66,9 @@ checks, or runtime cleanup.
 - `kubernetes/apps/`: namespace/app declarations and dependency-gated reconciliation.
 - `kubernetes/components/`: reusable Kustomize components.
 - `talos/`: node inventory and machine/network Minijinja templates.
-- `docker/bootstrap/`: host-owned Doco-CD bootstrap.
-- `docker/c0/`: Doco-discovered OpenBao and PowerDNS Compose projects.
+- `docker/c0/.doco-cd/`: bootstrap-owned Doco-CD controller source.
+- `docker/c0/.host/`: c0 host prerequisites that Doco-CD must not manage.
+- `docker/c0/`: host Doco configuration and direct-child OpenBao, PowerDNS, and Omada applications.
 - `ansible/junos/`: isolated inventory, intent, roles, scripts, fixtures, and tests.
 - `docs/`: operational, backup/restore, secret-custody, and migration runbooks.
 - `scripts/`: repository-wide utilities, including the fail-closed Gitleaks wrapper.

@@ -134,15 +134,16 @@ functional traffic; environment values are not evidence.
 
 ## External network lifecycle
 
-Compose declares `c0_omada_mgmt` as external. Doco-CD cannot create or remove it. The host-bootstrap
-artifact is `docker/bootstrap/c0/omada-controller-network/ensure.sh`; it owns only the Docker network
-object and never changes host interfaces, routes, addresses, SRX, switches, or IPAM.
+Compose declares `c0_omada_mgmt` as external. Doco-CD cannot create or remove it. The c0 host
+prerequisite is `docker/c0/.host/networks/omada-mgmt/ensure.sh`; it owns only the Docker network
+object and never changes host interfaces, routes, addresses, SRX, switches, or IPAM. Relocating the
+helper does not mutate or replace the live network.
 
 > **OPERATOR-ONLY — LIVE/DANGEROUS. DO NOT RUN FROM CI OR AS PART OF REPOSITORY VALIDATION.** Run on
 > c0 from the root of a reviewed checkout only after the IPAM and switch-policy prerequisites pass.
 
 ```sh
-sudo ./docker/bootstrap/c0/omada-controller-network/ensure.sh
+sudo ./docker/c0/.host/networks/omada-mgmt/ensure.sh
 sudo docker network inspect c0_omada_mgmt
 ```
 
@@ -153,7 +154,7 @@ The ensure operation is deterministic:
    non-attachable, non-ingress, non-config-only state; IPv4 enabled and IPv6 disabled; `ipvlan`
    driver in L2 bridge mode; parent `enp0s31f6`; read-only parent preflight requiring the interface
    to be up at MTU `1500`; default IPAM with subnet `10.25.10.0/24`, gateway `10.25.10.1`, range
-   `10.25.10.26/32`, and auxiliary address `c0=10.25.10.20`; plus the exact bootstrap
+   `10.25.10.26/32`, and auxiliary address `c0=10.25.10.20`; plus the exact host-prerequisite
    ownership/purpose labels. Any mismatch fails closed; it never repairs or replaces the object.
 3. If absent, it creates exactly that object once and immediately re-inspects it. A mismatched or
    failed post-create check is an error, not acceptance.

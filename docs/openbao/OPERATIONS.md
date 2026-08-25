@@ -1006,7 +1006,7 @@ reinitialized.
    never copy or adapt the image reference, never substitute
    paths. The single source of truth for the image, the
    loopback ports, the socket and data mounts, and the secrets
-   is `docker/bootstrap/c0/doco-cd/compose.yml`. After any SOPS
+   is `docker/c0/.doco-cd/docker-compose.app.yaml`. After any SOPS
    key correction, restart only Doco-CD with both explicit
    secret env vars: the renewer and OpenBao do **not** cache
    the age identity, and `certificate-init` is a one-shot

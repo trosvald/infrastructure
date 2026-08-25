@@ -97,7 +97,7 @@ to Cloudflare through a restricted token.
 | `docker/c0/openbao/encrypted/acme.env`      | repository    | 0644   | SOPS-encrypted `.env` (single `ACME_EMAIL` key)               |
 | `docker/c0/openbao/encrypted/cloudflare.ini`| repository    | 0644   | SOPS-encrypted `.ini` (single `dns_cloudflare_api_token` key) |
 | `.sops.yaml`                                | repository    | 0644   | Three-recipient creation rule scoped to `docker/c0/.../encrypted/` |
-| `docker/bootstrap/c0/doco-cd/compose.yml`   | host (`/opt/doco-cd/compose.yml`) | 0644 | Doco-CD container with `SOPS_AGE_KEY_FILE` env literal       |
+| `docker/c0/.doco-cd/docker-compose.app.yaml` | host (`/opt/doco-cd/compose.yml`) | 0644 | Doco-CD container with `SOPS_AGE_KEY_FILE` env literal |
 | `/opt/doco-cd/secrets/api_secret`           | `root:root`   | 0600   | Doco-CD API secret (unchanged from existing deployment)       |
 | `/opt/doco-cd/secrets/sops_age_key`         | `root:root`   | 0600   | Dedicated c0 Doco-CD age identity, never written to workstation storage |
 | `openbao-data` (named volume root)          | `100:1000`    | 0700   | Raft storage path `/openbao/data`                             |

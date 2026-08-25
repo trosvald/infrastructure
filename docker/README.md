@@ -14,17 +14,29 @@ persistent containers.
 
 ## Doco-CD on c0
 
-Doco-CD is host-bootstrap-owned and is not one of the applications it manages. Its reviewed
-bootstrap source is `docker/bootstrap/c0/doco-cd/`; operators install `compose.yml` and
-`poll-config.yml` once as `/opt/doco-cd/compose.yml` and `/opt/doco-cd/poll-config.yml`.
-Application Compose projects belong under direct children of `docker/c0/` and are discovered
-through `.doco-cd.c0.yml`. Never place the Doco-CD bootstrap beneath `docker/c0/`, because doing
-so would allow the controller to discover and manage itself.
+All c0-owned repository payload lives below `docker/c0/`, with separate ownership boundaries:
+
+| Path | Responsibility |
+| --- | --- |
+| `docker/c0/.doco-cd.yaml` | Host Doco deployment settings |
+| `docker/c0/.doco-cd/` | Bootstrap-owned Doco controller source |
+| `docker/c0/.host/` | Host prerequisites that are not Doco applications |
+| `docker/c0/<app>/` | Direct-child Doco-managed applications and their local metadata |
+
+Doco-CD remains bootstrap-owned and is not one of the applications it manages. Operators install
+`docker/c0/.doco-cd/docker-compose.app.yaml` and `poll-config.yml` as
+`/opt/doco-cd/compose.yml` and `/opt/doco-cd/poll-config.yml`; the differing source and installed
+filenames are intentional. Doco v0.111.0 recognizes only `compose.yaml`, `compose.yml`,
+`docker-compose.yml`, and `docker-compose.yaml` during auto-discovery, so
+`docker-compose.app.yaml` cannot make the controller manage itself. Hidden directories are scanned,
+therefore validation forbids recognized Compose filenames anywhere under `.doco-cd/` and `.host/`.
 
 The poller reads the public repository `https://github.com/trosvald/infrastructure.git` at
-`refs/heads/main` every 180 seconds with target `c0`. Files must therefore be committed and
-published to `origin/main` before Doco-CD can use them. Local filesystem watching, reconciliation,
-and webhooks are disabled.
+`refs/heads/main` every 180 seconds without a target. `DEPLOY_CONFIG_BASE_DIR=./docker/c0/` selects
+the host `.doco-cd.yaml`; its `working_dir: ./docker/c0` remains repository-root-relative and
+discovers normal direct-child applications at depth one. Local filesystem watching, reconciliation,
+and webhooks remain disabled. Files must be committed and published to `origin/main` before Doco-CD
+can use them.
 
 The management API and metrics endpoint are published only on c0 loopback:
 
@@ -51,6 +63,28 @@ sudo DOCO_CD_API_SECRET_FILE=/opt/doco-cd/secrets/api_secret \
 The API secret is `/opt/doco-cd/secrets/api_secret`, owned by root with mode `0600`. Never print,
 copy from c0, or commit it. Doco-CD owns the persistent named volume `doco-cd-data`; rollback must
 not remove that volume.
+
+### Host-scoped controller migration and rollback
+
+The repository change must be published in two stages; do not collapse the runtime proof between
+them:
+
+1. Publish the new host-scoped files, validation, and documentation while retaining legacy
+   `.doco-cd.c0.yml` and `docker/bootstrap/c0/` on `origin/main`.
+2. Record read-only before-state for Doco-CD, OpenBao, PowerDNS, Omada, named volumes, and the
+   `c0_services` and `c0_omada_mgmt` networks. Never print secret contents.
+3. Back up `/opt/doco-cd`, validate the replacement configuration, preserve the existing secret
+   files and `doco-cd-data` volume, then recreate only Doco-CD.
+4. Require controller health, unchanged image and management bindings, a real successful Git poll,
+   exactly the three intended applications, no `.doco-cd` or `.host` project, and unchanged
+   application container identities, volumes, addresses, and networks.
+5. Only after that proof, publish deletion of the legacy root config and `docker/bootstrap/c0/`,
+   then require another real successful poll.
+
+Before legacy deletion, rollback restores the backed-up `/opt/doco-cd` files and recreates only
+Doco-CD; the old target config remains in Git. After legacy deletion, restore or revert those Git
+files first, then perform the same controller-only rollback. Never delete application or Doco-CD
+volumes, recreate application stacks, replace `c0_omada_mgmt`, or use `docker compose down -v`.
 
 Doco-CD and OpenBao are deployed and reboot-verified as of 2026-08-24. PowerDNS Authoritative was
 deployed on 2026-08-25 and its container restart, named-volume persistence, encrypted backup, and
@@ -124,11 +158,12 @@ acceptance probes must be confirmed absent before deployment. Operators and prob
 MGMT host. Any future shim requires a separately reviewed route/interface change and a newly
 reserved `/32`.
 
-`c0_omada_mgmt` is host-bootstrap-owned and external to Compose. The deterministic
-`docker/bootstrap/c0/omada-controller-network/ensure.sh` created the live network on 2026-08-25,
-then passed an idempotent exact-state recheck. It is not run by Doco-CD. Authoritative IPAM and
-switch/SRX DAI, DHCP-snooping, IP-source-guard, port-security, and ARP-policy evidence remain
-operator follow-up because the deployment did not modify or inspect those systems.
+`c0_omada_mgmt` is a c0 host prerequisite, external to Compose, and owned by
+`docker/c0/.host/networks/omada-mgmt/ensure.sh`. The helper created the live network on 2026-08-25,
+then passed an idempotent exact-state recheck. Moving its repository path does not run it, replace
+the network, or make it Doco-managed. Authoritative IPAM and switch/SRX DAI, DHCP-snooping,
+IP-source-guard, port-security, and ARP-policy evidence remain operator follow-up because the
+deployment did not modify or inspect those systems.
 
 Omada attaches only to `c0_omada_mgmt`, never `c0_services`, and publishes no host ports. Because
 IPvlan is direct L2 exposure, absence of `ports:` means no Docker host-port binding or DNAT; it is

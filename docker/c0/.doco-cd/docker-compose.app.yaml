@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     environment:
       API_SECRET_FILE: /run/secrets/api_secret
-      DEPLOY_CONFIG_BASE_DIR: /
+      DEPLOY_CONFIG_BASE_DIR: ./docker/c0/
       HTTP_PORT: "80"
       LOG_LEVEL: info
       METRICS_PORT: "9120"

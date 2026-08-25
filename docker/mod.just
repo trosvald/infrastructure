@@ -8,11 +8,23 @@ set shell := ['bash', '-euo', 'pipefail', '-c']
 default:
     just -l docker
 
-[doc('Validate the c0 Doco-CD bootstrap configuration')]
+[doc('Validate the c0 host-scoped Doco-CD configuration')]
 validate-c0: validate-openbao validate-powerdns validate-omada-controller
     cd "{{ source_directory() }}/.."
-    yamllint .doco-cd.c0.yml .sops.yaml docker/bootstrap/c0/doco-cd/compose.yml docker/bootstrap/c0/doco-cd/poll-config.yml
+    yamllint .doco-cd.c0.yml .sops.yaml docker/bootstrap/c0/doco-cd/compose.yml docker/bootstrap/c0/doco-cd/poll-config.yml docker/c0/.doco-cd.yaml docker/c0/.doco-cd/docker-compose.app.yaml docker/c0/.doco-cd/poll-config.yml
+    yq -e '.working_dir == "./docker/c0" and .auto_discovery.enabled == true and .auto_discovery.depth == 1 and .auto_discovery.delete == false and .force_recreate == false and .reconciliation.enabled == false' docker/c0/.doco-cd.yaml >/dev/null
+    yq -e 'length == 1 and .[0].url == "https://github.com/trosvald/infrastructure.git" and .[0].reference == "refs/heads/main" and .[0].interval == "180s" and .[0].watch == false and (.[0] | has("target") | not)' docker/c0/.doco-cd/poll-config.yml >/dev/null
+    yq -e '.services.doco-cd.image == "ghcr.io/kimdre/doco-cd:0.111.0@sha256:8c31f63f6bde1b67f0802619bad0599bf5e41503f5532be9cc58d0f063b1eeea" and .services.doco-cd.environment.DEPLOY_CONFIG_BASE_DIR == "./docker/c0/" and .services.doco-cd.environment.POLL_CONFIG_FILE == "/etc/doco-cd/poll-config.yml"' docker/c0/.doco-cd/docker-compose.app.yaml >/dev/null
+    DOCO_CD_API_SECRET_FILE=/dev/null DOCO_CD_SOPS_AGE_KEY_FILE=/dev/null docker compose -f docker/c0/.doco-cd/docker-compose.app.yaml config --quiet
     DOCO_CD_API_SECRET_FILE=/dev/null DOCO_CD_SOPS_AGE_KEY_FILE=/dev/null docker compose -f docker/bootstrap/c0/doco-cd/compose.yml config --quiet
+    python3 - <<'PY'
+    from pathlib import Path
+
+    recognized = {"compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"}
+    for boundary in (Path("docker/c0/.doco-cd"), Path("docker/c0/.host")):
+        offenders = sorted(path for path in boundary.rglob("*") if path.name in recognized)
+        assert not offenders, f"Doco-CD can auto-discover forbidden files: {offenders}"
+    PY
 
 [private]
 validate-openbao:
@@ -93,8 +105,8 @@ validate-omada-controller:
     yamllint docker/c0/omada-controller/.doco-cd.yaml docker/c0/omada-controller/compose.yml
     yq -e '.name == "omada-controller-c0" and has("force_recreate") == false' docker/c0/omada-controller/.doco-cd.yaml >/dev/null
     yq -e '.name == "omada-controller-c0" and .services["omada-controller"].mem_swappiness == 0' docker/c0/omada-controller/compose.yml >/dev/null
-    bash -n docker/bootstrap/c0/omada-controller-network/ensure.sh docker/bootstrap/c0/omada-controller-network/tests/ensure.sh
-    docker/bootstrap/c0/omada-controller-network/tests/ensure.sh
+    bash -n docker/c0/.host/networks/omada-mgmt/ensure.sh docker/c0/.host/networks/omada-mgmt/tests/ensure.sh
+    docker/c0/.host/networks/omada-mgmt/tests/ensure.sh
     rendered="$(mktemp)"
     trap 'rm -f "$rendered"' EXIT
     docker compose -f docker/c0/omada-controller/compose.yml config --format json >"$rendered"
@@ -154,8 +166,8 @@ validate-omada-controller:
         and .services["omada-controller"].healthcheck.timeout == "5s"
         and .services["omada-controller"].healthcheck.retries == 3
         and .services["omada-controller"].cpus == 2
-        and .services["omada-controller"].mem_limit == 4294967296
-        and .services["omada-controller"].memswap_limit == 5368709120
+        and (.services["omada-controller"].mem_limit | tonumber) == 4294967296
+        and (.services["omada-controller"].memswap_limit | tonumber) == 5368709120
         and ((.services["omada-controller"].mem_swappiness // 0) == 0)
         and .services["omada-controller"].ulimits.nofile.soft == 4096
         and .services["omada-controller"].ulimits.nofile.hard == 8192

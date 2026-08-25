@@ -8,7 +8,7 @@ operations in [OPERATIONS](OPERATIONS.md); encrypted recovery in
 
 Every command below is grounded against the actual repository artifacts:
 
-- `.doco-cd.c0.yml` — top-level Doco auto-discovery (`working_dir:
+- `docker/c0/.doco-cd.yaml` — host-scoped Doco auto-discovery (`working_dir:
   ./docker/c0`, depth `1`, delete `false`, force_recreate `false`).
 - `docker/c0/openbao/.doco-cd.yaml` — nested project name `openbao-c0`.
 - `docker/c0/openbao/compose.yml` — four services, three named volumes,
@@ -303,7 +303,7 @@ means a regex mismatch; fix the rule, do not bypass.
 
 ### 4.1 Update bootstrap Compose
 
-`docker/bootstrap/c0/doco-cd/compose.yml` gains only:
+`docker/c0/.doco-cd/docker-compose.app.yaml` gains only:
 
 - environment literal `SOPS_AGE_KEY_FILE=/run/secrets/sops_age_key`,
 - service secret `sops_age_key`,
@@ -326,7 +326,7 @@ CI stays decrypt-free and receives no age identity.
 `ws$`
 
 ```sh
-git add .sops.yaml docker/bootstrap/c0/doco-cd/compose.yml \
+git add .sops.yaml docker/c0/.doco-cd/docker-compose.app.yaml \
   docker/mod.just .github/workflows/docker.yaml
 git commit -m "feat(docker): enable SOPS age for Doco-CD"
 git push origin main
@@ -344,8 +344,8 @@ install -o root -g root -m 0644 \
 `ws$`
 
 ```sh
-git rev-parse origin/main:docker/bootstrap/c0/doco-cd/compose.yml
-diff -u <(git show origin/main:docker/bootstrap/c0/doco-cd/compose.yml) \
+git rev-parse origin/main:docker/c0/.doco-cd/docker-compose.app.yaml
+diff -u <(git show origin/main:docker/c0/.doco-cd/docker-compose.app.yaml) \
   /dev/null
 ```
 
@@ -544,8 +544,8 @@ just docker validate-c0
 
 What this single command guarantees:
 
-- `yamllint` clean for `.doco-cd.c0.yml`, `.sops.yaml`, both Compose files,
-  both poll configs, and `docker/c0/openbao/.doco-cd.yaml`.
+- `yamllint` clean for `.sops.yaml`, the host-scoped Doco config, controller Compose and poll
+  config, plus `docker/c0/openbao/.doco-cd.yaml` and its Compose file.
 - `sops filestatus` reports both ACME inputs `encrypted`.
 - Both files contain the `sops_` envelope markers and no plaintext
   `dns_cloudflare_api_token` value.
@@ -568,7 +568,7 @@ pre-initialization HTTP `501` is the behavioral parser.
 git add docker/c0/openbao docker/mod.just .github/workflows/docker.yaml
 git commit -m "feat(docker): deploy OpenBao on c0"
 git push origin main
-for p in .sops.yaml docker/bootstrap/c0/doco-cd/compose.yml \
+for p in .sops.yaml docker/c0/.doco-cd/docker-compose.app.yaml \
          docker/c0/openbao/.doco-cd.yaml docker/c0/openbao/compose.yml \
          docker/c0/openbao/config/openbao.hcl docker/mod.just; do
   git diff --quiet origin/main -- "$p"
