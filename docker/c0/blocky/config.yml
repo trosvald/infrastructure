@@ -1,0 +1,85 @@
+---
+upstreams:
+  init:
+    strategy: blocking
+  groups:
+    default:
+      - https://1.1.1.1/dns-query#cloudflare-dns.com
+      - https://9.9.9.9/dns-query#dns.quad9.net
+  strategy: random
+  timeout: 3s
+
+connectIPVersion: v4
+
+conditional:
+  fallbackUpstream: false
+  mapping:
+    monosense.io: 10.25.13.33
+    10.25.10.in-addr.arpa: 10.25.13.33
+    11.25.10.in-addr.arpa: 10.25.13.33
+    12.25.10.in-addr.arpa: 10.25.13.33
+    13.25.10.in-addr.arpa: 10.25.13.33
+
+blocking:
+  denylists:
+    default:
+      - https://raw.githubusercontent.com/hagezi/dns-blocklists/a3d0c5c7a0402f669f3f1392527b8a50622128cf/wildcard/multi.txt
+  allowlists:
+    default:
+      - |
+        # Private authority must remain reachable regardless of remote
+        # list policy.
+        monosense.io
+        *.monosense.io
+        10.25.10.in-addr.arpa
+        *.10.25.10.in-addr.arpa
+        11.25.10.in-addr.arpa
+        *.11.25.10.in-addr.arpa
+        12.25.10.in-addr.arpa
+        *.12.25.10.in-addr.arpa
+        13.25.10.in-addr.arpa
+        *.13.25.10.in-addr.arpa
+        # Add future false-positive exceptions here, one domain per line.
+  clientGroupsBlock:
+    default:
+      - default
+  blockType: nxDomain
+  blockTTL: 5m
+  loading:
+    strategy: fast
+    refreshPeriod: 12h
+    downloads:
+      timeout: 10s
+      attempts: 3
+      cooldown: 1s
+
+caching:
+  minTime: 0s
+  maxTime: 0s
+  cacheTimeNegative: 5m
+  maxItemsCount: 10000
+  prefetching: false
+
+queryLog:
+  type: none
+
+ports:
+  dns:
+    - ":53"
+  http: []
+  https: []
+  tls: []
+
+dnssec:
+  validate: false
+
+prometheus:
+  enable: false
+
+statistics:
+  enable: false
+
+log:
+  level: info
+  format: json
+  privacy: true
