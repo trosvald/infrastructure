@@ -7,7 +7,8 @@ This repository manages personal infrastructure as declarative code:
 - a Talos Kubernetes cluster bootstrapped with Helmfile and reconciled by Flux;
 - Kubernetes applications layered with Kustomize, Flux `Kustomization`, `HelmRelease`, and
   `OCIRepository` resources;
-- c0 Docker services deployed from Git by Doco-CD, currently OpenBao and PowerDNS Authoritative;
+- c0 Docker services deployed from Git by Doco-CD: OpenBao, PowerDNS Authoritative, and Omada
+  Controller;
 - an isolated Ansible project that renders and safely applies Junos SRX1500 intent.
 
 There is no conventional application server or package build. Controller reconciliation is
@@ -43,6 +44,8 @@ are direct children of `docker/c0/`, and host prerequisites live under `docker/c
 - PowerDNS: five canonical files under `docker/c0/powerdns/zones/` are the only zone-content source.
   `reconcile.sh` builds and validates a fresh SQLite candidate, then atomically replaces the live
   database. API, webserver, and host ports remain disabled.
+- Omada Controller: preserved named volumes hold controller state; the rootless container attaches
+  only to its dedicated external MGMT IPvlan network and publishes no host ports.
 
 Never delete service volumes to solve deployment failures. Follow the component runbooks for
 encrypted online backups and stopped restore procedures.
@@ -68,7 +71,8 @@ checks, or runtime cleanup.
 - `talos/`: node inventory and machine/network Minijinja templates.
 - `docker/c0/.doco-cd/`: bootstrap-owned Doco-CD controller source.
 - `docker/c0/.host/`: c0 host prerequisites that Doco-CD must not manage.
-- `docker/c0/`: host Doco configuration and direct-child OpenBao, PowerDNS, and Omada applications.
+- `docker/c0/`: host Doco configuration and direct-child OpenBao, PowerDNS, and Omada Controller
+  applications.
 - `ansible/junos/`: isolated inventory, intent, roles, scripts, fixtures, and tests.
 - `docs/`: operational, backup/restore, secret-custody, and migration runbooks.
 - `scripts/`: repository-wide utilities, including the fail-closed Gitleaks wrapper.
@@ -140,13 +144,13 @@ and may require explicit confirmation.
 - `kubernetes/flux/cluster/ks.yaml`: root repository/application reconciliation.
 - `kubernetes/apps/flux-system/flux-instance/app/helmrelease.yaml`: Flux source/path.
 - `talos/machineconfig.yaml.j2`, `talos/networking.yaml.j2`: Talos machine/network defaults.
-- `docker/c0/{openbao,powerdns}/compose.yml`: c0 service isolation and dependencies.
+- `docker/c0/{openbao,powerdns,omada-controller}/compose.yml`: c0 service isolation and dependencies.
 - `docker/c0/powerdns/scripts/reconcile.sh`: Git-to-SQLite authoritative reconciliation.
 - `ansible/junos/scripts/{dispatch.sh,junos_intent.py,with-openbao-runtime.sh}`: Junos boundaries.
 - `ansible/junos/roles/junos_intent/tasks/main.yml`: device safety and deployment workflow.
 - `ansible/junos/ansible.cfg`: isolated inventory, collections, temp paths, and host-key checking.
 - `.github/workflows/{docker,junos,gitleaks}.yaml`: CI validation behavior.
-- `ansible/junos/README.md`, `docs/{OPENBAO,POWERDNS}.md`: authoritative component guides.
+- `ansible/junos/README.md`, `docs/{OPENBAO,POWERDNS,OMADA}.md`: authoritative component guides.
 
 ## Runtime/Tooling Preferences
 
@@ -172,7 +176,8 @@ and may require explicit confirmation.
 - `ansible/junos/tests/topology.yml` is synthetic only; keep RFC documentation addresses and fake
   identifiers. Tests must remain offline, deterministic, and secret-free.
 - `just docker validate-c0`: OpenBao certificate installer unit/integration checks, SOPS/Compose
-  structural assertions, and disposable PowerDNS SQLite reconciliation/failure-atomicity checks.
+  structural assertions, disposable PowerDNS SQLite reconciliation/failure-atomicity checks, and
+  Omada Controller Compose and external-network lifecycle checks.
 - `scripts/gitleaks-scan.sh`: proves detection with a runtime canary before scanning all Git history
   and the working tree with redaction.
 - CI runs Docker validation, Junos bootstrap/test/lint, and Gitleaks through path-scoped workflows.
