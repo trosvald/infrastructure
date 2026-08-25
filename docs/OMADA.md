@@ -1,8 +1,8 @@
 # Omada Software Controller
 
-This is the authoritative runbook for the proposed Doco-CD-managed Omada Software Controller on
-c0. **It is not deployed.** Repository validation and product/image research do not prove any live
-network, migration, controller, device, backup, or restore behavior.
+Omada Software Controller is deployed on c0 and reconciled by Doco-CD from commit `8948d1e`.
+Controller `6.2.14.11` restored the supplied `6.0.0.25` backup on 2026-08-25. This runbook remains
+the authoritative deployment, recovery, and rollback procedure.
 
 ## Evidence boundary
 
@@ -18,24 +18,35 @@ network, migration, controller, device, backup, or restore behavior.
 - The exact external-network ensure script is designed to validate or create one fixed network and
   fail closed on drift. Its presence does not prove that the network exists on c0.
 
-### REQUIRES LIVE VERIFICATION
+### LIVE VERIFIED — 2026-08-25
 
-Every item in this section is a **LIVE_DEPLOYMENT_PREREQUISITE** or post-deployment acceptance item;
-none is established by this repository:
+- Doco-CD poll deployed commit `8948d1e` as project `omada-controller-c0`.
+- External IPvlan L2 network `c0_omada_mgmt` passed exact creation and idempotence validation.
+- The container is healthy at `10.25.10.26/24` with gateway `10.25.10.1`, no published ports, and
+  only the approved network attachment.
+- The controller reached `10.25.10.1:443` from its network namespace.
+- The `6.0.0.25` backup checksum is
+  `b318ee5ce8031c15a869b40e0c00043c2b755dd368897d5174fe5c7206f911c4`; its ignored local custody
+  path is `docker/c0/omada-controller/data/restore/`.
+- The first-run UI reported `Restored Successfully` and opened the restored global dashboard.
+- Restored state contains one site, three switches, and two APs. All five devices reported
+  `CONNECTED` with `Good` health.
+- A controlled Docker restart used the configured shutdown path, returned to `running healthy`,
+  retained both named volumes, and logs recorded all five device sessions reconnecting.
+- Listener inspection confirmed the documented TCP/UDP ports and loopback-only MongoDB
+  `127.0.0.1:27217`.
 
-- an old-controller in-app backup, its SHA-256 checksum, and the exact controller version that
-  created it;
-- a clean, isolated restore rehearsal and any required supported intermediate migration;
-- old-controller stored ports, sites, devices, adoption state, controller/site identity,
-  certificate identity and fingerprint, administrator access, and compatible device firmware;
-- an authoritative IPAM reservation/exclusion for `10.25.10.26`;
-- switch/SRX DAI, DHCP-snooping, IP-source-guard, port-security, and ARP-policy compatibility,
-  including required binding/trust remediation and recorded binding plus bidirectional ARP evidence;
-- proof from a separate MGMT host that `10.25.10.26` is absent after the old controller stops;
-- the exact Docker network on c0, container address/gateway, listeners, UI, app and device traffic,
-  restored identity/state, backup export, retention, restore drill, persistence, and rollback.
+### REMAINING LIVE VERIFICATION
 
-Fail closed: do not publish the project for Doco-CD until every prerequisite is recorded and passes.
+The following evidence is still required for complete operational closure:
+
+- authoritative IPAM reservation/exclusion evidence for `10.25.10.26`;
+- switch/SRX DAI, DHCP-snooping, IP-source-guard, port-security, and ARP-policy evidence;
+- restored administrator recovery-login verification after the acceptance restart;
+- certificate identity/trust review;
+- Omada mobile-app discovery, OLT discovery where applicable, and a post-restore backup export;
+- encrypted off-host backup retention, an isolated restore drill, and exercised rollback.
+
 IP address preservation alone is insufficient. Device adoption, site/controller identity,
 certificates, administrators, settings, and port state live in the controller database. Raw v5 data
 must not be mounted into v6; use TP-Link's supported backup/import path and, where required, its
@@ -113,6 +124,11 @@ health.
 | UDP | `27001`, `29810` | discovery/controller services |
 | UDP | `19810` | OLT discovery |
 | TCP | `27217` | embedded MongoDB; must remain internal/loopback-only |
+| TCP | `9098` | observed wildcard-bound internal Omada service; not listed in TP-Link's public port table |
+
+TCP `9098` responded on MGMT during acceptance but is not documented in TP-Link's current public
+port table. Treat it as direct MGMT exposure pending vendor clarification; do not expose MGMT
+publicly.
 
 The deployment explicitly stores the defaults and leaves `WEB_CONFIG_OVERRIDE=false`, so restored
 database state is not forcibly rewritten. Before cutover, the source controller's stored ports must
