@@ -66,30 +66,34 @@ not remove that volume.
 
 ### Host-scoped controller migration and rollback
 
-The repository change must be published in two stages; do not collapse the runtime proof between
-them:
+The host-scoped controller migration completed on 2026-08-25. The final architecture lives under
+`docker/c0/**`: Doco-CD polls `refs/heads/main` without `target: c0`, and the legacy
+`.doco-cd.c0.yml` and `docker/bootstrap/c0/` paths are gone.
 
-1. Publish the new host-scoped files, validation, and documentation while retaining legacy
-   `.doco-cd.c0.yml` and `docker/bootstrap/c0/` on `origin/main`.
-2. Record read-only before-state for Doco-CD, OpenBao, PowerDNS, Omada, named volumes, and the
-   `c0_services` and `c0_omada_mgmt` networks. Never print secret contents.
-3. Back up `/opt/doco-cd`, validate the replacement configuration, preserve the existing secret
-   files and `doco-cd-data` volume, then recreate only Doco-CD.
-4. Require controller health, unchanged image and management bindings, a real successful Git poll,
-   exactly the three intended applications, no `.doco-cd` or `.host` project, and unchanged
-   application container identities, volumes, addresses, and networks.
-5. Only after that proof, publish deletion of the legacy root config and `docker/bootstrap/c0/`,
-   then require another real successful poll.
+The migration used a staged cutover to preserve runtime state:
 
-Before legacy deletion, rollback restores the backed-up `/opt/doco-cd` files and recreates only
-Doco-CD; the old target config remains in Git. After legacy deletion, restore or revert those Git
-files first, then perform the same controller-only rollback. Never delete application or Doco-CD
-volumes, recreate application stacks, replace `c0_omada_mgmt`, or use `docker compose down -v`.
+1. The host-scoped files, validation, and documentation were published while the legacy paths
+   remained available on `origin/main`.
+2. Read-only before-state was recorded for Doco-CD, OpenBao, PowerDNS, Omada, named volumes, and the
+   `c0_services` and `c0_omada_mgmt` networks without printing secret contents.
+3. `/opt/doco-cd` was backed up; the replacement configuration was validated; the existing secret
+   files and `doco-cd-data` volume were preserved; and only Doco-CD was recreated.
+4. Controller health, unchanged image and management bindings, a successful Git poll, exactly the
+   three intended applications, no `.doco-cd` or `.host` project, and unchanged application
+   container identities, volumes, addresses, and networks were required before legacy deletion.
+5. The legacy paths were deleted only after that proof, followed by another successful Git poll.
+
+Current rollback to the pre-migration architecture requires restoring the legacy Git paths from a
+known-good pre-migration revision, then restoring the backed-up `/opt/doco-cd` files and recreating
+only Doco-CD. Never delete application or Doco-CD volumes, recreate application stacks, replace
+`c0_omada_mgmt`, or use `docker compose down -v`.
 
 Doco-CD and OpenBao are deployed and reboot-verified as of 2026-08-24. PowerDNS Authoritative was
 deployed on 2026-08-25 and its container restart, named-volume persistence, encrypted backup, and
-isolated c1 restore were verified. Omada Controller was reset to a fresh, unconfigured deployment
-on 2026-08-25 for manual operator setup. cAdvisor and native observability remain undeployed on c0.
+isolated c1 restore were verified. Omada Controller was reset to clean named volumes on 2026-08-25,
+then configured manually with a local owner and site. Initial device adoption failed because the
+Device Account username/password did not match; adoption succeeded after correcting those
+credentials. cAdvisor and native observability remain undeployed on c0.
 
 ## Application inventory
 
