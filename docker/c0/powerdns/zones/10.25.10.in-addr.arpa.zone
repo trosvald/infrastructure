@@ -1,0 +1,13 @@
+$ORIGIN 10.25.10.in-addr.arpa.
+$TTL 300
+@ 300 IN SOA ns1.monosense.io. hostmaster.monosense.io. (
+  2026082502 ; serial
+  3600       ; refresh
+  600        ; retry
+  604800     ; expire
+  300        ; minimum
+)
+@ 300 IN NS ns1.monosense.io.
+20 300 IN PTR c0.monosense.io.
+100 300 IN PTR adguard.monosense.io.
+101 300 IN PTR c1.monosense.io.

@@ -12,9 +12,13 @@ sudo docker ps -a \
 sudo docker exec powerdns-c0-powerdns-1 pdns_control rping
 
 dig @10.25.13.33 monosense.io SOA
-dig @10.25.13.33 monosense.io NS
-dig @10.25.13.33 ns1.monosense.io A
-dig @10.25.13.33 vault.monosense.io A
+dig @10.25.13.33 10.25.10.in-addr.arpa SOA
+dig @10.25.13.33 11.25.10.in-addr.arpa SOA
+dig @10.25.13.33 12.25.10.in-addr.arpa SOA
+dig @10.25.13.33 13.25.10.in-addr.arpa SOA
+dig @10.25.13.33 c0.monosense.io A
+dig @10.25.13.33 -x 10.25.11.11
+dig @10.25.13.33 -x 10.25.12.123
 dig +tcp @10.25.13.33 vault.monosense.io A
 dig @10.25.13.33 example.com A
 ```
@@ -33,39 +37,42 @@ The PowerDNS API and web server are disabled. TCP `8081` must refuse connections
 
 ## Record changes
 
-The committed zone file is bootstrap input, not a recurring source of truth. After first
-initialization, use `pdnsutil` against the persistent database and update the repository bootstrap
-zone in the same reviewed change so disaster recovery retains required static records.
+Git is the only persistent zone-content writer. Use this workflow:
 
-Example workflow:
+1. Edit the applicable canonical files under `docker/c0/powerdns/zones/`.
+2. Update every changed SOA serial. If the execution UTC date is later than the serial's
+   `YYYYMMDD`, use `YYYYMMDD01`; otherwise increment its two-digit `NN`. Never decrease or reuse a
+   serial.
+3. Run `just docker validate-c0`, `scripts/gitleaks-scan.sh`, and
+   `actionlint .github/workflows/docker.yaml`.
+4. Commit and push the reviewed change to `main`.
+5. Wait for Doco-CD to report a successful PowerDNS deployment.
+6. Verify direct UDP and TCP A/PTR answers at `10.25.13.33`.
+7. Create and verify a post-change encrypted online backup.
 
-```sh
-sudo docker exec powerdns-c0-powerdns-1 \
-    pdnsutil rrset replace monosense.io vault.monosense.io A 300 10.25.13.34
-sudo docker exec powerdns-c0-powerdns-1 \
-    pdnsutil zone check monosense.io
-```
-
-Increment the SOA serial for every live zone change. Use UTC `YYYYMMDDNN`; `NN` starts at `01` and
-increases for additional changes that day. Do not add public Cloudflare records, DNSKEY/DS records,
-ACME challenges, or Kubernetes-owned records to this standalone zone.
-
-Create an online backup before every live mutation. See
-[Backup and restore](BACKUP-RESTORE.md).
+Do not add public Cloudflare records, DNSKEY/DS records, ACME challenges, or Kubernetes-owned
+records to these standalone zones. Manual `pdnsutil` or SQL changes are emergency-only and
+temporary: represent them in Git immediately or the next deployment will remove them. The disabled
+API and web server are not mutation paths.
 
 ## Doco-CD deployment and rollback
 
-Doco-CD polls `origin/main` every three minutes. Publish reviewed changes before expecting a c0
-reconciliation. A successful deployment leaves `data-init` and `zone-init` exited with code zero and
-`powerdns` healthy.
+Doco-CD polls `origin/main` every three minutes. The project-local `force_recreate: true` causes
+every changed PowerDNS project deployment to run reconciliation. A successful deployment leaves
+`data-init` and `zone-reconcile` exited with code zero and `powerdns` healthy.
 
-If deployment fails:
+If reconciliation fails before the atomic rename:
 
 1. Stop `doco-cd` to prevent polling recreation.
 2. Run `docker compose down` for the `powerdns-c0` project without `-v`.
-3. Preserve `powerdns-data`; never delete it to solve an initializer failure.
-4. Correct, validate, commit, and push the repository change.
-5. Restart the existing `doco-cd` container and verify its next poll succeeds.
+3. Preserve `powerdns-data`; never delete it to solve a reconciliation failure.
+4. Diagnose the retained `pdns.sqlite3.tmp` and remove only that failed candidate.
+5. Correct, validate, commit, and push the repository change.
+6. Restart the existing `doco-cd` container and verify its next poll succeeds.
+
+If the atomic replacement completed but DNS behavior is wrong, keep Doco-CD and PowerDNS stopped,
+restore the reviewed pre-change encrypted backup as UID/GID `953:953` mode `0600`, publish the Git
+revert, validate the stopped database, then restart. Never restore a running SQLite database.
 
 `delete: false` in Doco discovery does not stop a project. `docker compose down -v` is prohibited.
 

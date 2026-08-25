@@ -98,7 +98,8 @@ SERVICES uses VLAN 2513, subnet `10.25.13.0/24`, gateway `10.25.13.1`, static ad
 - PowerDNS Authoritative: `10.25.13.33`
 - OpenBao: `10.25.13.34`
 
-PowerDNS is authoritative-only with its API disabled and no host port mappings. AdGuard Home at
+PowerDNS is authoritative-only for one private forward zone and four `/24` reverse zones. Git owns
+the canonical content; the API, web server, and host port mappings are disabled. AdGuard Home at
 `10.25.10.100`, Cloudflare authority, and Kubernetes are unchanged. See
 [`docs/POWERDNS.md`](../docs/POWERDNS.md).
 

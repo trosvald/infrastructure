@@ -1,8 +1,8 @@
 # PowerDNS Backup and Restore
 
-The authoritative state is SQLite at `/var/lib/powerdns/pdns.sqlite3` in named volume
-`powerdns-data`. Never copy or rsync the live database. Use SQLite's online backup command while the
-server is running.
+Git is the source of truth for zone content; the deployed rollback state is SQLite at
+`/var/lib/powerdns/pdns.sqlite3` in named volume `powerdns-data`. Never copy or rsync the live
+database. Use SQLite's online backup command while the server is running.
 
 ## Online backup
 
@@ -46,9 +46,11 @@ baseline. The test must not attach to a SERVICES network.
    `0600`; the volume directory is UID/GID `953:953`, mode `0750`.
 4. Start the reviewed image in project `powerdns-restore-test` with the API disabled and only
    loopback mappings `127.0.0.1:15353 -> 53` for TCP and UDP.
-5. Query SOA, NS, `ns1`, `vault`, and every additional static record over UDP and TCP. Require
-   authoritative NXDOMAIN for an absent in-zone name and refusal for an unrelated recursive query.
-6. Run `PRAGMA integrity_check` and `pdnsutil zone check monosense.io` inside the test container.
+5. Query SOA and NS for `monosense.io` plus all four reverse zones over UDP and TCP. Verify every
+   managed A/PTR pair, authoritative NXDOMAIN for `10.25.12.123`, and refusal for an unrelated
+   recursive query.
+6. Run `PRAGMA integrity_check`, `PRAGMA foreign_key_check`, and `pdnsutil zone check` for all five
+   zones inside the test container.
 7. Stop the project and remove its containers, temporary network, temporary volume, plaintext,
    staged ciphertext, configuration, and tooling. The c1 inventories must exactly match baseline.
 
@@ -64,9 +66,10 @@ A production restore is a stopped operation:
    touching the volume.
 4. Preserve the failed database under a distinct name in the volume; do not overwrite it in place.
 5. Install the restored database atomically as UID/GID `953:953`, mode `0600`.
-6. Run SQLite integrity and `pdnsutil zone check` in a stopped temporary container using the same
-   pinned image.
-7. Start the project, require healthy status, and repeat direct UDP/TCP authoritative queries.
+6. Run SQLite integrity and foreign-key checks plus `pdnsutil zone check` for all five zones in a
+   stopped temporary container using the same pinned image.
+7. Start the project, require healthy status, and repeat direct UDP/TCP SOA, NS, A, PTR, HOME
+   NXDOMAIN, and recursion-refusal queries.
 8. Remove every plaintext staging file, then restart Doco-CD and require a successful poll.
 
 Never run `docker compose down -v`, never seed a second bootstrap database over `powerdns-data`, and
