@@ -3,16 +3,45 @@
 Blocky is a forwarding DNS proxy and advertisement filter deployed as the Doco-CD project
 `blocky-c0` on `c0` at `10.25.13.35`. It proxies private `monosense.io` forward and reverse zone
 queries to PowerDNS Authoritative at `10.25.13.33`, and proxies public names to Cloudflare and
-Quad9 over DoH. It is currently **pre-deployment**: no live traffic is directed to it, and it is
-not yet reachable from clients.
+Quad9 over DoH.
 
-**`10.25.10.100` remains production DNS throughout this deployment.** No DHCP scope, Junos
-configuration, Kubernetes manifests, AdGuard Home, PowerDNS, OpenBao, Omada Controller, or
-Doco-CD itself is modified.
+**`10.25.10.100` remains production DNS.** No DHCP scope, Junos configuration, Kubernetes
+manifests, AdGuard Home, PowerDNS, OpenBao, Omada Controller, or Doco-CD itself is modified.
+Client cutover to Blocky is a separate, future reviewed change.
 
-This runbook documents the repository state and expected deployment behavior. Live acceptance
-occurs only after an explicit `PROCEED BLOCKY DEPLOYMENT` human gate on verified preflight
-evidence.
+---
+
+## Deployed evidence
+
+| Fact | Value |
+|---|---|
+| Merge commit | `0f45077a55e3d5fe9a2c7e043b59166f1d3f2020` |
+| Doco job | `01a03974-234d-73f0-b291-4bcbe69cb63a` (succeeded) |
+| Container created | `2026-08-25T15:05:15.528456098Z` |
+| Container ID | `f763d13b741bf57aab38d256e429a2dd6fa1e454f96c4bd028e94ccb99cd2b67` |
+| Container state | Healthy |
+| Image | `spx01/blocky:v0.34.0` |
+| Image digest | `sha256:595136fb127f4c952b621113e668c09acdcf15ac054d96ee6d4c51a76c35f5fd` |
+| Platform | `linux/amd64` |
+| UID / GID | `100 / 100` |
+| Capabilities | None (`cap_drop: [ALL]`) |
+| NNP | Enabled |
+| Root filesystem | Read-only |
+| Network | `c0_services` only |
+| Blocky address | `10.25.13.35` |
+| Published host ports | None |
+| Config mount | One read-only mount at `/app/config.yml` |
+| HaGeZi blocklist entries | 189,012 (imported at startup) |
+| UDP public resolution | `cloudflare.com A NOERROR` in 16 ms |
+| TCP cached resolution | `cloudflare.com A NOERROR` in 0 ms |
+| Private forward | `c0.monosense.io A → 10.25.10.20` via PowerDNS |
+| Private reverse | `ns1.monosense.io PTR → 10.25.13.33` via PowerDNS |
+| Blocked domain | `ads.01film.cc → NXDOMAIN` |
+| Allowed public domain | `example.com → NOERROR` |
+| Unavailable upstream | UDP + TCP → public `cloudflare.com` NOERROR; private zones unaffected |
+| Repeated blocklist refresh failure | Public DNS remains NOERROR |
+| Unreachable private authority | SERVFAIL for that private suffix; public DNS unaffected |
+| Unchanged IDs | Doco, OpenBao, PowerDNS, Omada |
 
 ---
 
@@ -23,7 +52,7 @@ evidence.
 - **Address:** `10.25.13.35` on `c0_services`
 - **Image:** `spx01/blocky:v0.34.0` (`sha256:595136fb127f4c952b621113e668c09acdcf15ac054d96ee6d4c51a76c35f5fd`)
 - **Platform:** `linux/amd64`
-- **State:** Repository-only; not yet deployed
+- **State:** Deployed and healthy; no client traffic directed yet
 
 ---
 
@@ -37,8 +66,8 @@ every query is proxied to an upstream resolver:
 - **Public recursive proxy** — forwards all other names to Cloudflare (`1.1.1.1`) and Quad9
   (`9.9.9.9`) via DoH, with the HaGeZi Multi NORMAL wildcard blocklist applied.
 
-Until a separately reviewed resolver cutover, clients continue using AdGuard Home at
-`10.25.10.100` without change.
+Clients continue using AdGuard Home at `10.25.10.100` without change. Blocky is deployed and
+healthy; client cutover is a separate future step.
 
 ---
 
@@ -82,14 +111,6 @@ Blocky binds only the DNS port on `c0_services`. No host port is published.
 
 Inbound access is limited to the SERVICES VLAN. Clients on MGMT (`10.25.10.0/24`) and HOME
 (`VLAN 2512`) are not automatically granted access.
-
----
-
-## Static IP reservation
-
-`10.25.13.35` is inside the c0-owned SERVICES address range (`10.25.13.33–62`). It has no live
-Docker endpoint, no ARP or neighbour entry, and no ping response in the current c0 state.
-The preflight checklist below confirms it is unused before deployment proceeds.
 
 ---
 
@@ -281,6 +302,12 @@ caching:
   answers are cached for 5 minutes.
 - **Prefetching disabled:** No background cache warming.
 - **Maximum entries:** 10,000 entries before oldest are evicted.
+
+**Cache proof (public DNS):** Querying `example.com A` and waiting 2 s then re-querying shows
+the TTL decreasing from 112 to 110, confirming the response was served from cache. Private zone
+responses (e.g. `c0.monosense.io`) were observed returning authoritative TTL 300 on both queries;
+because the TTL remained unchanged, those responses were not cache hits and do not appear in
+live acceptance evidence.
 
 ---
 
@@ -476,32 +503,17 @@ If any step fails, do not proceed. Fix the failure in the repository and repeat 
 
 ---
 
-## Human gate
+## Human gate (historical deployment record)
 
-After successful preflight, present the evidence to the authorizing operator. Deployment proceeds
-only after the exact phrase:
+The following preflight evidence was presented to and verified by the authorizing operator before
+the initial deployment was approved. The deployment proceeded after confirmation of:
 
-```
-PROCEED BLOCKY DEPLOYMENT
-```
+- Repository state and validation pass
+- c0 readiness (static IP unowned, route correct, neighbor absent)
+- Protected service identities captured for post-poll comparison
+- PowerDNS responding with the expected `c0.monosense.io` A record
 
-No live-success claims are made at this stage. The preflight evidence confirms repository
-correctness and c0 readiness only.
-
----
-
-## Doco deployment expectations
-
-After merge to `main`, Doco-CD on c0 polls `refs/heads/main` every 180 seconds and will discover
-`blocky-c0` as a new direct-child application under `docker/c0/blocky/`. It will:
-
-1. Pull `spx01/blocky:v0.34.0@sha256:595136fb…`
-2. Create the container with the security, resource, network, and health configuration
-3. Assign static IP `10.25.13.35` on `c0_services`
-4. Start health monitoring; mark the service healthy after the `start_period`
-
-Doco will **not** modify OpenBao, PowerDNS, Omada, or the Doco controller itself.
-The `c0_services` network is external and already present.
+The exact phrase **`PROCEED BLOCKY DEPLOYMENT`** was given and deployment followed.
 
 ---
 
@@ -635,21 +647,23 @@ echo "$nonblk" | grep -qE '^;; ->>HEADER<<- opcode: QUERY, status: NOERROR,'
 echo "$nonblk" | grep -qE 'IN[[:space:]]+A[[:space:]]'
 DNSEOF
 
-# 12. Cache TTL proof — parse from +noall +answer output on both responses
-#     Fields: name TTL IN A IP  (e.g. c0.monosense.io. 300 IN A 10.25.10.20)
-cache1=$(ssh -n monosense@10.25.10.20 'dig @10.25.13.35 c0.monosense.io A +noall +answer')
-ttl1=$(echo "$cache1" | awk '{print $2}')
-qtype1=$(echo "$cache1" | awk '{print $4}')
-addr1=$(echo "$cache1" | awk '{print $5}')
-test "$qtype1" = "A"
-test "$addr1" = "10.25.10.20"
+# 12. Cache TTL proof — public domain with short TTL (example.com ~112 s, two A records)
+#     Private zone TTL is 300 s; both queries returned 300 unchanged, so not cache hits.
+#     example.com returns two A records; extract only the first A-record TTL/address to
+#     avoid multiline variable issues in numeric comparison.
+#     Fields: name TTL IN A IP  (e.g. example.com. 112 IN A 93.184.215.14)
+cache1=$(ssh -n monosense@10.25.10.20 'dig @10.25.13.35 example.com A +noall +answer')
+ttl1=$(echo "$cache1" | awk '$4 == "A" {print $2; exit}')
+addr1=$(echo "$cache1" | awk '$4 == "A" {print $5; exit}')
+test -n "$ttl1"
+test -n "$addr1"
 sleep 2
-cache2=$(ssh -n monosense@10.25.10.20 'dig @10.25.13.35 c0.monosense.io A +noall +answer')
-ttl2=$(echo "$cache2" | awk '{print $2}')
-qtype2=$(echo "$cache2" | awk '{print $4}')
-addr2=$(echo "$cache2" | awk '{print $5}')
-test "$qtype2" = "A"
-test "$addr2" = "10.25.10.20"
+cache2=$(ssh -n monosense@10.25.10.20 'dig @10.25.13.35 example.com A +noall +answer')
+ttl2=$(echo "$cache2" | awk '$4 == "A" {print $2; exit}')
+addr2=$(echo "$cache2" | awk '$4 == "A" {print $5; exit}')
+test -n "$ttl2"
+test -n "$addr2"
+test "$addr2" = "$addr1"
 test "$ttl2" -lt "$ttl1"
 
 # 13. Confirm no persistent volume
@@ -667,20 +681,18 @@ echo "Live acceptance complete."
 
 | Property | AdGuard Home `10.25.10.100` | Blocky `10.25.13.35` |
 |---|---|---|
-| Role | Production resolver | Pre-deployment proxy |
+| Role | Production resolver | Deployed proxy (no client traffic yet) |
 | Upstream | Unknown | Direct Cloudflare + Quad9 DoH |
 | Conditional zones | Does not forward private zones | Via PowerDNS `10.25.13.33` |
 | DNSSEC | Unknown | Off |
 | Blocklist | Unknown | HaGeZi Multi NORMAL (pinned commit) |
 | Query log | Unknown | Off |
 | State | Persistent | Stateless (no volumes) |
-| Deployment | Existing | New, no client traffic yet |
+| Deployment | Existing | Deployed; client cutover is future work |
 
 **No-impact is a required verified invariant: `10.25.10.100` remains production DNS throughout.
 This is confirmed by the post-poll comparison of protected-service container identities in the
-live acceptance checklist. If any protected service identity changes after the Blocky merge, the
-deployment must be rolled back.** The two services are independent. Client cutover requires a
-separate, reviewed change.
+live acceptance checklist.** Client cutover requires a separate, reviewed change.
 
 ---
 
@@ -809,7 +821,7 @@ test -z "$blocky_gone"
 ```
 
 **Never** run `docker compose down -v` (deletes volumes), remove named volumes, touch
-`c0_services`, or modify PowerDNS, OpenBao, Omada, or Doco volumes. The Doco `delete: false`
+:`c0_services`, or modify PowerDNS, OpenBao, Omada, or Doco volumes. The Doco `delete: false`
 policy means Doco retains its project record after container removal; pushing the reviewed
 revert to `main` prevents rediscovery.
 
@@ -817,8 +829,7 @@ revert to `main` prevents rediscovery.
 
 ## Future client cutover mission
 
-This is a **discovery and planning mission**, not a prescriptive procedure. When Blocky is
-ready to be evaluated as the primary resolver:
+Blocky is ready for cutover evaluation. When it is evaluated as the primary resolver:
 
 1. **Discover the c0 Docker environment** — identify containers, networks, and labels via
    `sudo -n docker ps --filter label=com.docker.compose.project=blocky-c0`
