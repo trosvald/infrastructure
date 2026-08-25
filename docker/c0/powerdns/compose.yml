@@ -23,9 +23,16 @@ services:
       - |
         pdns_uid="$$(id -u pdns)"
         pdns_gid="$$(id -g pdns)"
+        owner="$$(stat -c '%u:%g' /var/lib/powerdns)"
+        mode="$$(stat -c '%a' /var/lib/powerdns)"
         test "$$pdns_uid" = 953
-        chown "$$pdns_uid:$$pdns_gid" /var/lib/powerdns
-        chmod 0750 /var/lib/powerdns
+        if [ "$$owner" = "0:0" ]; then
+          chmod 0750 /var/lib/powerdns
+          chown "$$pdns_uid:$$pdns_gid" /var/lib/powerdns
+        else
+          test "$$owner" = "$$pdns_uid:$$pdns_gid"
+          test "$$mode" = 750
+        fi
     cap_drop: [ALL]
     cap_add: [CHOWN]
     security_opt:

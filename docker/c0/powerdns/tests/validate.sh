@@ -17,11 +17,28 @@ identity="$("${docker_run[@]}" --entrypoint id "$image" pdns)"
     'command -v pdns_server && command -v pdnsutil && command -v pdns_control && command -v sqlite3' \
     >/dev/null
 
-"${docker_run[@]}" \
-    --user 0:0 --network none --cap-drop ALL --cap-add CHOWN \
-    --mount "type=bind,src=$work_dir/data,dst=/var/lib/powerdns" \
-    --entrypoint /bin/sh "$image" -ec \
-    'chown 953:953 /var/lib/powerdns'
+initialize_data_volume() {
+    "${docker_run[@]}" \
+        --user 0:0 --network none --cap-drop ALL --cap-add CHOWN \
+        --mount "type=bind,src=$work_dir/data,dst=/var/lib/powerdns" \
+        --entrypoint /bin/sh "$image" -ec '
+            pdns_uid="$(id -u pdns)"
+            pdns_gid="$(id -g pdns)"
+            owner="$(stat -c "%u:%g" /var/lib/powerdns)"
+            mode="$(stat -c "%a" /var/lib/powerdns)"
+            test "$pdns_uid" = 953
+            if [ "$owner" = "0:0" ]; then
+                chmod 0750 /var/lib/powerdns
+                chown "$pdns_uid:$pdns_gid" /var/lib/powerdns
+            else
+                test "$owner" = "$pdns_uid:$pdns_gid"
+                test "$mode" = 750
+            fi
+        '
+}
+
+initialize_data_volume
+initialize_data_volume
 
 initialize() {
     "${docker_run[@]}" \
