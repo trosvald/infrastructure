@@ -2,13 +2,14 @@
 
 Date: 2026-08-26
 Final design gate (revised split-storage review): `APPROVED_WITH_CONDITIONS`.
-Mission blocked pending fresh 1 TB exact identity/health/signatures/plan and the six-line
-`APPROVE C1 STORAGE` approval.
+First apply failed safely on the invalid 16-char XFS label `c1_applications`; partial state was
+rolled back to a blank GPT, the prior plan digest and approval were invalidated, and the corrected
+label contract (`c1_applications` GPT PARTLABEL + `c1_apps` XFS filesystem label) requires fresh
+re-review before any retry. Mission blocked pending fresh 1 TB exact identity/health/signatures/
+plan and the six-line `APPROVE C1 STORAGE` approval under the corrected contract.
 Scope: `DISCOVERY.md`, `DESIGN-AND-PLAN.md`, `SECRET-CONTRACT.md`, `LIBREFS.md`,
 `FUTURE-EDGE.md`, adjacent c0 conventions, OpenBao policy patterns, Docker validation, and the Junos
 adoption gate. This is a design review, not an implementation review or live authorization.
-
-## Review history
 
 The first independent pass returned `BLOCKED` with six HIGH and four MEDIUM findings. The main
 orchestrator corrected the documents. A focused recheck found two HIGH closures incomplete; those
@@ -16,8 +17,16 @@ were corrected and a final independent pass found no remaining CRITICAL/HIGH des
 
 The revised split-storage review then re-examined the boundary change (Docker/containerd on OS
 disk; 1 TB NVMe split 50:50 for `/srv/librefs` and `/srv/applications`; 512 GB quarantined and
-excluded). Four findings were recorded; all closed under the revised contract. Final gate for the
-revised split-storage review: `APPROVED_WITH_CONDITIONS`.
+excluded). Four findings were recorded; all closed under the revised contract. The first apply
+then failed safely on the invalid 16-char XFS label `c1_applications`; partial filesystem state
+was rolled back to a blank GPT, no mount was committed, no engine state changed, and the prior
+plan digest and approval were invalidated.
+
+The corrected split-storage review then re-examined the boundary under the corrected label
+contract (`c1_applications` GPT PARTLABEL + `c1_apps` XFS filesystem label, both partition 2;
+`c1_librefs` for both labels on partition 1). The corrected contract closes one additional
+finding and supersedes RSS-2's label handling. Final gate for the corrected split-storage review:
+`APPROVED_WITH_CONDITIONS`.
 
 ### HIGH-1 — Doco ordinary-KV deployment behavior
 
@@ -110,6 +119,7 @@ passes.
 
 Four findings were opened against the revised boundary. All closed under the revised contract.
 
+
 | # | Severity | Finding | Closure |
 |---|---|---|---|
 | RSS-1 | HIGH | Plan-digest revalidation before retry wipe must distinguish saved, pristine, and partial-child states | `CLOSED`. `apply` revalidation recognizes three pre-write states: `saved` (plan persisted on disk; verified digest matches approval → proceed), `pristine` (no plan on disk; first run → proceed), `partial-child` (only partition 1 or partition 2 filesystem recorded as pending; complete only the missing side and pass UUID/XFS/RW before its fstab entry is committed). Any unrecognized intermediate layout fails closed and refuses the wipe. |
@@ -117,11 +127,26 @@ Four findings were opened against the revised boundary. All closed under the rev
 | RSS-3 | HIGH | libreFS restart posture and systemd ownership boundary | `CLOSED`. Compose restart policy is `no`; `librefs-c1.service` + `manage-c1-librefs` own every start/stop and only invoke `docker start` after `c1-librefs-storage.service`, `c1-services-shim.service`, and `assert-c1-mount` report active. The Doco controller uses the same storage prerequisites plus the token TTL gate. Initial Doco deploy is safe because Doco itself refuses to start without those storage units. |
 | RSS-4 | HIGH | Engine `SOURCE` provenance and exact Linux filesystem GPT GUIDs | `CLOSED`. Docker and containerd `SOURCE` must equal `/` source under the storage gate; the runbook proves this before any wipe and fails closed on drift. Both partitions use the Linux filesystem GPT type GUID `0FC63DAF-8483-4772-8E79-3D69D8477DE4` and the basic data partition GUID `EBD0A0A2-B9E5-4433-87C0-68B6B72699C7` is rejected; the helper reads GPT type by GUID, not by label. |
 
+## Corrected split-storage review — additional finding
+
+The first `apply` failed safely on the 16-character XFS label `c1_applications` (XFS hard limit:
+12 characters). Partial filesystem state was rolled back to a blank GPT; no mount was committed,
+no engine state changed. The prior plan digest and approval are invalidated; the corrected
+contract below requires a fresh single-device plan and a fresh six-line `APPROVE C1 STORAGE`
+approval before any retry.
+
+| # | Severity | Finding | Closure |
+|---|---|---|---|
+| RSS-5 | HIGH | GPT `PARTLABEL` and XFS filesystem label must be distinct fields with the correct lengths and must match the plan | `CLOSED UNDER CORRECTED CONTRACT`. The plan binds two distinct label fields per partition. GPT `PARTLABEL` (≤36 chars) carries `c1_librefs` / `c1_applications`. XFS filesystem label (≤12 chars hard limit) carries `c1_librefs` / `c1_apps`. The helper rejects any XFS label >12 chars and any PARTLABEL/XFS mismatch with the plan before any write. |
+
 ### Regression matrix (RSS closures)
 
 The implementation test matrix must assert each invariant below. Each test must be deterministic,
 command-mockable where it exercises rejection paths, and must fail on any drift.
 
+- label contract: GPT `PARTLABEL` `c1_librefs` / `c1_applications`, XFS label `c1_librefs` /
+  `c1_apps`; helper rejects any XFS label >12 chars and any PARTLABEL/XFS mismatch with the plan
+  before any write;
 - signature stability across `check → plan → apply` for the same by-id;
 - LVM/RAID/holder/holder-device rejection on the 1 TB target and on any non-1 TB by-id input;
 - `fuser`/open-users check on the resolved device and on every partition before write;
@@ -160,7 +185,6 @@ command-mockable where it exercises rejection paths, and must fail on any drift.
 - Tested libreFS UID/GID 1000, read-only root, dropped capabilities, file secrets, and Bash health.
 - Conservative LACP, MTU, offload, and performance claims.
 - Explicit off-host restore status cap.
-- HAProxy-only future edge and unchanged Junos `adopted: false` gate.
 
 The independent implementation pass initially returned `BLOCKED` with four HIGH and two MEDIUM
 findings. Corrections and focused rechecks closed all of them.

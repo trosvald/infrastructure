@@ -84,7 +84,7 @@ case "$name" in
   if [[ "$*" == *'-s TYPE'* ]]; then
    if [[ "${FAIL:-}" == unexpected-fs ]]; then echo ext4; fi
   elif [[ "$*" == *'-s LABEL'* ]]; then
-   if [[ "$part" == *1 ]]; then echo c1_librefs; else echo c1_applications; fi
+   if [[ "$part" == *1 ]]; then echo c1_librefs; else echo c1_apps; fi
   elif [[ "$part" == *1 ]]; then echo canary-librefs-uuid
   else echo canary-applications-uuid
   fi ;;
@@ -142,6 +142,11 @@ digest="${plan1##*PLAN_SHA256=}"
 [[ "$plan1" != *'512GB_PATH='* ]]
 P1_START="$(sed -n 's/^PART1_START=//p' <<<"$plan1")"
 [[ "$plan1" == *'1TB_HEALTH_CRITICAL_WARNING=0'* ]]
+[[ "$plan1" == *'PART1_FS_LABEL=c1_librefs'* ]]
+[[ "$plan1" == *'PART2_FS_LABEL=c1_apps'* ]]
+part1_fs_label="$(sed -n 's/^PART1_FS_LABEL=//p' <<<"$plan1")"
+part2_fs_label="$(sed -n 's/^PART2_FS_LABEL=//p' <<<"$plan1")"
+(( ${#part1_fs_label} <= 12 && ${#part2_fs_label} <= 12 ))
 [[ "$plan1" == *'1TB_HEALTH_MEDIA_ERRORS=0'* ]]
 P1_END="$(sed -n 's/^PART1_END=//p' <<<"$plan1")"
 P2_START="$(sed -n 's/^PART2_START=//p' <<<"$plan1")"

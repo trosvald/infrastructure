@@ -32,3 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   after 941 historical media/data-integrity errors despite successful short/extended self-tests.
   Revised code/review and exact single-device 1 TB approval remain gates; live c1 deployment is
   intentionally blocked.
+- Recorded the c1 1 TB apply attempt that failed safely (XFS hard 12-char label limit rejected the
+  16-char `c1_applications` filesystem label on partition 2; filesystem label corrected to
+  `c1_apps`, GPT PARTLABEL `c1_applications` unchanged). Partial state was rolled back to a blank
+  GPT; the prior plan digest and `APPROVE C1 STORAGE` are invalidated, and a fresh single-device
+  plan plus the six-line approval are required before retry.

@@ -1,8 +1,11 @@
 # c1 Design and Plan
 
 Date: 2026-08-26
-Status: storage boundary revised (1 TB only, 50:50 split; 512 GB quarantined/excluded); ready for
-independent re-review; mission blocked pending revised code/review and exact storage approval
+Status: storage boundary revised (1 TB only, 50:50 split; 512 GB quarantined/excluded); first apply
+failed safely on the invalid 16-char XFS label `c1_applications`; partial state rolled back to blank
+GPT; prior plan digest and approval invalidated; ready for focused re-review on the corrected label
+contract (`c1_apps` XFS label, `c1_applications` GPT PARTLABEL); mission blocked pending fresh
+single-device plan/approval.
 
 This plan follows `docs/c1/DISCOVERY.md`. It does not authorize storage, OpenBao, network, push,
 merge, reboot, or link-failure mutation.
@@ -46,13 +49,12 @@ Management remains `eno1`, `10.25.10.101/24`, default gateway `10.25.10.1`, DNS
 The operator revised the storage boundary after the 512 GB health finding. Docker engine state stays
 on the OS disk. The healthy 1 TB NVMe is split approximately 50:50 for libreFS and explicit
 application bind data.
-
-| Physical role | Partition/filesystem | Mount | Persistent content |
-|---|---|---|---|
-| 500 GB SATA OS disk | unchanged | existing mounts | OS, `/var/lib/docker`, `/var/lib/containerd`, container writable layers, images, Doco named volume |
-| approved 1 TB NVMe partition 1 | aligned XFS, CRC/reflink, `ftype=1`, label `c1_librefs` | `/srv/librefs` | libreFS `/srv/librefs/data` only |
-| approved 1 TB NVMe partition 2 | aligned XFS, CRC/reflink, `ftype=1`, label `c1_applications` | `/srv/applications` | future explicit application/database bind directories |
-| 512 GB NVMe | unchanged and unmounted | none | quarantined; not used by this mission |
+| Physical role | Partition/filesystem | GPT PARTLABEL | XFS label | Mount | Persistent content |
+|---|---|---|---|---|---|
+| 500 GB SATA OS disk | unchanged | n/a | n/a | existing mounts | OS, `/var/lib/docker`, `/var/lib/containerd`, container writable layers, images, Doco named volume |
+| approved 1 TB NVMe partition 1 | aligned XFS, CRC/reflink, `ftype=1` | `c1_librefs` | `c1_librefs` (≤12 chars) | `/srv/librefs` | libreFS `/srv/librefs/data` only |
+| approved 1 TB NVMe partition 2 | aligned XFS, CRC/reflink, `ftype=1` | `c1_applications` | `c1_apps` (≤12 chars) | `/srv/applications` | future explicit application/database bind directories |
+| 512 GB NVMe | unchanged and unmounted | n/a | n/a | none | quarantined; not used by this mission |
 
 The split uses one GPT and two aligned partitions. Partition 2 begins at the first 1 MiB-aligned
 sector at or after the midpoint of the usable GPT range; partition 1 ends immediately before it.
@@ -60,11 +62,20 @@ The resulting capacities differ only by alignment/GPT overhead rather than promi
 counts.
 
 Use filesystem UUIDs in `/etc/fstab`. The stable 1 TB by-id path identifies the only destructive
-input and remains root-only host state, not Git. Labels are diagnostic only. Mount options are
-`defaults,noatime`; no `nofail` and no continuous `discard`. Enable and verify `fstrim.timer`.
+input and remains root-only host state, not Git. Two label fields exist on each partition and the
+plan must bind both: the GPT `PARTLABEL` (≤36 chars) holds the operator-facing name — `c1_librefs`
+for partition 1 and `c1_applications` for partition 2 — and the XFS filesystem label (≤12 chars,
+hard XFS limit) holds the runtime name — `c1_librefs` for partition 1 and `c1_apps` for partition 2.
+The old partition-2 XFS label `c1_applications` (16 chars) exceeds the XFS limit and was rejected
+at first apply; the helper treats any pre-write label mismatch, XFS label overflow, or PARTLABEL
+mismatch as a stop condition. Labels are diagnostic only. Mount options are `defaults,noatime`;
+no `nofail` and no continuous `discard`. Enable and verify `fstrim.timer`.
 
-XFS is selected for both partitions. LVM, RAID, exotic allocation tuning, and using the second
-partition as a backup for libreFS are rejected: both partitions share one device and host.
+**Failed first apply — fresh approval required.** The first `apply` run failed safely on the
+invalid XFS label `c1_applications` (exceeds 12-character XFS limit). Partial filesystem state
+was rolled back to a blank GPT; no partition data survived, no mount was committed, and no engine
+state changed. The prior plan digest and the prior approval are invalidated; a fresh single-device
+plan digest and a fresh six-line `APPROVE C1 STORAGE` approval are required before any retry.
 
 ### Docker and application-state boundary
 
@@ -89,15 +100,14 @@ directory only while `/srv/librefs` is the verified first partition, then sets U
 
 ### Provisioning interface
 
-`docker/c1/.host/storage/ensure.sh` exposes:
-
 - `check <1TB-by-id>`: read-only identity, health, use, signature, NVMe critical-warning,
   media/data-integrity, and available-spare checks; rejects any non-zero critical-warning,
   non-zero media/data-integrity counter, or below-bound available-spare;
 - `plan <1TB-by-id>`: a digest-bound destructive plan containing exact identity, size, signatures,
   sector split, GPT type GUID `0FC63DAF-8483-4772-8E79-3D69D8477DE4` for both partitions (basic-data
-  GUID `EBD0A0A2-B9E5-4433-87C0-68B6B72699C7` rejected), NVMe health gate values, two labels/mounts,
-  actions, and OS/512 GB exclusions;
+  GUID `EBD0A0A2-B9E5-4433-87C0-68B6B72699C7` rejected), NVMe health gate values, two GPT
+  PARTLABELs (`c1_librefs`, `c1_applications`) and two XFS filesystem labels (`c1_librefs`,
+  `c1_apps`, each ≤12 chars), two labels/mounts, actions, and OS/512 GB exclusions;
 - `apply <1TB-by-id> <PLAN_SHA256>`: protected-stdin approval, immediate plan recomputation,
   pre-write revalidation distinguishing `saved` (verified digest matches approval → proceed),
   `pristine` (no plan on disk → proceed), and `partial-child` (only one partition recorded as
@@ -109,8 +119,9 @@ directory only while `/srv/librefs` is the verified first partition, then sets U
 Initial planning rejects the root/boot/swap disk, unstable or partition by-id input, mounts,
 partitions, signatures, LVM, RAID, holders, open users, failed health (non-zero critical-warning,
 non-zero media/data-integrity counter, or below-bound available-spare), size/model mismatch,
-non-Linux-filesystem GPT type GUID, changed evidence, and Docker/containerd `SOURCE` not equal to
-`/` source. The 1 TB target currently has no recognized signature.
+non-Linux-filesystem GPT type GUID, XFS label overflow (>12 chars), GPT PARTLABEL / XFS label
+mismatch with the plan, changed evidence, and Docker/containerd `SOURCE` not equal to `/` source.
+The 1 TB target currently has no recognized signature.
 
 Before the first write, apply atomically persists the complete approved plan. It creates the GPT and
 both partition entries in one step, then provisions each partition independently. Each filesystem

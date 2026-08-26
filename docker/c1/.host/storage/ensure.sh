@@ -184,8 +184,8 @@ evidence() {
         'C1_STORAGE_PLAN_VERSION=2' "1TB_PATH=$path" "1TB_DEVICE=$device" \
         "1TB_MODEL=$model" "1TB_SIZE=$size" "1TB_LOGICAL_SECTOR=$sector" \
         "1TB_SIGNATURES=$signatures" "$health" "$layout" \
-        'PART1_LABEL=c1_librefs' 'PART1_MOUNT=/srv/librefs' \
-        'PART2_LABEL=c1_applications' 'PART2_MOUNT=/srv/applications' \
+        'PART1_GPT_LABEL=c1_librefs' 'PART1_FS_LABEL=c1_librefs' 'PART1_MOUNT=/srv/librefs' \
+        'PART2_GPT_LABEL=c1_applications' 'PART2_FS_LABEL=c1_apps' 'PART2_MOUNT=/srv/applications' \
         'PARTITION_LAYOUT=50% LIBREFS + 50% APPLICATIONS' \
         '1TB_ACTION=erase-gpt;gpt-two-xfs-partitions' \
         'OS_DISK_EXCLUDED=true' '512GB_EXCLUDED=true' \
@@ -455,52 +455,53 @@ PY
 }
 
 finish_pending() {
-    local device="$1" number="$2" label="$3" mount_path="$4"
-    local pending="$STATE_DIR/${label}.pending" complete="$STATE_DIR/${label}.uuid"
+    local device="$1" number="$2" state_label="$3" fs_label="$4" mount_path="$5"
+    local pending="$STATE_DIR/${state_label}.pending" complete="$STATE_DIR/${state_label}.uuid"
     local uuid part actual_uuid actual_label
-    [[ -r "$pending" && ! -e "$complete" ]] || fail "$label pending state is invalid"
+    [[ -r "$pending" && ! -e "$complete" ]] || fail "$state_label pending state is invalid"
     IFS= read -r uuid <"$pending"
-    [[ "$uuid" =~ ^[[:alnum:]-]+$ ]] || fail "$label pending UUID is invalid"
+    [[ "$uuid" =~ ^[[:alnum:]-]+$ ]] || fail "$state_label pending UUID is invalid"
     part="$(partition_path "$device" "$number")"
     actual_uuid="$("$BLKID_BIN" -s UUID -o value "$part")"
     actual_label="$("$BLKID_BIN" -s LABEL -o value "$part")"
-    [[ "$actual_uuid" == "$uuid" && "$actual_label" == "$label" ]] \
-        || fail "$label pending filesystem identity changed"
+    [[ "$actual_uuid" == "$uuid" && "$actual_label" == "$fs_label" ]] \
+        || fail "$state_label pending filesystem identity changed"
     "$INSTALL_BIN" -d -m 0755 "$mount_path"
     if ! "$MOUNTPOINT_BIN" -q "$mount_path"; then
-        "$MOUNT_BIN" "$part" "$mount_path" || fail "failed to mount $label filesystem"
+        "$MOUNT_BIN" "$part" "$mount_path" || fail "failed to mount $state_label filesystem"
     fi
     assert_mount "$mount_path" "$uuid"
     commit_fstab "$mount_path" "$uuid"
-    assert_fstab_entry "$mount_path" "$uuid" || fail "$label fstab verification failed"
+    assert_fstab_entry "$mount_path" "$uuid" || fail "$state_label fstab verification failed"
     mv -f "$pending" "$complete"
 }
 
 provision_partition() {
-    local device="$1" number="$2" label="$3" mount_path="$4"
-    local complete="$STATE_DIR/${label}.uuid" pending="$STATE_DIR/${label}.pending"
+    local device="$1" number="$2" state_label="$3" fs_label="$4" mount_path="$5"
+    local complete="$STATE_DIR/${state_label}.uuid" pending="$STATE_DIR/${state_label}.pending"
     local part uuid actual_label actual_type
     if [[ -r "$complete" ]]; then
-        [[ ! -e "$pending" ]] || fail "$label has both complete and pending state"
+        [[ ! -e "$pending" ]] || fail "$state_label has both complete and pending state"
         IFS= read -r uuid <"$complete"
         assert_mount "$mount_path" "$uuid"
-        assert_fstab_entry "$mount_path" "$uuid" || fail "$label fstab verification failed"
+        assert_fstab_entry "$mount_path" "$uuid" || fail "$state_label fstab verification failed"
         return
     fi
     if [[ -r "$pending" ]]; then
-        finish_pending "$device" "$number" "$label" "$mount_path"
+        finish_pending "$device" "$number" "$state_label" "$fs_label" "$mount_path"
         return
     fi
     part="$(partition_path "$device" "$number")"
     actual_label="$("$BLKID_BIN" -s LABEL -o value "$part" 2>/dev/null || true)"
     actual_type="$("$BLKID_BIN" -s TYPE -o value "$part" 2>/dev/null || true)"
-    [[ -z "$actual_type" || ( "$actual_type" == xfs && "$actual_label" == "$label" ) ]] \
-        || fail "$label partition has an unexpected filesystem"
-    "$MKFS_XFS_BIN" -f -m crc=1,reflink=1 -n ftype=1 -L "$label" "$part"
+    [[ -z "$actual_type" || ( "$actual_type" == xfs && "$actual_label" == "$fs_label" ) ]] \
+        || fail "$state_label partition has an unexpected filesystem"
+    assert_unmounted_and_unused "$part" "$state_label partition"
+    "$MKFS_XFS_BIN" -f -m crc=1,reflink=1 -n ftype=1 -L "$fs_label" "$part"
     uuid="$("$BLKID_BIN" -s UUID -o value "$part")"
-    [[ "$uuid" =~ ^[[:alnum:]-]+$ ]] || fail "$label filesystem UUID is invalid"
+    [[ "$uuid" =~ ^[[:alnum:]-]+$ ]] || fail "$state_label filesystem UUID is invalid"
     printf '%s\n' "$uuid" | atomic_state_file "$pending" 0600
-    finish_pending "$device" "$number" "$label" "$mount_path"
+    finish_pending "$device" "$number" "$state_label" "$fs_label" "$mount_path"
 }
 
 verify_installed() {
@@ -571,8 +572,8 @@ ACKNOWLEDGE_WIPE=ERASE APPROVED 1TB TARGET ONLY"
     verify_saved_identity "$current"
     device="$(plan_value "$current" 1TB_DEVICE)"
     ensure_layout "$device" "$current"
-    provision_partition "$device" 1 c1_librefs /srv/librefs
-    provision_partition "$device" 2 c1_applications /srv/applications
+    provision_partition "$device" 1 c1_librefs c1_librefs /srv/librefs
+    provision_partition "$device" 2 c1_applications c1_apps /srv/applications
     "$INSTALL_BIN" -d -m 0750 -o 1000 -g 1000 /srv/librefs/data
     "$INSTALL_BIN" -d -m 0755 -o root -g root /srv/applications
     verify_installed >/dev/null
