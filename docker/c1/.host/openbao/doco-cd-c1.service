@@ -1,0 +1,19 @@
+[Unit]
+Description=c1 Doco-CD controller
+Requires=docker.service c1-librefs-storage.service c1-services-shim.service
+After=docker.service c1-librefs-storage.service c1-services-shim.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/doco-cd
+ExecStartPre=/usr/local/sbin/check-c1-openbao-token
+ExecStart=/usr/bin/docker compose -f /opt/doco-cd/docker-compose.app.yaml up --force-recreate --no-deps doco-cd
+ExecStop=/usr/bin/docker compose -f /opt/doco-cd/docker-compose.app.yaml stop -t 60 doco-cd
+Restart=on-failure
+RestartSec=60s
+TimeoutStartSec=180s
+TimeoutStopSec=90s
+
+[Install]
+WantedBy=multi-user.target

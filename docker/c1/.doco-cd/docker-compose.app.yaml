@@ -1,0 +1,54 @@
+---
+name: doco-cd-c1
+
+services:
+  doco-cd:
+    # yamllint disable-line rule:line-length
+    image: ghcr.io/kimdre/doco-cd:0.111.0@sha256:8c31f63f6bde1b67f0802619bad0599bf5e41503f5532be9cc58d0f063b1eeea
+    container_name: doco-cd-c1
+    restart: "no"
+    environment:
+      API_SECRET_FILE: /run/secrets/api_secret
+      DEPLOY_CONFIG_BASE_DIR: ./docker/c1/
+      HTTP_PORT: "80"
+      LOG_LEVEL: info
+      METRICS_PORT: "9120"
+      POLL_CONFIG_FILE: /etc/doco-cd/poll-config.yml
+      SCHEDULER_ENABLED: "false"
+      SECRET_PROVIDER: openbao
+      SECRET_PROVIDER_ACCESS_TOKEN_FILE: /run/secrets/openbao_token
+      SECRET_PROVIDER_SITE_URL: https://vault.monosense.io:8200
+      TZ: Asia/Jakarta
+    extra_hosts:
+      - vault.monosense.io:10.25.13.34
+    ports:
+      - 127.0.0.1:8080:80
+      - 127.0.0.1:9120:9120
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - doco-cd-c1-data:/data
+      - ./poll-config.yml:/etc/doco-cd/poll-config.yml:ro
+    secrets:
+      - api_secret
+      - openbao_token
+    healthcheck:
+      test: ["CMD", "/doco-cd", "healthcheck"]
+      start_period: 15s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+secrets:
+  api_secret:
+    file: ${DOCO_CD_API_SECRET_FILE:-/opt/doco-cd/secrets/api_secret}
+  openbao_token:
+    file: ${DOCO_CD_OPENBAO_TOKEN_FILE:-/opt/doco-cd/secrets/openbao-token}
+
+volumes:
+  doco-cd-c1-data:
+    name: doco-cd-c1-data

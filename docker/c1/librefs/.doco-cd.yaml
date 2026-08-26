@@ -1,0 +1,5 @@
+---
+name: librefs-c1
+external_secrets:
+  LIBREFS_ROOT_USER: kv:kv:docker/c1/librefs:root_user
+  LIBREFS_ROOT_PASSWORD: kv:kv:docker/c1/librefs:root_password

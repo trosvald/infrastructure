@@ -1,0 +1,13 @@
+[Unit]
+Description=Assert c1 libreFS storage mount
+RequiresMountsFor=/srv/librefs
+After=srv-librefs.mount
+Before=doco-cd-c1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/assert-c1-mount librefs /srv/librefs
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

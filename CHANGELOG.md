@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rollout and client cutover remain outside this repository's automation scope.
 - Added a pinned, polling-only Doco-CD bootstrap configuration for c0 with c0-scoped discovery and
   loopback-only management endpoints.
+- Added the reviewed c1 repository foundation: pinned Doco-CD and libreFS configuration,
+  fail-closed network and storage prerequisites, narrow OpenBao policy and token lifecycle,
+  deterministic offline tests, CI validation, and gated operations. No c1 or OpenBao live state is
+  changed by this repository addition.
 - Added the isolated Junos SRX1500 intent refactor: deterministic seven-domain rendering, exact
   NETCONF identity/release gates, protected transient artifacts, and digest-bound
   commit-check/commit-confirmed lifecycle. The tracked adoption record remains false, so live

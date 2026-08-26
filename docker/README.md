@@ -9,8 +9,9 @@ Inventory last verified over SSH on 2026-08-25. The canonical hostnames are `c0`
 | `c0` | Core services | Intel Core i7-7700T, 4 cores/8 threads | 32 GiB | Debian 13.6, kernel `6.12.101+deb13-amd64` | Docker Engine 29.7.2, Compose 5.5.0 |
 | `c1` | General services | Intel Core i7-8700T, 6 cores/12 threads | 64 GiB | Debian 13.6, kernel `6.12.101+deb13-amd64` | Docker Engine 29.7.2, Compose 5.5.0 |
 
-c0 runs Doco-CD, OpenBao, its certificate renewer, PowerDNS, and Omada Controller. c1 has no
-persistent containers.
+c0 runs Doco-CD, OpenBao, its certificate renewer, PowerDNS, and Omada Controller. The reviewed c1
+Doco-CD, storage, network, token-lifecycle, and libreFS configuration is repository-only and remains
+undeployed pending every checkpoint in `docs/c1/OPERATIONS.md`.
 
 ## Doco-CD on c0
 
@@ -94,6 +95,21 @@ isolated c1 restore were verified. Omada Controller was reset to clean named vol
 then configured manually with a local owner and site. Initial device adoption failed because the
 Device Account username/password did not match; adoption succeeded after correcting those
 credentials. cAdvisor and native observability remain undeployed on c0.
+
+## Doco-CD and libreFS on c1
+
+c1 mirrors the c0 ownership boundary under `docker/c1/`: `.doco-cd/` is bootstrap-owned, `.host/`
+contains fail-closed host prerequisites, and only direct non-hidden children such as `librefs/` are
+Doco-managed applications. Doco-CD remains pinned to 0.111.0, polls public `main` every 180 seconds,
+binds API and metrics only on loopback, and uses a root-only file token for the exact `doco-c1`
+OpenBao policy. It has no c0 SOPS identity.
+
+libreFS is pinned by the tested amd64 manifest digest, runs as UID/GID 1000 with a read-only root,
+receives only `_FILE` secret paths, publishes no host ports, and uses static address
+`10.25.13.65` on external `c1_services`. Its only writable persistent bind is the asserted
+`/srv/librefs/data` mount. The repository does not authorize creating the network, storage,
+OpenBao records, controller, or application. Use `just docker validate-c1` for offline validation
+and `docs/c1/OPERATIONS.md` for the gated procedure.
 
 ## Application inventory
 

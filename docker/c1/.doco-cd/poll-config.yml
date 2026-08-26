@@ -1,0 +1,5 @@
+---
+- url: https://github.com/trosvald/infrastructure.git
+  reference: refs/heads/main
+  interval: 180s
+  watch: false
