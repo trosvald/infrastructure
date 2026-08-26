@@ -54,6 +54,7 @@ controller_unit=(root/".host/openbao/doco-cd-c1.service").read_text()
 timer=(root/".host/openbao/doco-c1-openbao-renew.timer").read_text()
 assert '/dev/fd/3' in renew and 'X-Vault-Token' in renew and "--proto '=https'" in renew and 'renew-self' in renew
 assert '/dev/fd/3' in gate and 'lookup-self' in gate and 'ttl>int(sys.argv[1])' in gate
+assert '/v1/api/projects' in controller_gate and 'pre-merge API authentication passed' in controller_gate
 assert '/v1/api/poll/run?wait=true' in controller_gate and '/v1/api/run/$job_id' in controller_gate
 assert 'APP_CONFIG_URL' in controller_gate and 'REQUIRE_PROVIDER_CANARY' in controller_gate
 assert 'env REQUIRE_PROVIDER_CANARY=true "$CONTROLLER_GATE"' in installer

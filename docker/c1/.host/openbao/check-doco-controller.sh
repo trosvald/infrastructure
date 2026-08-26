@@ -33,6 +33,24 @@ for _ in $(seq 1 90); do
 done
 [[ "$healthy" == true ]] || fail 'Doco controller did not become healthy'
 
+if [[ "$REQUIRE_PROVIDER_CANARY" == false ]]; then
+    exec 3<<<"header = \"x-api-key: $api_secret\""
+    projects="$(
+        "$CURL_BIN" --silent --show-error --fail-with-body --proto '=http' \
+            --config /dev/fd/3 "$DOCO_URL/v1/api/projects"
+    )" || fail 'Doco pre-merge API authentication failed'
+    exec 3<&-
+    unset api_secret
+    "$PYTHON_BIN" -c '
+import json,sys
+x=json.load(sys.stdin)
+raise SystemExit(0 if isinstance(x.get("content"),list) else 1)
+' <<<"$projects" || fail 'Doco pre-merge API response is invalid'
+    unset projects
+    printf 'Doco controller health and pre-merge API authentication passed\n'
+    exit 0
+fi
+
 if [[ "$REQUIRE_PROVIDER_CANARY" == true ]]; then
     app_config="$(
         "$CURL_BIN" --silent --show-error --fail-with-body --proto '=https' --tlsv1.2 \

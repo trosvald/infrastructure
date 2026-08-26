@@ -62,7 +62,9 @@ done
 [[ -n "$config" ]]
 header="$(cat "$config")"
 [[ "$header" == 'header = "x-api-key: c1-safe-api-secret-canary-abcdefghijklmnopqrstuvwxyz"' ]] || exit 23
-if [[ "$*" == *'/v1/api/poll/run?wait=true'* ]]; then
+if [[ "$*" == *'/v1/api/projects'* ]]; then
+    printf '%s\n' '{"content":[],"job_id":"safe-api-job"}'
+elif [[ "$*" == *'/v1/api/poll/run?wait=true'* ]]; then
     cat >/dev/null
     if [[ "${BAD_JOB:-false}" == true ]]; then printf '%s\n' '{"data":"poll jobs complete"}'; else printf '%s\n' '{"data":"poll jobs complete","job_id":"safe-job-id"}'; fi
 elif [[ "$*" == *'/v1/api/run/safe-job-id'* ]]; then

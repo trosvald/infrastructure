@@ -20,17 +20,24 @@ Discovery supports repository design, and the corrected storage retry has succee
   and the network unit `c1-services-network.service` are both active; the route
   `10.25.13.64/27` is verified with `dev c1-svc-shim` and scope `link`;
 - Docker and containerd `SOURCE` equals `/` source;
-- the first apply failed safely on the overlength 16-char XFS label `c1_applications` and on a
-  filtered-route query that hid the shim's `dev` field; the corrected retry succeeded under a
-  fresh plan/approval; the corrected shim validator queries routes without a `dev` filter;
-- `.65` and `.66` are unclaimed in repository IPAM, but live duplicate-address probing is
-  inconclusive because `arping` is absent;
-- OpenBao health and TLS are proven, but authenticated KV mount, write, and audit metadata
-  remain unverified;
+- OpenBao checkpoint completed: policy `doco-c1` installed; KV v2 `kv/docker/c1/librefs` v1
+  provisioned with the exact `root_user`/`root_password` keys; orphan periodic 24h token issued;
+  policy allows only `kv/data/docker/c1/librefs` (read), `auth/token/lookup-self`, and
+  `auth/token/renew-self`; all unrelated capabilities (`kv/metadata/...`, list, write, patch,
+  delete, undelete, destroy, metadata, c0/Junos/global/identity/policy/auth-method/
+  token-creation/system/PKI paths, sudo, future c1 services) are denied; audit file device
+  enabled; multi-recipient Raft snapshot captured to the workstation and encrypted under the
+  offline-recovery multi-recipient age boundary; structural verification passed
+  (`meta.json`, `state.bin`, `SHA256SUMS`, `SHA256SUMS.sealed`); internal SHA256SUMS verified
+  (no snapshot-inspect available on the installed bao, so structural and internal checksums are
+  the reviewed evidence). The first capabilities-self call returned 403 because the no-default
+  Doco policy cannot call `capabilities-self`; recovery used a short-lived admin token via
+  `sys/capabilities-accessor` and did not broaden the Doco policy. The short-lived admin token
+  was revoked and removed. No secrets, recipients, hashes, or token values are recorded here.
 - no safe benchmark tooling or proven multi-peer test topology is currently available.
 
-No host, OpenBao, network, storage, package, or service mutation occurred outside the reviewed
-corrected retry on the 1 TB NVMe.
+No host, network, storage, package, or service mutation occurred outside the reviewed corrected
+retry on the 1 TB NVMe and the reviewed OpenBao checkpoint.
 
 ## Repository baseline
 

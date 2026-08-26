@@ -1,13 +1,22 @@
 # c1 Secret Contract
 
 Date: 2026-08-26
-Status: design; storage and network applied and verified (1 TB split: `c1_librefs` at `/srv/librefs`,
+Status: storage and network applied and verified (1 TB split: `c1_librefs` at `/srv/librefs`,
 `c1_apps` at `/srv/applications`, `defaults,noatime`; Docker/containerd `SOURCE` equals `/` source;
-`c1-svc-shim` and `c1-services-network.service` active; 512 GB excluded). No OpenBao value or policy
-has been changed; remaining gates are OpenBao writes, push, merge, deploy, reboot, off-host backup/
-restore.
-
-## Boundary
+`c1-svc-shim` and `c1-services-network.service` active; 512 GB excluded). OpenBao checkpoint
+completed: policy `doco-c1` installed; KV v2 `kv/docker/c1/librefs` v1 provisioned with the exact
+`root_user`/`root_password` keys; orphan periodic 24h token issued with self-lookup and
+self-renew only; policy allows only `kv/data/docker/c1/librefs` (read), `auth/token/lookup-self`,
+and `auth/token/renew-self`; all unrelated capabilities are denied; audit file device
+enabled. Multi-recipient Raft snapshot captured to the workstation and encrypted under the
+offline-recovery age boundary; structural verification passed (`meta.json`, `state.bin`,
+`SHA256SUMS`, `SHA256SUMS.sealed`); internal SHA256SUMS verified (no snapshot-inspect on the
+installed bao; structural and internal checksums are the reviewed evidence). The first
+capabilities-self call returned 403 (no-default Doco policy cannot call `capabilities-self`);
+recovery used a short-lived admin token via `sys/capabilities-accessor` and did not broaden
+the Doco policy. The short-lived admin token was revoked and removed. No secrets, recipients,
+hashes, or token values are recorded here. Remaining gates are push, merge, deploy, reboot,
+off-host libreFS backup/restore.
 
 OpenBao is authoritative for c1 application runtime secrets. Doco-CD resolves KV values only while
 it deploys a project. It is not a runtime sidecar and does not refresh an already-running

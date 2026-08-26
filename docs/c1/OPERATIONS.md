@@ -187,6 +187,20 @@ unit, and the shim link in place for re-inspection.
 
 ## OpenBao token lifecycle
 
+OpenBao checkpoint completed: policy `doco-c1` installed; KV v2 `kv/docker/c1/librefs` v1
+provisioned with the exact `root_user`/`root_password` keys; orphan periodic 24h token issued
+with self-lookup and self-renew only; policy allows only `kv/data/docker/c1/librefs` (read),
+`auth/token/lookup-self`, and `auth/token/renew-self`; all unrelated capabilities are denied;
+audit file device enabled. Multi-recipient Raft snapshot captured to the workstation and
+encrypted under the offline-recovery age boundary; structural verification passed
+(`meta.json`, `state.bin`, `SHA256SUMS`, `SHA256SUMS.sealed`); internal SHA256SUMS verified
+(no snapshot-inspect on the installed bao; structural and internal checksums are the reviewed
+evidence). The first capabilities-self call returned 403 because the no-default Doco policy
+cannot call `capabilities-self`; recovery used a short-lived admin token via
+`sys/capabilities-accessor` and did not broaden the Doco policy. The short-lived admin token
+was revoked and removed. No secrets, recipients, hashes, or token values are recorded here.
+Off-host libreFS backup/restore remains separate and unproven.
+
 OpenBao mutation is a separate administrator checkpoint. The only application record is logical KV
 path `kv/docker/c1/librefs`, with keys `root_user` and `root_password`; values enter through the
 approved hidden-input flow and are never printed. Install the exact `doco-c1.hcl` policy only after

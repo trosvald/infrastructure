@@ -235,16 +235,28 @@ policy, rendered Compose, and libreFS hardening.
 
 ## Remaining gates before push, deploy, and real data
 
-Storage and network are applied successfully. The remaining gates are:
+Storage, network, and the OpenBao checkpoint are completed. The remaining gates are:
 
 1. Conclusive `.65` and `.66` collision checks.
-2. Authenticated OpenBao KV v2, audit, token-limit, policy, and renewal evidence.
-3. Passing Doco/Compose secret-persistence canary.
-4. Passing required cleartext source/denied reachability matrix, or tested TLS/enforceable control.
-5. Passing implementation review with no CRITICAL/HIGH finding.
-6. Required OpenBao, push, merge, deploy, reboot, and optional failover approvals.
-7. Off-host target and restore proof for any status above `OPERATIONAL_WITHOUT_DURABILITY`.
+2. Passing Doco/Compose secret-persistence canary.
+3. Passing required cleartext source/denied reachability matrix, or tested TLS/enforceable control.
+4. Passing implementation review with no CRITICAL/HIGH finding.
+5. Required push, merge, deploy, reboot, and optional failover approvals.
+6. Off-host libreFS backup/restore proof for any status above `OPERATIONAL_WITHOUT_DURABILITY`.
+
+OpenBao checkpoint summary: policy `doco-c1` installed; KV v2 `kv/docker/c1/librefs` v1
+provisioned with the exact `root_user`/`root_password` keys; orphan periodic 24h token issued
+with self-lookup and self-renew only; policy allows only `kv/data/docker/c1/librefs` (read),
+`auth/token/lookup-self`, and `auth/token/renew-self`; all unrelated capabilities are denied;
+audit file device enabled. Multi-recipient Raft snapshot captured to the workstation and
+encrypted under the offline-recovery age boundary; structural verification passed
+(`meta.json`, `state.bin`, `SHA256SUMS`, `SHA256SUMS.sealed`); internal SHA256SUMS verified
+(no snapshot-inspect on the installed bao; structural and internal checksums are the reviewed
+evidence). The first capabilities-self call returned 403 because the no-default Doco policy
+cannot call `capabilities-self`; recovery used a short-lived admin token via
+`sys/capabilities-accessor` and did not broaden the Doco policy. The short-lived admin token
+was revoked and removed. No secrets, recipients, hashes, or token values are recorded here.
 
 These are enforced stop conditions, not implied approvals. The 512 GB device remains excluded
-from any approval and is never an argument. Storage or network mutation is no longer required
-for the current mission state.
+from any approval and is never an argument. Storage, network, and OpenBao mutation are no longer
+required for the current mission state.
