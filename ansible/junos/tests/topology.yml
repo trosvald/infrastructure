@@ -1,6 +1,7 @@
 ---
 # Reserved documentation ranges; never used by live actions.
-management_address: 192.0.2.10
+management_address: 203.0.113.10
+system: { domain: example.invalid }
 dns:
   primary: 192.0.2.53
   secondary: 198.51.100.53
@@ -8,9 +9,20 @@ dns:
   internal_cidr: 192.0.2.53/32
 ntp: { preferred: 192.0.2.123, secondary: 198.51.100.123 }
 wan: { primary_mac: "02:00:00:00:00:01", secondary_mac: "02:00:00:00:00:02" }
+dhcp: { option_138: 192.0.2.2 }
 networks:
   mgmt: { subnet: 192.0.2.0/27, gateway: 192.0.2.1, gateway_cidr: 192.0.2.1/27, dhcp_low: 192.0.2.10, dhcp_high: 192.0.2.20 }
   prod: { subnet: 198.51.100.0/27, gateway: 198.51.100.1, gateway_cidr: 198.51.100.1/27, dhcp_low: 198.51.100.10, dhcp_high: 198.51.100.20 }
-  home: { subnet: 203.0.113.0/27, gateway_cidr: 203.0.113.1/27 }
+  home: { subnet: 203.0.113.0/27, gateway: 203.0.113.1, gateway_cidr: 203.0.113.1/27, dhcp_low: 203.0.113.10, dhcp_high: 203.0.113.20 }
   dev: { subnet: 192.0.2.32/27, gateway: 192.0.2.33, gateway_cidr: 192.0.2.33/27, dhcp_low: 192.0.2.40, dhcp_high: 192.0.2.50 }
-reservations: { mgmt: [], prod: [], dev: [] }
+reservations:
+  mgmt:
+    - { name: synthetic-mgmt-a, mac: "02:00:00:00:10:01", ip: 192.0.2.11 }
+    - { name: synthetic-mgmt-b, mac: "02:00:00:00:10:02", ip: 192.0.2.12 }
+  prod:
+    - { name: synthetic-prod-a, mac: "02:00:00:00:20:01", ip: 198.51.100.11 }
+    - { name: synthetic-prod-b, mac: "02:00:00:00:20:02", ip: 198.51.100.12 }
+  home:
+    - { name: synthetic-home-a, mac: "02:00:00:00:30:01", ip: 203.0.113.11 }
+    - { name: synthetic-home-b, mac: "02:00:00:00:30:02", ip: 203.0.113.12 }
+  dev: []

@@ -16,16 +16,78 @@ mode="${1:-}"
 }
 shift
 [[ $# -gt 0 ]] || { echo "runtime command is required" >&2; exit 2; }
+case "$mode" in
+  topology)
+    [[ $# -eq 2 && "$1" == "scripts/render.sh" && "$2" == "--check" ]] || {
+      echo "topology runtime permits only the protected render action" >&2
+      exit 2
+    }
+    ;;
+  live)
+    case "${1:-}" in
+      scripts/deploy.sh|scripts/verify.sh|scripts/backup.sh)
+        [[ $# -eq 1 ]] || { echo "live scripts do not accept trailing arguments" >&2; exit 2; }
+        ;;
+      ansible-playbook)
+        if [[ $# -eq 4 && "$2" == "playbooks/live.yml" && "$3" == "-e" &&
+          ( "$4" == "operation=check" || "$4" == "operation=diff" ) ]]; then
+          :
+        elif [[ $# -eq 5 && "$2" == "--diff" && "$3" == "playbooks/live.yml" && "$4" == "-e" && "$5" == "operation=diff" ]]; then
+          :
+        elif [[ $# -eq 2 && "$2" == "playbooks/drift.yml" ]]; then
+          :
+        else
+          echo "live runtime received an unapproved Ansible action" >&2
+          exit 2
+        fi
+        ;;
+      *)
+        echo "live runtime received an unapproved action" >&2
+        exit 2
+        ;;
+    esac
+    ;;
+esac
 
+adoption_file="$project_dir/adoption.yml"
+if [[ "$mode" == "live" && "${1:-}" == "scripts/deploy.sh" ]]; then
+  require_mise_tools yq
+  [[ -f "$adoption_file" && ! -L "$adoption_file" ]] || {
+    echo "Fixed tracked adoption record is missing or unsafe" >&2
+    exit 1
+  }
+  [[ "$(git -C "$project_dir" ls-files --error-unmatch -- adoption.yml 2>/dev/null)" == "adoption.yml" ]] || {
+    echo "Fixed adoption record is not tracked" >&2
+    exit 1
+  }
+  git -C "$project_dir" diff --quiet HEAD -- adoption.yml || {
+    echo "Fixed adoption record has uncommitted changes" >&2
+    exit 1
+  }
+  git -C "$project_dir" show HEAD:ansible/junos/adoption.yml |
+    yq -e '.adopted == true' - >/dev/null || {
+    echo "Routine deployment is disabled until the fixed adoption record is true" >&2
+    exit 1
+  }
+fi
+
+
+[[ -z "${BAO_SKIP_VERIFY:-}" && -z "${VAULT_SKIP_VERIFY:-}" ]] || {
+  echo "TLS verification bypass variables are prohibited for OpenBao" >&2
+  exit 1
+}
+[[ -z "${BAO_TLS_SERVER_NAME:-}" && -z "${VAULT_TLS_SERVER_NAME:-}" ]] || {
+  echo "Unreviewed OpenBao TLS server-name overrides are prohibited" >&2
+  exit 1
+}
+expected_addr="https://vault.monosense.io"
+export BAO_ADDR="${BAO_ADDR:-$expected_addr}"
 if [[ "$mode" == "live" ]]; then
   require_mise_tools bao jq ansible-playbook python yq
   ansible-playbook -i localhost, -c local "$project_dir/tests/controller-smoke.yml"
 else
   require_mise_tools bao jq python yq
 fi
-
-expected_addr="https://vault.monosense.io"
-export BAO_ADDR="${BAO_ADDR:-$expected_addr}"
 [[ "$BAO_ADDR" == "$expected_addr" ]] || {
   echo "BAO_ADDR must be $expected_addr" >&2
   exit 1

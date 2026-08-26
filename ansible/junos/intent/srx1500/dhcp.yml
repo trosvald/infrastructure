@@ -1,0 +1,58 @@
+---
+dhcp:
+  pools:
+    - name: MGMT
+      routing_instance: master
+      network: { topology: networks.mgmt.subnet }
+      range:
+        name: MGMT-IP-POOL
+        low: { topology: networks.mgmt.dhcp_low }
+        high: { topology: networks.mgmt.dhcp_high }
+      router: { topology: networks.mgmt.gateway }
+      maximum_lease_time: 86400
+      dns: [{ topology: dns.internal }]
+      options:
+        - { code: 138, format: ip-address, value: { topology: dhcp.option_138 } }
+      reservations: { topology: reservations.mgmt }
+    - name: PROD
+      routing_instance: master
+      network: { topology: networks.prod.subnet }
+      range:
+        name: PROD-IP-POOL
+        low: { topology: networks.prod.dhcp_low }
+        high: { topology: networks.prod.dhcp_high }
+      router: { topology: networks.prod.gateway }
+      maximum_lease_time: 86400
+      dns: [{ topology: dns.internal }]
+      reservations: { topology: reservations.prod }
+    - name: DEV
+      routing_instance: master
+      network: { topology: networks.dev.subnet }
+      range:
+        name: DEV-IP-POOL
+        low: { topology: networks.dev.dhcp_low }
+        high: { topology: networks.dev.dhcp_high }
+      router: { topology: networks.dev.gateway }
+      maximum_lease_time: 86400
+      dns: [{ topology: dns.internal }]
+      reservations: { topology: reservations.dev }
+    - name: HOME
+      routing_instance: VR-XLSATU
+      network: { topology: networks.home.subnet }
+      range:
+        name: HOME-IP-POOL
+        low: { topology: networks.home.dhcp_low }
+        high: { topology: networks.home.dhcp_high }
+      router: { topology: networks.home.gateway }
+      maximum_lease_time: 86400
+      dns: [{ topology: dns.internal }]
+      reservations: { topology: reservations.home }
+  groups:
+    - { name: MGMT, routing_instance: master, interface: irb.2510, pool: MGMT, overrides: [delete-binding-on-renegotiation] }
+    - { name: PROD, routing_instance: master, interface: irb.2511, pool: PROD, overrides: [delete-binding-on-renegotiation] }
+    - { name: DEV, routing_instance: master, interface: irb.2513, pool: DEV, overrides: [delete-binding-on-renegotiation] }
+    - { name: HOME, routing_instance: VR-XLSATU, interface: irb.2512, pool: HOME, overrides: [delete-binding-on-renegotiation] }
+  service:
+    options:
+      - [route-suppression, access-internal]
+      - [requested-ip-interface-match]

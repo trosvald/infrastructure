@@ -4,26 +4,176 @@
   gather_facts: false
   serial: 1
   any_errors_fatal: true
+
   tasks:
-    - name: Require an auditable confirmation comment
+    - name: Require the exact verified deployment digest
       ansible.builtin.assert:
         that:
-          - junos_commit_comment | default('') | length >= 24
+          - junos_expected_digest | default('') is match('^[0-9a-f]{64}$')
+          - junos_commit_comment | default('') == 'Ansible candidate ' ~ junos_expected_digest
+        fail_msg: "Confirmation requires the exact deployment comment and digest."
 
-    - name: Verify device identity before confirmation
-      juniper.device.facts:
+    - name: Read the exact reviewed candidate without following links
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/../.build/srx1500.set"
+        checksum_algorithm: sha256
+        follow: false
+      register: confirm_candidate_stat
+      delegate_to: localhost
+      no_log: true
+
+    - name: Read the exact reviewed candidate into memory
+      ansible.builtin.set_fact:
+        confirm_candidate_text: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../.build/srx1500.set', rstrip=false) }}"
+      no_log: true
+    - name: Bind confirmation to the reviewed candidate artifact
+      ansible.builtin.assert:
+        that:
+          - confirm_candidate_stat.stat.exists
+          - confirm_candidate_stat.stat.isreg
+          - not confirm_candidate_stat.stat.islnk
+          - confirm_candidate_stat.stat.checksum == junos_expected_digest
+          - confirm_candidate_text | hash('sha256') == junos_expected_digest
+        fail_msg: "Reviewed candidate is absent, unsafe, or has a different digest."
+      delegate_to: localhost
+      no_log: true
+
+    - name: Normalize the reviewed managed configuration
+      ansible.builtin.set_fact:
+        confirm_reviewed_group_lines: >-
+          {{ confirm_candidate_text.splitlines() | map('trim')
+             | select('match', '^set groups ANSIBLE_SRX1500 ') | list | sort }}
+        confirm_reviewed_apply_lines: >-
+          {{ confirm_candidate_text.splitlines() | map('trim')
+             | select('match', '^set apply-groups ANSIBLE_SRX1500$') | list | sort }}
+        confirm_reviewed_ordered_lines: >-
+          {{ confirm_candidate_text.splitlines() | map('trim')
+             | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+             | list }}
+      no_log: true
+
+    - name: Read device identity before the final confirmation boundary
+      juniper.device.junos_facts:
+        gather_subset:
+          - default
+          - hardware
       register: confirm_device_facts
       no_log: true
 
     - name: Enforce approved device identity and release train
       ansible.builtin.assert:
         that:
-          - confirm_device_facts.facts.model | upper == junos_expected_model
-          - confirm_device_facts.facts.hostname == junos_expected_hostname
-          - junos_expected_release_train in confirm_device_facts.facts.version
+          - confirm_device_facts.ansible_facts.ansible_net_model | upper == junos_expected_model
+          - confirm_device_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
+          - confirm_device_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
+
+    - name: Re-read the newest commit and all required evidence immediately before confirmation
+      juniper.device.junos_command:
+        commands:
+          - show system commit
+          - show configuration groups ANSIBLE_SRX1500 | display set
+          - show configuration apply-groups | display set
+          - show interfaces terse | match 'irb[.]2510|irb[.]2512'
+          - show vlans VLAN-MGMT
+          - show route 0.0.0.0/0 exact
+          - show route table VR-XLSATU.inet.0 0.0.0.0/0 exact
+          - show security nat source rule all
+          - show configuration security policies | display set
+      register: confirm_pending
+      no_log: true
+
+    - name: Isolate only the newest commit record and normalize running configuration
+      ansible.builtin.set_fact:
+        confirm_newest_commit_record: >-
+          {{ (confirm_pending.stdout[0] | default(''))
+             | regex_search('(?ms)^\\s*0\\s+.*?(?=\\n\\s*[0-9]+\\s+|\\Z)')
+             | default('') }}
+        confirm_running_group_lines: >-
+          {{ confirm_pending.stdout[1].splitlines() | map('trim')
+             | reject('equalto', '') | list | sort }}
+        confirm_running_apply_lines: >-
+          {{ confirm_pending.stdout[2].splitlines() | map('trim')
+             | reject('equalto', '') | list | sort }}
+        confirm_running_ordered_lines: >-
+          {{ confirm_pending.stdout[1].splitlines() | map('trim')
+             | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+             | list }}
+      no_log: true
+
+    - name: Require the same newest pending commit and exact managed candidate
+      ansible.builtin.assert:
+        that:
+          - confirm_pending.stdout is defined
+          - confirm_pending.stdout | length == 9
+          - confirm_newest_commit_record | length > 0
+          - confirm_newest_commit_record | lower is search('commit confirmed|pending|rollback in')
+          - >-
+            (confirm_newest_commit_record
+             | regex_search('(?m)^\\s*Ansible candidate ' ~ junos_expected_digest ~ '\\s*$')) is not none
+          - confirm_reviewed_group_lines | length > 0
+          - confirm_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
+          - confirm_running_group_lines == confirm_reviewed_group_lines
+          - confirm_running_apply_lines == confirm_reviewed_apply_lines
+          - confirm_running_ordered_lines == confirm_reviewed_ordered_lines
+        fail_msg: "Pending commit or complete managed configuration changed; refusing confirmation."
+      no_log: true
+
+    - name: Require concrete interface, VLAN, and route evidence
+      ansible.builtin.assert:
+        that:
+          - confirm_pending.stdout[3] is string
+          - confirm_pending.stdout[3] is search('(?m)^\\s*irb[.]2510\\s+up\\s+up(?:\\s|$)')
+          - confirm_pending.stdout[3] is search('(?m)^\\s*irb[.]2512\\s+up\\s+up(?:\\s|$)')
+          - confirm_pending.stdout[4] is string
+          - confirm_pending.stdout[4] is search('(?m)^\\s*\\S+\\s+VLAN-MGMT\\s+2510\\b')
+          - confirm_pending.stdout[5] is string
+          - confirm_pending.stdout[5] is search('0[.]0[.]0[.]0/0')
+          - confirm_pending.stdout[5] is search('[*>]')
+          - confirm_pending.stdout[6] is string
+          - confirm_pending.stdout[6] is search('0[.]0[.]0[.]0/0')
+          - confirm_pending.stdout[6] is search('[*>]')
+        fail_msg: "Required IRB, VLAN, or master/VR-XLSATU default-route evidence is missing."
+      no_log: true
+
+    - name: Require all four source NAT rule-set names
+      ansible.builtin.assert:
+        that:
+          - item in confirm_pending.stdout[7]
+        fail_msg: "Required source NAT rule-set evidence is missing: {{ item }}"
+      loop:
+        - HOME-TO-XLSATU
+        - MGMT-TO-MYREP
+        - PROD-TO-MYREP
+        - DEV-TO-MYREP
+      no_log: true
+
+    - name: Require every critical security policy name and action
+      ansible.builtin.assert:
+        that:
+          - item in confirm_pending.stdout[8]
+        fail_msg: "Required security policy evidence is missing or has the wrong action: {{ item }}"
+      loop:
+        - set security policies from-zone HOME to-zone WAN-XLSATU policy HOME-INTERNET then permit
+        - set security policies from-zone MGMT to-zone WAN-MYREP policy MGMT-INTERNET then permit
+        - set security policies from-zone PROD to-zone WAN-MYREP policy PROD-INTERNET then permit
+        - set security policies from-zone DEV to-zone WAN-MYREP policy DEV-INTERNET then permit
+        - set security policies from-zone MGMT to-zone PROD policy MGMT-ADMIN-PROD then permit
+        - set security policies from-zone MGMT to-zone DEV policy MGMT-ADMIN-DEV then permit
+        - set security policies from-zone MGMT to-zone HOME policy MGMT-ADMIN-HOME then permit
+        - set security policies from-zone PROD to-zone MGMT policy PROD-INFRA-MGMT then permit
+        - set security policies from-zone DEV to-zone MGMT policy DEV-INFRA-MGMT then permit
+        - set security policies from-zone PROD to-zone DEV policy PROD-INFRA-DEV then permit
+        - set security policies from-zone DEV to-zone PROD policy DEV-INFRA-PROD then permit
+        - set security policies from-zone HOME to-zone MGMT policy HOME-TO-DNS then permit
+        - set security policies from-zone HOME to-zone MGMT policy HOME-BLOCK-MGMT then deny
+        - set security policies from-zone HOME to-zone PROD policy HOME-BLOCK-PROD then deny
+        - set security policies from-zone HOME to-zone DEV policy HOME-BLOCK-DEV then deny
+        - set security policies from-zone PROD to-zone HOME policy PROD-BLOCK-HOME then deny
+        - set security policies from-zone DEV to-zone HOME policy DEV-BLOCK-HOME then deny
+        - set security policies default-policy deny-all
+      no_log: true
 
     - name: Confirm the already-verified pending commit
-      juniper.device.config:
-        commit: true
-        comment: "{{ junos_commit_comment }}"
+      juniper.device.junos_config:
+        confirm_commit: true
       no_log: true

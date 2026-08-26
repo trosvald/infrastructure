@@ -9,3 +9,4 @@ ansible_private_key_file: "{{ lookup('ansible.builtin.env', 'JUNOS_NETCONF_PRIVA
 ansible_netconf_ssh_config: "{{ lookup('ansible.builtin.env', 'JUNOS_NETCONF_SSH_CONFIG') }}"
 junos_expected_model: SRX1500
 junos_expected_release_train: 23.4R2
+junos_expected_release_pattern: '^23[.]4R2(?:[.-]|$)'

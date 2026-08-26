@@ -1,32 +1,192 @@
 ---
-- name: Detect group drift and direct shadowing
+- name: Detect managed-group drift without retaining whole configuration
   hosts: junos
   gather_facts: false
   serial: 1
+  any_errors_fatal: true
   tasks:
+    - name: Reject uncommitted adoption authorization
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ playbook_dir }}/../../.."
+          - diff
+          - --quiet
+          - HEAD
+          - --
+          - ansible/junos/adoption.yml
+      changed_when: false
+      delegate_to: localhost
+
+    - name: Read the committed adoption authorization
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ playbook_dir }}/../../.."
+          - show
+          - HEAD:ansible/junos/adoption.yml
+      register: drift_committed_adoption
+      changed_when: false
+      delegate_to: localhost
+
+    - name: Require completed adoption from committed Git content
+      ansible.builtin.assert:
+        that:
+          - (drift_committed_adoption.stdout | from_yaml).adopted | default(false) | bool
+        fail_msg: >-
+          Drift is fail-closed before adoption. Complete the reviewed direct-config cleanup and
+          parity migration, commit the adoption record, and keep its working copy clean.
+    - name: Render the reviewed candidate in memory
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/junos_intent.py"
+          - --intent-dir
+          - "{{ playbook_dir }}/../intent/srx1500"
+          - --topology
+          - "{{ lookup('ansible.builtin.env', 'JUNOS_TOPOLOGY_FILE') }}"
+      register: drift_candidate
+      changed_when: false
+      no_log: true
+      delegate_to: localhost
+
     - name: Read device identity for drift inspection
-      juniper.device.facts:
+      juniper.device.junos_facts:
+        gather_subset:
+          - default
+          - hardware
       register: drift_device_facts
       no_log: true
 
     - name: Enforce approved device identity and release train
       ansible.builtin.assert:
         that:
-          - drift_device_facts.facts.model | upper == junos_expected_model
-          - drift_device_facts.facts.hostname == junos_expected_hostname
-          - junos_expected_release_train in drift_device_facts.facts.version
+          - drift_device_facts.ansible_facts.ansible_net_model | upper == junos_expected_model
+          - drift_device_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
+          - drift_device_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
 
-    - name: Retrieve managed and effective inherited configuration
-      juniper.device.command:
+    - name: Retrieve only the managed group and apply-groups reference
+      juniper.device.junos_command:
         commands:
           - show configuration groups ANSIBLE_SRX1500 | display set
-          - show configuration | display inheritance | display set
+          - show configuration apply-groups | display set
       register: drift_configuration
       no_log: true
-    - name: Save sensitive drift evidence locally
+
+    - name: Normalize managed lines in memory
+      ansible.builtin.set_fact:
+        drift_expected_lines: "{{ drift_candidate.stdout_lines | select('match', '^set groups ANSIBLE_SRX1500 ') | list | sort }}"
+        drift_actual_lines: "{{ drift_configuration.stdout[0].splitlines() | select('match', '^set groups ANSIBLE_SRX1500 ') | list | sort }}"
+        drift_apply_groups: "{{ drift_configuration.stdout[1].splitlines() | select('search', 'ANSIBLE_SRX1500') | list }}"
+        drift_expected_ordered_lines: >-
+          {{ drift_candidate.stdout_lines
+             | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+             | list }}
+        drift_actual_ordered_lines: >-
+          {{ drift_configuration.stdout[0].splitlines()
+             | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+             | list }}
+      no_log: true
+    - name: Require a non-empty rendered candidate for drift comparison
+      ansible.builtin.assert:
+        that:
+          - drift_expected_lines | length > 0
+        fail_msg: "Expected managed candidate is empty; refusing to fabricate drift results."
+      no_log: true
+
+    - name: Refuse empty managed-group evidence instead of fabricating parity
+      ansible.builtin.assert:
+        that:
+          - drift_actual_lines | length > 0
+          - drift_apply_groups | length > 0
+        fail_msg: >-
+          Managed group evidence is absent. Stop and complete the direct-configuration cleanup and
+          apply-groups adoption migration before attempting drift comparison.
+
+    - name: Compute bounded actionable path differences in memory
+      ansible.builtin.set_fact:
+        drift_missing: "{{ drift_expected_lines | difference(drift_actual_lines) | list }}"
+        drift_extra: "{{ drift_actual_lines | difference(drift_expected_lines) | list }}"
+        drift_order_mismatch: "{{ drift_expected_ordered_lines != drift_actual_ordered_lines }}"
+      no_log: true
+    - name: Convert differences to value-free schema path identifiers
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/junos_intent.py"
+          - --path-ids
+        stdin: "{{ drift_missing[:50] | to_json }}"
+      register: drift_missing_ids_result
+      changed_when: false
+      no_log: true
+      delegate_to: localhost
+
+    - name: Convert extra lines to value-free schema path identifiers
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/junos_intent.py"
+          - --path-ids
+        stdin: "{{ drift_extra[:50] | to_json }}"
+      register: drift_extra_ids_result
+      changed_when: false
+      no_log: true
+      delegate_to: localhost
+
+    - name: Parse value-free drift identifiers
+      ansible.builtin.set_fact:
+        drift_missing_ids: "{{ drift_missing_ids_result.stdout | from_json }}"
+        drift_extra_ids: "{{ drift_extra_ids_result.stdout | from_json }}"
+      no_log: true
+    - name: Reject unparseable drift identifiers
+      ansible.builtin.assert:
+        that:
+          - "'unparseable' not in drift_missing_ids"
+          - "'unparseable' not in drift_extra_ids"
+          - "'unrecognized' not in drift_missing_ids"
+          - "'unrecognized' not in drift_extra_ids"
+        fail_msg: "Drift contained a hierarchy outside the reviewed schema."
+      no_log: true
+
+    - name: Refuse unsafe drift artifact directory
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/../.build"
+        follow: false
+      register: drift_build_stat
+      delegate_to: localhost
+
+    - name: Enforce protected drift artifact directory
+      ansible.builtin.assert:
+        that:
+          - drift_build_stat.stat.exists
+          - drift_build_stat.stat.isdir
+          - not drift_build_stat.stat.islnk
+          - drift_build_stat.stat.uid | string == lookup('ansible.builtin.pipe', 'id -u')
+          - drift_build_stat.stat.mode == '0700'
+        fail_msg: "Drift artifact directory must be an owner-controlled real 0700 directory."
+      delegate_to: localhost
+
+    - name: Persist only a bounded path/count summary
       ansible.builtin.copy:
-        content: "{{ drift_configuration.stdout | join('\n') }}"
-        dest: "{{ playbook_dir }}/../.build/{{ inventory_hostname }}.drift.set"
+        content: |
+          managed_group: ANSIBLE_SRX1500
+          expected_paths: {{ drift_expected_lines | length }}
+          actual_paths: {{ drift_actual_lines | length }}
+          missing_count: {{ drift_missing | length }}
+          extra_count: {{ drift_extra | length }}
+          ordered_policy_mismatch: {{ drift_order_mismatch | bool | lower }}
+          missing_paths:
+          {% for path_id in drift_missing_ids %}
+          - {{ path_id | to_json }}
+          {% endfor %}
+          extra_paths:
+          {% for path_id in drift_extra_ids %}
+          - {{ path_id | to_json }}
+          {% endfor %}
+        dest: "{{ playbook_dir }}/../.build/{{ inventory_hostname }}.drift.summary"
         mode: "0600"
+        follow: false
       delegate_to: localhost
       no_log: true

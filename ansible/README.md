@@ -20,8 +20,7 @@ flowchart LR
 
 | Project | Status | Purpose | Guide |
 |---|---|---|---|
-| `junos` | Active | Structured SRX1500 intent, safe NETCONF deployment, verification, drift, and encrypted backup | [Junos operator handbook](junos/README.md) |
-| `container-nodes` | Reserved | Debian container nodes `c0` and `c1` for `doco-cd` | Not implemented |
+| `junos` | Active, pre-adoption gate closed | Structured SRX1500 intent, safe NETCONF deployment, verification, drift, and encrypted backup | [Junos operator handbook](junos/README.md) |
 
 | Projects may share | Projects must not share |
 |---|---|
@@ -29,6 +28,15 @@ flowchart LR
 | `just ansible <project> <action>` grammar | `ansible.cfg` or Galaxy installation directory |
 | CI hardening and public-safety conventions | Roles, playbooks, topology, secrets, or runtime state |
 | Documentation conventions | Project-specific tests and operational evidence |
+
+Junos ownership is intentionally split: `intent/` and `scripts/junos_intent.py`
+own the reviewed candidate, `roles/junos_intent/` owns the one
+`ANSIBLE_SRX1500` group lifecycle, and `scripts/with-openbao-runtime.sh` owns
+ephemeral credential injection. Device-local recovery/authentication remains
+outside this repository. The tracked `ansible/junos/adoption.yml` record is
+currently false; the role, drift playbook, and runtime read it directly, and
+no repository command mutates it. Manual adoption and parity review are
+documented only in the Junos handbook.
 
 ## Command grammar
 
