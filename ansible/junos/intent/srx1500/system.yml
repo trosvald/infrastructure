@@ -1,6 +1,7 @@
 ---
 system:
   hostname: srx1500
+  domain: { topology: system.domain }
   timezone: Asia/Jakarta
   services:
     - [netconf, ssh]
@@ -10,6 +11,8 @@ system:
     - [ssh, client-alive-interval, 10]
     - [ssh, connection-limit, 10]
     - [ssh, rate-limit, 5]
+    - [web-management, https, interface, irb.2510]
+    - [web-management, https, system-generated-certificate]
   name_servers:
     - { topology: dns.primary }
     - { topology: dns.secondary }
@@ -24,10 +27,13 @@ system:
     - [file, interactive-commands, interactive-commands, any]
     - [file, messages, any, notice]
     - [file, messages, authorization, info]
+    - [file, security-log, any, any]
+    - [file, security-log, match, "RT_FLOW|RT_SCREEN"]
   options:
     - [max-configurations-on-flash, 5]
     - [internet-options, no-source-quench]
     - [internet-options, tcp-drop-synfin-set]
     - [internet-options, no-tcp-reset, drop-all-tcp]
     - [license, autoupdate, url, "https://ae1.juniper.net/junos/key_retrieval"]
-
+    - [services, ssh, macs, hmac-sha2-256]
+    - [services, ssh, macs, hmac-sha2-512]

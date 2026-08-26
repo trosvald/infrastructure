@@ -226,6 +226,24 @@ Each M920X/P330 tiny-pc is equipped with:
 
 ---
 
+## Junos SRX operator project
+
+The isolated [`ansible/junos`](ansible/junos/) project renders reviewed,
+seven-domain intent into the `ANSIBLE_SRX1500` Junos group. OpenBao supplies
+environment-specific topology and NETCONF credentials at runtime; generated
+candidates, diffs, drift summaries, and encrypted backups stay in protected
+ignored paths. Device-local recovery and authentication configuration is not
+owned by this repository.
+
+The pre-adoption gate is deliberately closed. The tracked
+[`ansible/junos/adoption.yml`](ansible/junos/adoption.yml) record remains
+`adopted: false`; the role, drift playbook, and runtime read it directly, and
+no repository command mutates it. Manual direct-configuration cleanup, parity
+review, and the separately reviewed record change are documented in the
+[Junos operator handbook](ansible/junos/README.md). Do not run live adoption
+or deployment from this repository until that procedure is independently
+approved.
+
 ## <img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f64f/512.webp" alt="🙏" width="20" height="20"> Thanks
 
 A huge thank you to [Home Operations](https://discord.gg/home-operations) Discord community for the knowledge, patterns, and support that made this cluster possible. For more inspiration on running apps in a homelab, browse [kubesearch.dev](https://kubesearch.dev).

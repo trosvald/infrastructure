@@ -1,0 +1,30 @@
+---
+routing:
+  instances:
+    - name: VR-XLSATU
+      type: virtual-router
+      interfaces: [ge-0/0/0.0, irb.2512]
+  policies:
+    - name: IMPORT-HOME-INTO-MASTER
+      terms:
+        - { name: HOME, from_instance: VR-XLSATU, route_filter: { topology: networks.home.subnet }, action: accept }
+        - { name: REJECT-REST, action: reject }
+    - name: IMPORT-MASTER-INTERNAL-INTO-HOME
+      terms:
+        - { name: MGMT, from_instance: master, route_filter: { topology: networks.mgmt.subnet }, action: accept }
+        - { name: PROD, from_instance: master, route_filter: { topology: networks.prod.subnet }, action: accept }
+        - { name: DEV, from_instance: master, route_filter: { topology: networks.dev.subnet }, action: accept }
+        - { name: REJECT-REST, action: reject }
+  instance_imports:
+    - { routing_instance: master, policy: IMPORT-HOME-INTO-MASTER }
+    - { routing_instance: VR-XLSATU, policy: IMPORT-MASTER-INTERNAL-INTO-HOME }
+  protocols:
+    - [l2-learning, global-mode, switching]
+  rstp:
+    bridge_priority: 8k
+    interfaces:
+      - { name: ge-0/0/6, mode: point-to-point }
+      - { name: ge-0/0/14, mode: point-to-point }
+      - { name: ge-0/0/15, mode: point-to-point }
+      - { name: xe-0/0/18, mode: point-to-point }
+      - { name: xe-0/0/19, mode: point-to-point }

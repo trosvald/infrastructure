@@ -1,12 +1,6 @@
 [extend]
 useDefault = true
 
-[allowlist]
-description = "Downloaded Junos collections and ignored runtime output are not repository source"
-paths = [
-  '''(^|/)ansible/junos/\.ansible/''',
-  '''(^|/)ansible/junos/\.build/''',
-]
 
 [[rules]]
 id = "junos-secret-data"

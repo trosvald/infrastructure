@@ -7,7 +7,13 @@ export ANSIBLE_CONFIG="$project_dir/ansible.cfg"
 export ANSIBLE_LOCAL_TEMP="$project_dir/.build/tmp/controller"
 export ANSIBLE_REMOTE_TEMP="$project_dir/.build/tmp/remote"
 export PYTHONDONTWRITEBYTECODE=1
-mkdir -p -m 0700 .build/tmp/controller .build/tmp/remote
+# shellcheck source=toolchain.sh
+source scripts/toolchain.sh
+
+require_private_dir .build
+require_private_dir .build/tmp
+require_private_dir .build/tmp/controller
+require_private_dir .build/tmp/remote
 
 action="${1:-}"
 [[ -n "$action" ]] && shift || true
@@ -16,8 +22,6 @@ action="${1:-}"
   exit 2
 }
 
-# shellcheck source=toolchain.sh
-source scripts/toolchain.sh
 
 case "$action" in
   bootstrap)
@@ -43,7 +47,7 @@ case "$action" in
     [[ "$first" == "$second" ]] || { echo "render is not deterministic" >&2; exit 1; }
     ;;
   render)
-    exec scripts/with-openbao-runtime.sh topology scripts/render.sh
+    exec scripts/with-openbao-runtime.sh topology scripts/render.sh --check
     ;;
   check)
     require_mise_tools ansible-playbook
@@ -51,7 +55,7 @@ case "$action" in
     ;;
   diff)
     require_mise_tools ansible-playbook
-    scripts/with-openbao-runtime.sh live ansible-playbook playbooks/live.yml -e operation=diff
+    scripts/with-openbao-runtime.sh live ansible-playbook --diff playbooks/live.yml -e operation=diff
     exec less .build/srx1500.diff
     ;;
   deploy)

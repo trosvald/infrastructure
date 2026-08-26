@@ -1,0 +1,35 @@
+---
+nat:
+  source_rules:
+    - name: HOME-TO-XLSATU
+      from_zone: HOME
+      to_zone: WAN-XLSATU
+      rules:
+        - name: HOME-SNAT
+          source: { topology: networks.home.subnet }
+          destination: 0.0.0.0/0
+          action: interface
+    - name: MGMT-TO-MYREP
+      from_zone: MGMT
+      to_zone: WAN-MYREP
+      rules:
+        - name: MGMT-SNAT
+          source: { topology: networks.mgmt.subnet }
+          destination: 0.0.0.0/0
+          action: interface
+    - name: PROD-TO-MYREP
+      from_zone: PROD
+      to_zone: WAN-MYREP
+      rules:
+        - name: PROD-SNAT
+          source: { topology: networks.prod.subnet }
+          destination: 0.0.0.0/0
+          action: interface
+    - name: DEV-TO-MYREP
+      from_zone: DEV
+      to_zone: WAN-MYREP
+      rules:
+        - name: DEV-SNAT
+          source: { topology: networks.dev.subnet }
+          destination: 0.0.0.0/0
+          action: interface

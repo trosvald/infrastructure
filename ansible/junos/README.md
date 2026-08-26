@@ -74,14 +74,16 @@ The repository does not enable OpenBao auth methods, apply policy, write KV data
 | Path | Purpose |
 |---|---|
 | `ansible.cfg` | Strict SSH, project-local collections, ignored controller temp paths |
-| `inventory/`, `group_vars/`, `host_vars/` | Junos inventory, non-secret controls, reviewed intent, synthetic fixture |
-| `roles/junos_intent/` | Candidate rendering, identity gates, commit-check, and deployment |
-| `playbooks/` | Live, verification, confirmation, and drift workflows |
+| `inventory/` | One isolated Junos inventory; no environment hierarchy is needed for this device |
+| `group_vars/junos/`, `host_vars/srx1500/` | Standard connection and identity controls; secrets arrive from OpenBao |
+| `intent/srx1500/` | First-class seven-domain logical intent, not Ansible auto-loaded host variables |
+| `roles/junos_intent/` | One coherent candidate renderer, identity gates, commit-check, and deployment lifecycle |
+| `playbooks/` | Live, verification, confirmation, bounded drift, and backup workflows |
 | `requirements.yml` | Exact Galaxy collection versions |
 | `requirements-controller.in` and lock | Reviewed Python runtime and generated hashes |
 | `scripts/` | Dispatch, OpenBao runtime, render, backup, and safety checks |
-| `openbao/policy.hcl` | Read-only consumer policy contract; not an apply script |
-| `.ansible/`, `.build/` | Ignored collections, temporary state, diffs, drift evidence, and encrypted backups |
+| `docker/c0/openbao/policies/junos-operator.hcl` | Sole deployable read-only OpenBao consumer policy |
+| `.ansible/`, `.build/` | Ignored collections and protected transient candidates, diffs, summaries, and encrypted backups |
 
 ## Toolchain
 
@@ -115,8 +117,9 @@ supported permission model.
 Before a live command, all of these external prerequisites must already exist:
 
 - DNS and a valid TLS chain for `vault.monosense.io`; use `BAO_CACERT` only if
-  the service administrator supplies a private CA file. `BAO_SKIP_VERIFY` is
-  prohibited.
+  the service administrator supplies a private CA file. `BAO_SKIP_VERIFY`,
+  `VAULT_SKIP_VERIFY`, and unreviewed TLS server-name overrides are prohibited
+  and rejected before any OpenBao call.
 - An enabled human OpenBao authentication method and a token with read access
   to the two exact KV v2 data paths. The repository does not create auth
   methods, policies, tokens, mounts, or Docker resources.
@@ -124,8 +127,8 @@ Before a live command, all of these external prerequisites must already exist:
   and version with `bao secrets list -detailed` without reading Junos data.
 - Network reachability from the trusted controller to the SRX NETCONF SSH
   service on TCP 830.
-- An SRX1500 whose hostname is `srx1500` and whose release contains the reviewed
-  `23.4R2` train. Every live play rejects a different identity before commit.
+- An SRX1500 whose hostname is `srx1500` and whose release matches the anchored
+  reviewed `23.4R2` train. Every live play rejects a different identity before commit.
 - `system services netconf ssh` enabled and a dedicated, least-privilege Junos
   automation account with the matching SSH public key. Account and recovery
   configuration remain device-local and outside the managed group.
@@ -224,6 +227,9 @@ real environment value before writing OpenBao.
 ```json
 {
   "management_address": "192.0.2.10",
+  "system": {
+    "domain": "example.invalid"
+  },
   "dns": {
     "primary": "192.0.2.53",
     "secondary": "198.51.100.53",
@@ -237,6 +243,9 @@ real environment value before writing OpenBao.
   "wan": {
     "primary_mac": "02:00:00:00:00:01",
     "secondary_mac": "02:00:00:00:00:02"
+  },
+  "dhcp": {
+    "option_138": "192.0.2.2"
   },
   "networks": {
     "mgmt": {
@@ -255,7 +264,10 @@ real environment value before writing OpenBao.
     },
     "home": {
       "subnet": "203.0.113.0/27",
-      "gateway_cidr": "203.0.113.1/27"
+      "gateway": "203.0.113.1",
+      "gateway_cidr": "203.0.113.1/27",
+      "dhcp_low": "203.0.113.10",
+      "dhcp_high": "203.0.113.20"
     },
     "dev": {
       "subnet": "192.0.2.32/27",
@@ -274,6 +286,7 @@ real environment value before writing OpenBao.
         "ip": "198.51.100.10"
       }
     ],
+    "home": [],
     "dev": []
   },
   "netconf_host_key": {
@@ -391,8 +404,10 @@ kv/data/network/junos/srx1500/netconf
 kv/data/network/junos/srx1500/topology
 ```
 
-That exact consumer contract is recorded in `openbao/policy.hcl`; the repository
-does not apply it. An administrator who creates or updates data separately needs
+The exact consumer contract is maintained at
+`docker/c0/openbao/policies/junos-operator.hcl`, the sole deployable policy
+source. It grants only `read` on these two data paths; this repository does
+not apply it. An administrator who creates or updates data separately needs
 `create` and `update` on the two `/data/` paths and `read` on the corresponding
 `/metadata/` paths to use CAS. Do not grant write or delete capabilities to the
 Ansible consumer. KV v2 policy paths include `/data/`, although CLI logical
@@ -428,20 +443,60 @@ replace this with `ssh-keyscan` or trust-on-first-use. See
 The age recipient is public and belongs to an offline recovery identity. Its
 private identity is never stored in OpenBao, Git, CI, or an ordinary
 workstation. See [SOPS and age](../../docs/SOPS.md).
+Reviewed intent is split into seven first-class domain files under
+`intent/srx1500/`: `system.yml`, `interfaces.yml`, `vlans.yml`, `dhcp.yml`,
+`routing.yml`, `nat.yml`, and `security.yml`. The previous nested convention
+`host_vars/srx1500/intent/` is intentionally absent; Ansible does not
+auto-load structured intent as host variables.
 
-## Structured intent
+The renderer resolves environment-specific `{ topology: ... }` references
+from OpenBao in memory. DNS nameservers use `dns.primary`/`dns.secondary`;
+client DHCP and the global `MGMT-DNS` address-book use the dedicated
+`dns.internal`/`dns.internal_cidr` fields. A `dns.blocky` substitution is
+rejected, so the production resolver cannot silently become the Docker DNS
+proxy. The renderer validates every VLAN, IRB, interface/unit, routing,
+zone, NAT, DHCP, reservation, policy, and ordered-term relationship before
+emitting only the `ANSIBLE_SRX1500` apply-group.
 
-Reviewed intent is split by domain under `host_vars/srx1500/intent/`. Environment-specific values use a topology reference:
+The running-config reconciliation preserves the live `VR-XLSATU` HOME
+routing/DHCP relationship, four independent source-NAT rule sets, five RSTP
+point-to-point trunks with bridge priority, all explicit permit/deny policy
+ordering and logging, WAN screens, DHCP option 138, and the `TO-C0-TRUNK`
+native VLAN 2510 plus tagged VLAN-DEV (2513) invariant. Recovery users and
+authentication remain device-local.
 
-```yaml
-system:
-  name_servers:
-    - { topology: dns.primary }
-```
+## Migration and adoption boundary
 
-The renderer resolves those references from OpenBao topology, rejects undefined or unused values, validates cross-domain relationships, sorts deterministic collections, and emits only the owned group.
+The reviewed running configuration currently has no `ANSIBLE_SRX1500` group or
+`apply-groups` reference. This implementation therefore has a deliberate
+no-live gate: offline render, tests, and syntax checks remain usable, while
+`deploy` and pre-adoption drift analysis fail closed. No direct cleanup,
+adoption command, or live mutation is part of this change.
 
-The synthetic fixture uses RFC documentation ranges and is the only topology available to tests and CI. It must never contain real addresses, identifiers, or production topology.
+The gate is the tracked `adoption.yml` record, read directly by the role,
+drift playbook, and live wrapper; it is deliberately `adopted: false`. Ansible
+extra vars cannot override this decision, and no command in this repository
+mutates the record. A separately reviewed maintenance procedure must update
+that tracked record only after all parity evidence is accepted.
+
+The migration sequence for a separately approved maintenance window is:
+
+1. Capture an allowlisted managed-scope baseline and independently verify
+   recovery access.
+2. Compare direct configuration with the rendered group semantically, keeping
+   login, root authentication, and other recovery ownership device-local.
+3. Atomically remove only approved direct managed hierarchies, load the group
+   and `apply-groups`, run commit-check and a commit-confirmed transaction,
+   then verify effective parity and confirm explicitly.
+4. Review and commit the adoption record change separately; there is no
+   deployment or adoption mutation command here.
+
+Until then, a normal deploy cannot be accidentally enabled by a caller. The
+drift workflow retrieves only the managed group and apply-groups reference,
+normalizes them in memory, and writes a bounded count/value-free path summary;
+it never writes a whole-device configuration or performs unsafe direct-shadow
+claims.
+
 
 ## Command safety
 
@@ -450,12 +505,12 @@ The synthetic fixture uses RFC documentation ranges and is the only topology ava
 | `just ansible junos bootstrap` | Offline* | No | No | No | No | No |
 | `just ansible junos test` | Offline | No | No | No | No | No |
 | `just ansible junos lint` | Offline | No | No | No | No | No |
-| `just ansible junos render` | OpenBao live | No | No | No | No | Yes |
-| `just ansible junos check` | Live | Yes | Temporary | No | No | Candidate/diff |
-| `just ansible junos diff` | Live | Yes | Temporary | No | No | Local diff |
+| `just ansible junos render` | OpenBao live | No | No | No | No | Suppressed candidate |
+| `just ansible junos check` | Live | Yes | Temporary | No | No | Suppressed |
+| `just ansible junos diff` | Live | Yes | Temporary | No | No | Reviewed local diff |
 | `just ansible junos deploy` | Live | Yes | Yes | Confirmed | Yes | Candidate/diff |
 | `just ansible junos verify` | Live | Yes | No | Confirms pending | Yes | Suppressed |
-| `just ansible junos drift` | Live | Yes | No | No | No | Drift evidence |
+| `just ansible junos drift` | Live after adoption | Yes (managed scope only) | No | No | No | Bounded path/count summary |
 | `just ansible junos backup` | Live | Yes | No | No | No | Age ciphertext |
 
 `*` Bootstrap may download tools or collections but never accesses OpenBao or the SRX.
@@ -489,15 +544,14 @@ just ansible junos check
 just ansible junos diff
 ```
 
-The runtime proves compatibility, reads both exact OpenBao paths, establishes strict host trust, verifies SRX1500 and `23.4R2`, loads exclusively, and runs commit-check without committing. Review the entire ignored diff. Stop if it touches device-local authentication, anything outside `ANSIBLE_SRX1500`, or unexplained topology.
+The runtime proves compatibility, reads both exact OpenBao paths, establishes strict host trust, verifies SRX1500 and the anchored `23.4R2` train, loads the candidate in normal Ansible mode with `check_commit: true`, and discards the uncommitted candidate after NETCONF validation. `diff` additionally requires prepared module diff evidence whenever Junos reports a change; a missing prepared diff fails closed. Review the entire ignored diff. Stop if it touches device-local authentication, anything outside `ANSIBLE_SRX1500`, or unexplained topology.
 
-### Commit-confirmed deployment
 
 ```console
 just ansible junos deploy
 ```
 
-The command displays the candidate digest and requires the exact hostname/digest phrase, then performs a ten-minute confirmed commit. Keep the terminal and an independent management path available.
+The command renders and validates the exact candidate first, displays its digest, and requires the exact hostname/digest phrase. Only after successful validation does it perform a ten-minute commit-confirmed transaction. Keep the terminal and an independent management path available.
 
 ### Verification, confirmation, and rollback
 
@@ -507,7 +561,7 @@ Before the timer expires:
 just ansible junos verify
 ```
 
-Verification checks operational state and requires a second digest-specific confirmation before the final commit. If verification fails, the command is interrupted, or confirmation is withheld, do not manually confirm; Junos automatically rolls back. See [Junos confirmed commits](https://www.juniper.net/documentation/us/en/software/junos/cli/topics/topic-map/junos-configuration-commit.html).
+Verification checks the newest pending commit comment, managed-group identity, and structured operational evidence against the exact candidate digest. It requires a second digest-specific confirmation immediately before the final commit. If verification fails, the command is interrupted, or confirmation is withheld, do not manually confirm; Junos automatically rolls back. See [Junos confirmed commits](https://www.juniper.net/documentation/us/en/software/junos/cli/topics/topic-map/junos-configuration-commit.html).
 
 ### Drift
 
@@ -515,7 +569,10 @@ Verification checks operational state and requires a second digest-specific conf
 just ansible junos drift
 ```
 
-The command writes the managed group and effective inherited configuration to ignored `.build/` runtime evidence. Classify drift before changing intent or redeploying.
+The command is fail-closed before adoption. After migration, it retrieves
+only `ANSIBLE_SRX1500` and its `apply-groups` reference, compares normalized
+managed lines in memory, and writes a bounded count/path summary under
+ignored `.build/`; it never persists effective whole-device configuration.
 
 ### Encrypted backup
 

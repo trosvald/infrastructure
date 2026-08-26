@@ -56,14 +56,20 @@ encrypted online backups and stopped restore procedures.
 ### Junos
 
 `ansible/junos/scripts/dispatch.sh` exposes a fixed action set. Live actions pass through
-`with-openbao-runtime.sh`, which validates OpenBao records, creates protected ephemeral files, and
-enforces NETCONF host-key checking. `junos_intent.py` resolves topology references, validates
-cross-domain invariants, and deterministically emits `ANSIBLE_SRX1500` Junos `set` commands plus a
-SHA-256 digest. `roles/junos_intent/tasks/main.yml` verifies device identity and release before
-exclusive check, diff, or a 10-minute commit-confirmed deployment.
+`with-openbao-runtime.sh`, which validates OpenBao records, rejects TLS verification/server-name
+bypasses before any Bao call, creates protected ephemeral files, and enforces NETCONF host-key
+checking. `junos_intent.py` resolves topology references, validates cross-domain invariants, and
+deterministically emits `ANSIBLE_SRX1500` Junos `set` commands plus a SHA-256 digest.
+`roles/junos_intent/tasks/main.yml` uses the NETCONF-native `juniper.device.junos_config`,
+`junos_facts`, and `junos_command` modules, verifies device identity and the anchored release
+train, runs a separate commit-check/discard preflight, and only then performs a ten-minute
+commit-confirmed deployment.
 
-Never bypass digest confirmation, commit-confirmed verification, host-key checks, identity/release
-checks, or runtime cleanup.
+The tracked `ansible/junos/adoption.yml` record is the non-overrideable adoption gate and remains
+false. The role, drift playbook, and runtime read it directly; no repository command mutates it.
+Manual direct-configuration cleanup, parity review, and the separately reviewed record change are
+the only adoption path. Verification and confirmation are bound to the exact candidate digest and
+must re-check pending commit identity and operational evidence immediately before confirmation.
 
 ## Key Directories
 
@@ -76,7 +82,8 @@ checks, or runtime cleanup.
 - `docker/c0/.host/`: c0 host prerequisites that Doco-CD must not manage.
 - `docker/c0/`: host Doco configuration and direct-child OpenBao, PowerDNS, Blocky, and Omada
   Controller applications.
-- `ansible/junos/`: isolated inventory, intent, roles, scripts, fixtures, and tests.
+- `ansible/junos/`: isolated inventory, intent, roles, scripts, fixtures, tests, and the fixed
+  pre-adoption record.
 - `docs/`: operational, backup/restore, secret-custody, and migration runbooks.
 - `scripts/`: repository-wide utilities, including the fail-closed Gitleaks wrapper.
 
@@ -127,8 +134,9 @@ and may require explicit confirmation.
   `ks.yaml`/`app/kustomization.yaml` layout rather than creating another convention.
 - Flux ordering belongs in `dependsOn` and health expressions. Do not script around controller
   readiness or replace declarative ownership with imperative mutations.
-- Junos intent is split under `host_vars/srx1500/intent/`; Python renderers use `render_<domain>`,
-  remain synchronous/deterministic, and raise `IntentError` with actionable messages.
+- Junos intent is split under `ansible/junos/intent/srx1500/`; Python renderers use
+  `render_<domain>`, remain synchronous/deterministic, and raise `IntentError` with actionable
+  messages.
 - Junos object names are generally uppercase. Output must stay ordered, duplicate-free, safely
   quoted, and digest-stable.
 - Ansible uses assertions and fatal failures; sensitive tasks use `no_log`. Live execution uses

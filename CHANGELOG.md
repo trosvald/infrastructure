@@ -8,16 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Added Blocky DNS proxy (`blocky-c0`) for c0: Cloudflare and Quad9 DoH upstreams, HaGeZi Multi
-  NORMAL blocklist, conditional forwarding of `monosense.io` and reverse zones to local PowerDNS,
-  DNSSEC validation disabled, read-only root, no persistent state.
-  **Deployed 2026-08-25** as a healthy parallel resolver at `10.25.13.35`; container is healthy,
-  zero-capability, read-only root, one read-only config mount. HaGeZi imported 189,012 blocklist
-  entries. UDP public Cloudflare queries return NOERROR in ~16 ms; TCP cached in ~0 ms. Private
-  `c0` A, `ns1` PTR, and ad-block `ads.01film.cc` NXDOMAIN all verified. No client cutover —
-  `10.25.10.100` (AdGuard) remains production DNS.
+- Added Blocky DNS proxy (`blocky-c0`) for c0 with reviewed upstream,
+  conditional-forwarding, read-only, and no-persistent-state controls. Production
+  rollout and client cutover remain outside this repository's automation scope.
 - Added a pinned, polling-only Doco-CD bootstrap configuration for c0 with c0-scoped discovery and
   loopback-only management endpoints.
+- Added the isolated Junos SRX1500 intent refactor: deterministic seven-domain rendering, exact
+  NETCONF identity/release gates, protected transient artifacts, and digest-bound
+  commit-check/commit-confirmed lifecycle. The tracked adoption record remains false, so live
+  deployment and drift are intentionally fail-closed pending manual parity review.
 
 ### Changed
 
