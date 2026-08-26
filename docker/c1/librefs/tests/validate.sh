@@ -18,7 +18,10 @@ assert s["read_only"] is True and s["restart"] == "no"
 assert s["environment"] == {"HOME":"/tmp","MINIO_ROOT_PASSWORD_FILE":"/run/secrets/librefs_root_password","MINIO_ROOT_USER_FILE":"/run/secrets/librefs_root_user"}
 assert s["cap_drop"] == ["ALL"] and s["security_opt"] == ["no-new-privileges:true"]
 assert s["tmpfs"] == ["/tmp:rw,nosuid,nodev,noexec,mode=1777"]
-assert s["volumes"] == [{"type":"bind","source":"/srv/librefs/data","target":"/data","bind":{"create_host_path":False}}]
+volume=s["volumes"][0]
+assert volume["type"]=="bind" and volume["source"]=="/srv/librefs/data" and volume["target"]=="/data"
+assert volume.get("bind",{}).get("create_host_path",False) is False
+assert "create_host_path: false" in source
 assert s["networks"] == {"c1_services":{"ipv4_address":"10.25.13.65"}}
 network=r["networks"]["c1_services"]
 assert network["name"] == "c1_services" and network["external"] is True
