@@ -1,8 +1,15 @@
 # c1 Operations
 
 Date: 2026-08-26
-Status: repository procedure; no live mutation is authorized; storage commands revised for
-single-device 1 TB approval; no engine configuration is installed
+Status: storage applied successfully on the corrected retry. The 1 TB NVMe has two XFS partitions
+mounted and verified — `c1_librefs` at `/srv/librefs` and `c1_apps` at `/srv/applications`,
+`defaults,noatime`. Docker and containerd `SOURCE` equals `/` source. The 512 GB device is
+excluded and unmounted. The host shim `c1-svc-shim` is up at `10.25.13.17/32` with route
+`10.25.13.64/27 dev c1-svc-shim`; `c1-services-shim.service` and `c1-services-network.service`
+are both active. Audit trail preserved: first apply failed safely on overlength XFS label and
+filtered-route query; corrected retry succeeded. Mission no longer blocked on storage or
+network; remaining gates are OpenBao writes, push, merge, deploy, reboot, off-host backup/
+restore.
 
 This runbook is subordinate to `DESIGN-AND-PLAN.md`, `REVIEW.md`, `SECRET-CONTRACT.md`, and
 `LIBREFS.md`. Repository validation is safe and offline:
@@ -103,11 +110,14 @@ OS-disk roots (`/var/lib/docker`, `/var/lib/containerd`, `/run/containerd`) unto
 Compose restart policy is disabled; `doco-cd-c1.service` owns the controller's foreground Compose
 process and `librefs-c1.service` (with `manage-c1-librefs`) owns libreFS. Both `doco-cd-c1.service`
 and `librefs-c1.service` require `c1-librefs-storage.service`, `c1-applications-storage.service`,
-`assert-c1-mount`, and `c1-services-shim.service` to be active before they start; `doco-cd-c1`
-additionally runs the token TTL gate. Docker itself is independent of those mounts and remains
-usable while either partition is absent. Affected bind-mounted applications (libreFS, future
-HAProxy/Mattermost/Forgejo/PostgreSQL) fail closed if their partition mount is wrong or absent;
-keep those applications stopped and repair the mount rather than creating fallback directories.
+`assert-c1-mount`, and the network unit `c1-services-network.service` (which transitively
+Requires/After Docker and the shim unit `c1-services-shim.service` whose interface is
+`c1-svc-shim`; the systemd and helper filenames remain unchanged) to be active before they
+start; `doco-cd-c1` additionally runs the token TTL gate. Docker itself is independent
+of those mounts and remains usable while either partition is absent. Affected bind-mounted
+applications (libreFS, future HAProxy/Mattermost/Forgejo/PostgreSQL) fail closed if their
+partition mount is wrong or absent; keep those applications stopped and repair the mount rather
+than creating fallback directories.
 
 Use a separately reviewed export/restore or delta migration only if durable state must move; never
 prune or delete an existing engine root.
@@ -121,31 +131,59 @@ sudo docker/c1/.host/networks/services/ensure.sh
 sudo docker/c1/.host/networks/services/ensure-shim.sh
 ```
 
-After conclusive collision checks and explicit network approval, create only the exact network and
-install the additive persistent shim:
+After conclusive collision checks and explicit network approval, install both helpers, the
+additive persistent shim, and the network unit. The shim unit is enabled and started before the
+network unit so the network unit's transitive dependency is satisfied:
 
 ```sh
-sudo docker/c1/.host/networks/services/ensure.sh apply
+sudo install -o root -g root -m 0755 docker/c1/.host/networks/services/ensure.sh /usr/local/sbin/ensure-c1-services-network
 sudo install -o root -g root -m 0755 docker/c1/.host/networks/services/ensure-shim.sh /usr/local/sbin/ensure-c1-services-shim
 sudo install -o root -g root -m 0644 docker/c1/.host/networks/services/c1-services-shim.service /etc/systemd/system/c1-services-shim.service
+sudo install -o root -g root -m 0644 docker/c1/.host/networks/services/c1-services-network.service /etc/systemd/system/c1-services-network.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now c1-services-shim.service
+sudo systemctl enable --now c1-services-network.service
+# Link name is `c1-svc-shim` (11 chars, fits Linux IFNAMSIZ = 16). The prior 16-char
+# `c1-services-shim` interface name was rejected pre-create with no link ever created. The systemd
+# unit and helper filenames remain `c1-services-shim.service` and `ensure-c1-services-shim`;
+# the network helper is `/usr/local/sbin/ensure-c1-services-network` and its unit is
+# `c1-services-network.service`. `c1-services-network.service` Requires/After Docker and the
+# shim unit and runs the exact `ensure.sh apply` on boot. `librefs-c1.service` and
+# `doco-cd-c1.service` require `c1-services-network.service` (which transitively requires the
+# shim); neither requires the shim directly anymore.
+sudo ip link show c1-svc-shim
+sudo ip -details link show c1-svc-shim
+sudo docker network inspect c1_services
 ```
 
 Repeat the full read-only host checkpoint. `.34` must still route through the management default;
 only `10.25.13.64/27` may use the shim. On drift, stop. Do not delete an attached network. An
-approved empty-network rollback is:
+approved empty-network rollback is dependency-safe: stop and disable the c1 consumers first, then
+the network unit, then verify the endpoint guard while the shim still exists, and only after the
+guard is zero remove the network, the shim unit, and the shim link in that strict order. The shim
+is never deleted before the endpoint guard.
 
 ```sh
-sudo systemctl disable --now c1-services-shim.service
-sudo ip link delete c1-services-shim
+# 1. Stop and disable c1 consumers first
+sudo systemctl disable --now doco-cd-c1.service
+sudo systemctl disable --now librefs-c1.service
+# 2. Stop and disable the network unit (Requires/After Docker + shim)
+sudo systemctl disable --now c1-services-network.service
+# 3. Endpoint guard — shim must still exist; abort if any endpoint remains
 endpoint_count="$(sudo docker network inspect -f '{{len .Containers}}' c1_services)"
 test "$endpoint_count" -eq 0
+# 4. Only when zero: remove the Docker network
 sudo docker network rm c1_services
+# 5. Then stop/disable the shim unit and delete the shim link
+sudo systemctl disable --now c1-services-shim.service
+sudo ip link delete c1-svc-shim
 ```
 
-The removal command is forbidden unless the endpoint count is exactly zero and the outage/removal
-has its own approval.
+The removal sequence is forbidden unless every step ran in order and the endpoint count is
+exactly zero before the shim unit is stopped. The shim link is never deleted before the
+endpoint guard passes, and the shim unit is never stopped before the network is removed. Each
+step requires its own outage/removal approval; an aborted guard leaves the network, the shim
+unit, and the shim link in place for re-inspection.
 
 ## OpenBao token lifecycle
 
@@ -196,20 +234,16 @@ Revoke the prior token only by its retained accessor after this full provider ca
 
 Enable renewal, then start the systemd-owned controller:
 
-```sh
-sudo systemctl daemon-reload
-sudo systemctl enable --now doco-c1-openbao-renew.timer
-sudo systemctl enable --now doco-cd-c1.service
-sudo systemctl status --no-pager doco-cd-c1.service
-sudo env REQUIRE_PROVIDER_CANARY=false /usr/local/sbin/check-c1-doco-controller
-```
-
 The Compose service has no Docker restart policy. On boot, only `doco-cd-c1.service` starts it.
 Its `Requires=` ordering covers Docker, `c1-librefs-storage.service`,
-`c1-applications-storage.service`, `assert-c1-mount`, and `c1-services-shim.service`; its real
+`c1-applications-storage.service`, `assert-c1-mount`, and the network unit
+`c1-services-network.service` (which transitively Requires/After Docker and the shim unit
+`c1-services-shim.service` whose interface is `c1-svc-shim`; the systemd and helper filenames
+are unchanged — only the link name was shortened to satisfy Linux IFNAMSIZ); its real
 `ExecStartPre` TTL gate runs after those storage prerequisites. A low/expired token therefore
 blocks Doco rather than racing the five-minute persistent renewal timer. An initial Doco deploy
-is safe: Doco's controller cannot start until the same storage units and the shim are active.
+is safe: Doco's controller cannot start until the same storage units and the network unit are
+active (the network unit itself depends on the shim).
 
 ## Controller and libreFS checkpoint
 

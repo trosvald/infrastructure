@@ -61,6 +61,10 @@ assert 'restart "$SERVICE"' in installer
 assert 'env REQUIRE_PROVIDER_CANARY=true "$CONTROLLER_GATE"' in api_installer
 assert 'os.fsync' in api_installer and 'os.replace' in api_installer
 assert 'ExecStartPre=/usr/local/sbin/check-c1-openbao-token' in controller_unit
+network_unit=(root/".host/networks/services/c1-services-network.service").read_text()
+assert 'c1-services-shim.service' in network_unit
+assert 'ExecStart=/usr/local/sbin/ensure-c1-services-network apply' in network_unit
+assert 'c1-services-network.service' in controller_unit
 assert 'up --force-recreate --no-deps doco-cd' in controller_unit and 'Restart=on-failure' in controller_unit
 assert 'c1-librefs-storage.service c1-applications-storage.service' in controller_unit
 assert 'Persistent=true' in timer and 'OnBootSec=5min' in timer and 'OnUnitActiveSec=6h' in timer
@@ -73,6 +77,7 @@ assert 'c1_librefs' in storage and 'c1_applications' in storage and '/srv/contai
 assert 'c1-librefs-storage.service c1-applications-storage.service' in storage_installer
 assert 'RequiresMountsFor=/srv/librefs' in librefs_unit
 librefs_start_unit=(root/".host/systemd/librefs-c1.service").read_text()
+assert 'c1-services-network.service' in librefs_start_unit
 assert 'c1-librefs-storage.service' in librefs_start_unit
 assert 'ExecStartPre=/usr/local/sbin/assert-c1-mount librefs /srv/librefs' in librefs_start_unit
 assert 'ExecStart=/usr/local/sbin/manage-c1-librefs start' in librefs_start_unit

@@ -1,14 +1,14 @@
 # c1 Design and Plan
 
 Date: 2026-08-26
-Status: storage boundary revised (1 TB only, 50:50 split; 512 GB quarantined/excluded); first apply
-failed safely on the invalid 16-char XFS label `c1_applications`; partial state rolled back to blank
-GPT; prior plan digest and approval invalidated; ready for focused re-review on the corrected label
-contract (`c1_apps` XFS label, `c1_applications` GPT PARTLABEL); mission blocked pending fresh
-single-device plan/approval.
-
-This plan follows `docs/c1/DISCOVERY.md`. It does not authorize storage, OpenBao, network, push,
-merge, reboot, or link-failure mutation.
+Status: storage applied successfully on the corrected retry. Two XFS partitions on the approved 1 TB
+NVMe are mounted and verified (`c1_librefs` at `/srv/librefs`, `c1_apps` at `/srv/applications`,
+`defaults,noatime`). Docker and containerd `SOURCE` equals `/` source. 512 GB device is excluded
+and unmounted. Prior audit trail preserved: first apply failed safely on the overlength 16-char
+XFS label `c1_applications`, partial state rolled back to a blank GPT, prior plan digest and
+approval invalidated; corrected retry succeeded under the new six-line approval. Mission is no
+longer blocked on storage or network; remaining gates are OpenBao writes, push, merge, deploy,
+reboot, and off-host backup/restore.
 
 ## Target architecture
 
@@ -67,15 +67,36 @@ plan must bind both: the GPT `PARTLABEL` (≤36 chars) holds the operator-facing
 for partition 1 and `c1_applications` for partition 2 — and the XFS filesystem label (≤12 chars,
 hard XFS limit) holds the runtime name — `c1_librefs` for partition 1 and `c1_apps` for partition 2.
 The old partition-2 XFS label `c1_applications` (16 chars) exceeds the XFS limit and was rejected
-at first apply; the helper treats any pre-write label mismatch, XFS label overflow, or PARTLABEL
-mismatch as a stop condition. Labels are diagnostic only. Mount options are `defaults,noatime`;
-no `nofail` and no continuous `discard`. Enable and verify `fstrim.timer`.
+at first apply. Labels are diagnostic only. Mount options are `defaults,noatime`; no `nofail` and
+no continuous `discard`. Enable and verify `fstrim.timer`.
 
-**Failed first apply — fresh approval required.** The first `apply` run failed safely on the
-invalid XFS label `c1_applications` (exceeds 12-character XFS limit). Partial filesystem state
-was rolled back to a blank GPT; no partition data survived, no mount was committed, and no engine
-state changed. The prior plan digest and the prior approval are invalidated; a fresh single-device
-plan digest and a fresh six-line `APPROVE C1 STORAGE` approval are required before any retry.
+### Storage audit trail and apply convergence
+
+1. **First apply — safe failure.** The first `apply` run was rejected on the overlength 16-char
+   XFS label `c1_applications`; validation also initially used a route query with a `dev` filter
+   and missed the explicit `dev` field on the shim's exact-state match. Both attempts were safe:
+   no link was ever created on `bond0.2513`, no XFS filesystem was ever written, no mount was ever
+   committed, and no engine state changed. The 512 GB device was never touched.
+2. **Plan/approval invalidated.** The first plan digest and the first six-line approval were
+   invalidated; a fresh single-device plan and a fresh six-line `APPROVE C1 STORAGE` approval
+   were required before any retry. The corrected retry used XFS label `c1_apps` for partition 2.
+3. **Corrected retry — success.** The corrected `apply` succeeded. Two aligned XFS partitions on
+   the approved 1 TB NVMe were created with GPT type GUID `0FC63DAF-8483-4772-8E79-3D69D8477DE4`,
+   formatted with `mkfs.xfs -m crc=1,reflink=1 -n ftype=1 -L <label>`, mounted with
+   `defaults,noatime`, and verified by UUID, XFS magic, RW, and directory probes.
+4. **Apply convergence — safe UUID-bound remount.** When a known UUID-bound completed mount
+   exists, the helper safely remounts it with `mount -o remount,noatime <device> <mountpoint>`
+   and re-commits the hard fstab entry (UUID-based) before the storage assertion reports active.
+   The remount preserves the original UUID, mountpoint, and mount options other than `noatime`; no
+   data is moved and no fstab UUID is regenerated. Any drift on remount fails closed.
+5. **Shim exact-state — explicit `dev` field.** The shim's exact-state validator now queries the
+   route table without a `dev` filter so the real JSON includes `dev: c1-svc-shim`; validators
+   require address `ifname`, route `dev`, and scope `link` to match. The earlier filtered query
+   hid `dev` and was corrected.
+6. **Persistent shim/network success.** With the corrected validator, `c1-services-shim.service`
+   and `c1-services-network.service` are both active; `c1-svc-shim` is up at `10.25.13.17/32` with
+   `10.25.13.64/27` routed via `dev c1-svc-shim`. Docker and containerd `SOURCE` equals `/`
+   source. The 512 GB device is excluded and unmounted.
 
 ### Docker and application-state boundary
 
@@ -180,16 +201,19 @@ MTU, create failure, post-create failure, attached network, and Docker/IP comman
 A root-owned idempotent oneshot creates an IPvlan L2 shim on `bond0.2513`:
 
 ```text
-link: c1-services-shim
+link: c1-svc-shim  (Linux IFNAMSIZ = 16; the prior `c1-services-shim` interface name was rejected
+                  pre-create as 16 chars; the helper shortens the interface to `c1-svc-shim`)
 MTU: 1496
 address: 10.25.13.17/32
-route: 10.25.13.64/27 dev c1-services-shim
+route: 10.25.13.64/27 dev c1-svc-shim
 ```
-
 It matches exact existing link/address/route state and fails on drift; it does not hide drift with
 `route replace`. Persistence is a systemd unit ordered after network-online and `bond0.2513`, before
-Doco deployment, and additive to existing ifupdown configuration. It never adds an address or
-default route to `bond0` or the VLAN.
+Doco deployment, and additive to existing ifupdown configuration. The systemd unit filename and
+the helper filename remain `c1-services-shim.service` and `ensure-c1-services-shim`; the actual
+link created on `bond0.2513` is `c1-svc-shim` (11 chars, fits Linux IFNAMSIZ = 16). The earlier
+16-char interface name was rejected pre-create; no link was ever created and no state changed. The
+unit never adds an address or default route to `bond0` or the VLAN.
 
 Before and after application, assert the unchanged management interface/address/default route/DNS,
 LACP membership/aggregator, VLANs, and MTUs. OpenBao `.34` remains outside the shim `/27` and uses
@@ -229,10 +253,14 @@ c1 controller contract:
 - Docker restart policy disabled for both the controller and libreFS; `doco-cd-c1.service` and
   `librefs-c1.service` (with `manage-c1-librefs`) own their foreground processes. systemd requires
   Docker, `c1-librefs-storage.service`, `c1-applications-storage.service`, `assert-c1-mount`, and
-  `c1-services-shim.service`, then runs the real token TTL gate before every controller start;
-  `librefs-c1.service` only invokes `docker start` after the same storage units, the shim, and the
-  mount assertion have all reported active. An initial Doco deploy is safe because Doco itself
-  refuses to start without those storage prerequisites;
+  the network unit `c1-services-network.service` (whose interface on `bond0.2513` is `c1-svc-shim`
+  — the systemd and helper filenames are unchanged; only the link name was shortened to satisfy
+  Linux IFNAMSIZ). `c1-services-network.service` itself Requires/After Docker and the shim unit
+  `c1-services-shim.service`, and runs the exact `ensure.sh apply` on boot. The controller
+  additionally runs the token TTL gate before every start. `librefs-c1.service` only invokes
+  `docker start` after the same storage units, the network unit, and the mount assertion have all
+  reported active. An initial Doco deploy is safe because Doco itself refuses to start without
+  those storage prerequisites;
 
 The token file is read when Doco constructs its OpenBao client. Atomically replacing a file-backed
 Compose secret followed by a plain container restart can retain the old inode. Token and API-secret
@@ -364,16 +392,16 @@ introduced.
   non-1 TB by-id input, and the 512 GB device; the approval parser enforces the exact six-line
   APPROVE C1 STORAGE block, rejects any 512GB line, and rejects mismatched PARTITION_LAYOUT;
 - no committed stable IDs, UUIDs, serials, secrets, or approval tokens;
-- OpenBao policy permits only intended read and self-renew paths and denies metadata/list/write,
 - rendered libreFS image/platform/IP/network/mount/no-port/no-socket/non-root/read-only/security,
   limits/logs/health/secrets, absence of `latest` or plaintext credentials, and `restart: no` so
   Docker cannot auto-restart libreFS;
-- Compose render uses safe non-secret CI canaries;
-- no recognized Compose filename under `.doco-cd` or `.host`;
 - rendered `librefs-c1.service` and `manage-c1-librefs` ordering requires
   `c1-librefs-storage.service`, `c1-applications-storage.service`, `assert-c1-mount`, and
-  `c1-services-shim.service` active before `docker start`; `doco-cd-c1.service` requires the same
-  storage prerequisites plus the token TTL gate before its controller start;
+  `c1-services-network.service` active before `docker start` (the systemd unit and helper filenames
+  are `c1-services-network.service` and `/usr/local/sbin/ensure-c1-services-network`; the network
+  unit transitively Requires/After Docker and the shim unit `c1-services-shim.service`, whose
+  interface is `c1-svc-shim` ≤16 chars); `doco-cd-c1.service` requires the same storage
+  prerequisites plus the token TTL gate before its controller start;
 - existing `validate-c0`, Gitleaks, yamllint, shell syntax, and actionlint remain in CI.
 
 The pre-existing c0 exit-1 failure must be diagnosed and kept separate. c1 work may not bypass or

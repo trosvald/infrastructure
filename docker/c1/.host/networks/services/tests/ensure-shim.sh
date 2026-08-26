@@ -31,16 +31,16 @@ if [[ "$*" == '-j address show dev bond0.2513' ]]; then
     fi
     exit
 fi
-if [[ "$*" == 'link show dev c1-services-shim' ]]; then
+if [[ "$*" == 'link show dev c1-svc-shim' ]]; then
     [[ -e "$state/exists" ]] || exit 1
     exit
 fi
-if [[ "$*" == '-j -d link show dev c1-services-shim' ]]; then
+if [[ "$*" == '-j -d link show dev c1-svc-shim' ]]; then
     [[ "${FAIL:-}" != link-inspect ]] || exit 71
     if [[ "${FAIL:-}" == link-drift || "${FAIL:-}" == post-link ]]; then
-        printf '%s\n' '[{"ifname":"c1-services-shim","link":"wrong","mtu":1496,"flags":["UP"],"linkinfo":{"info_kind":"ipvlan","info_data":{"mode":"l2"}}}]'
+        printf '%s\n' '[{"ifname":"c1-svc-shim","link":"wrong","mtu":1496,"flags":["UP"],"linkinfo":{"info_kind":"ipvlan","info_data":{"mode":"l2"}}}]'
     else
-        printf '%s\n' '[{"ifname":"c1-services-shim","link":"bond0.2513","mtu":1496,"flags":["UP"],"linkinfo":{"info_kind":"ipvlan","info_data":{"mode":"l2"}}}]'
+        printf '%s\n' '[{"ifname":"c1-svc-shim","link":"bond0.2513","mtu":1496,"flags":["UP"],"linkinfo":{"info_kind":"ipvlan","info_data":{"mode":"l2"}}}]'
     fi
     exit
 fi
@@ -49,22 +49,24 @@ if [[ "$1 $2" == 'link add' ]]; then
     touch "$state/exists"
     exit
 fi
-if [[ "$*" == 'link set dev c1-services-shim mtu 1496' ]]; then
+if [[ "$*" == 'link set dev c1-svc-shim mtu 1496' ]]; then
     [[ "${FAIL:-}" != set-mtu ]] || exit 73
     exit
 fi
-if [[ "$*" == 'link set dev c1-services-shim up' ]]; then
+if [[ "$*" == 'link set dev c1-svc-shim up' ]]; then
     [[ "${FAIL:-}" != set-up ]] || exit 74
     exit
 fi
-if [[ "$*" == '-j address show dev c1-services-shim' ]]; then
+if [[ "$*" == '-j address show dev c1-svc-shim' ]]; then
     [[ "${FAIL:-}" != address-inspect ]] || exit 75
     if [[ "${FAIL:-}" == address-drift ]]; then
-        printf '%s\n' '[{"ifname":"c1-services-shim","addr_info":[{"family":"inet","local":"10.25.13.18","prefixlen":32}]}]'
+        printf '%s\n' '[{"ifname":"c1-svc-shim","addr_info":[{"family":"inet","local":"10.25.13.18","prefixlen":32}]}]'
+    elif [[ "${FAIL:-}" == address-ifname ]]; then
+        printf '%s\n' '[{"ifname":"wrong","addr_info":[{"family":"inet","local":"10.25.13.17","prefixlen":32}]}]'
     elif [[ -e "$state/address" ]]; then
-        printf '%s\n' '[{"ifname":"c1-services-shim","addr_info":[{"family":"inet","local":"10.25.13.17","prefixlen":32}]}]'
+        printf '%s\n' '[{"ifname":"c1-svc-shim","addr_info":[{"family":"inet","local":"10.25.13.17","prefixlen":32}]}]'
     else
-        printf '%s\n' '[{"ifname":"c1-services-shim","addr_info":[]}]'
+        printf '%s\n' '[{"ifname":"c1-svc-shim","addr_info":[]}]'
     fi
     exit
 fi
@@ -73,12 +75,14 @@ if [[ "$1 $2" == 'address add' ]]; then
     touch "$state/address"
     exit
 fi
-if [[ "$*" == '-j route show 10.25.13.64/27 dev c1-services-shim' ]]; then
+if [[ "$*" == '-j route show 10.25.13.64/27' ]]; then
     [[ "${FAIL:-}" != route-inspect ]] || exit 77
     if [[ "${FAIL:-}" == route-drift ]]; then
-        printf '%s\n' '[{"dst":"10.25.13.0/24","dev":"c1-services-shim"}]'
+        printf '%s\n' '[{"dst":"10.25.13.0/24","dev":"c1-svc-shim","scope":"link"}]'
+    elif [[ "${FAIL:-}" == route-nodev ]]; then
+        printf '%s\n' '[{"dst":"10.25.13.64/27","scope":"link"}]'
     elif [[ -e "$state/route" ]]; then
-        printf '%s\n' '[{"dst":"10.25.13.64/27","dev":"c1-services-shim"}]'
+        printf '%s\n' '[{"dst":"10.25.13.64/27","dev":"c1-svc-shim","scope":"link"}]'
     else
         printf '%s\n' '[]'
     fi
@@ -122,14 +126,14 @@ unset MODE
 reset
 run
 [[ -e "$work/state/exists" && -e "$work/state/address" && -e "$work/state/route" ]]
-grep -F 'link add c1-services-shim link bond0.2513 type ipvlan mode l2' "$work/state/calls" >/dev/null
-grep -F 'address add 10.25.13.17/32 dev c1-services-shim' "$work/state/calls" >/dev/null
-grep -F 'route add 10.25.13.64/27 dev c1-services-shim' "$work/state/calls" >/dev/null
+grep -F 'link add c1-svc-shim link bond0.2513 type ipvlan mode l2' "$work/state/calls" >/dev/null
+grep -F 'address add 10.25.13.17/32 dev c1-svc-shim' "$work/state/calls" >/dev/null
+grep -F 'route add 10.25.13.64/27 dev c1-svc-shim' "$work/state/calls" >/dev/null
 ! grep -Eq ' route replace | link delete | address flush ' "$work/state/calls"
 
 for failure in parent-command parent-drift parent-address-command parent-address-drift \
     link-inspect link-drift create set-mtu set-up address-inspect address-add address-drift \
-    route-inspect route-add route-drift post-link; do
+    address-ifname route-inspect route-add route-drift route-nodev post-link; do
     reset
     if [[ "$failure" != create && "$failure" != set-mtu && "$failure" != post-link ]]; then
         touch "$work/state/exists"

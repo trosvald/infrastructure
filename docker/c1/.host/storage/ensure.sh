@@ -413,8 +413,25 @@ assert_mount() {
     [[ "$source" == "$uuid xfs "* || "$source" == "$uuid xfs,"* ]] \
         || fail "$target has wrong UUID or filesystem"
     options="${source#*xfs }"
-    [[ ",$options," == *,rw,* ]] || fail "$target is not read-write"
+    [[ ",$options," == *,rw,* && ",$options," == *,noatime,* ]] \
+        || fail "$target must be read-write with noatime"
     "$XFS_INFO_BIN" "$target" | grep -Eq 'ftype=1' || fail "$target XFS lacks ftype=1"
+}
+
+converge_mount_options() {
+    local target="$1" uuid="$2" source options
+    "$MOUNTPOINT_BIN" -q "$target" || fail "$target is not mounted"
+    source="$("$FINDMNT_BIN" -n -o UUID,FSTYPE,OPTIONS --target "$target")" \
+        || fail "cannot inspect $target"
+    [[ "$source" == "$uuid xfs "* || "$source" == "$uuid xfs,"* ]] \
+        || fail "$target has wrong UUID or filesystem"
+    options="${source#*xfs }"
+    [[ ",$options," == *,rw,* ]] || fail "$target is not read-write"
+    if [[ ",$options," != *,noatime,* ]]; then
+        "$MOUNT_BIN" -o remount,noatime "$target" \
+            || fail "failed to remount $target with noatime"
+    fi
+    assert_mount "$target" "$uuid"
 }
 
 commit_fstab() {
@@ -468,7 +485,7 @@ finish_pending() {
         || fail "$state_label pending filesystem identity changed"
     "$INSTALL_BIN" -d -m 0755 "$mount_path"
     if ! "$MOUNTPOINT_BIN" -q "$mount_path"; then
-        "$MOUNT_BIN" "$part" "$mount_path" || fail "failed to mount $state_label filesystem"
+        "$MOUNT_BIN" -o noatime "$part" "$mount_path" || fail "failed to mount $state_label filesystem"
     fi
     assert_mount "$mount_path" "$uuid"
     commit_fstab "$mount_path" "$uuid"
@@ -483,7 +500,8 @@ provision_partition() {
     if [[ -r "$complete" ]]; then
         [[ ! -e "$pending" ]] || fail "$state_label has both complete and pending state"
         IFS= read -r uuid <"$complete"
-        assert_mount "$mount_path" "$uuid"
+        converge_mount_options "$mount_path" "$uuid"
+        commit_fstab "$mount_path" "$uuid"
         assert_fstab_entry "$mount_path" "$uuid" || fail "$state_label fstab verification failed"
         return
     fi

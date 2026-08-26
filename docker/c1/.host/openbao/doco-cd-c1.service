@@ -1,7 +1,7 @@
 [Unit]
 Description=c1 Doco-CD controller
-Requires=docker.service c1-librefs-storage.service c1-applications-storage.service c1-services-shim.service
-After=docker.service c1-librefs-storage.service c1-applications-storage.service c1-services-shim.service librefs-c1.service network-online.target
+Requires=docker.service c1-librefs-storage.service c1-applications-storage.service c1-services-network.service
+After=docker.service c1-librefs-storage.service c1-applications-storage.service c1-services-network.service librefs-c1.service network-online.target
 Wants=network-online.target librefs-c1.service
 
 [Service]

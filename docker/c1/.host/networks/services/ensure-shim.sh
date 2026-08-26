@@ -4,7 +4,7 @@ set -euo pipefail
 IP_BIN="${IP_BIN:-ip}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 readonly IP_BIN PYTHON_BIN
-readonly PARENT=bond0.2513 SHIM=c1-services-shim
+readonly PARENT=bond0.2513 SHIM=c1-svc-shim
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -36,7 +36,7 @@ x=json.load(sys.stdin)
 if len(x)!=1:
  raise SystemExit(1)
 i=x[0]
-valid=(i.get("ifname")=="c1-services-shim" and i.get("mtu")==1496
+valid=(i.get("ifname")=="c1-svc-shim" and i.get("mtu")==1496
  and "UP" in i.get("flags",[]) and i.get("link")=="bond0.2513"
  and i.get("linkinfo",{}).get("info_kind")=="ipvlan"
  and i.get("linkinfo",{}).get("info_data",{}).get("mode")=="l2")
@@ -53,20 +53,22 @@ x=json.load(sys.stdin)
 if len(x)!=1:
  raise SystemExit(2)
 a=[(v.get("local"),v.get("prefixlen")) for v in x[0].get("addr_info",[]) if v.get("family")=="inet"]
-raise SystemExit(0 if a==[("10.25.13.17",32)] else 3 if a else 4)
+valid=(x[0].get("ifname")=="c1-svc-shim" and a==[("10.25.13.17",32)])
+raise SystemExit(0 if valid else 3 if a else 4)
 ' <<<"$document"
 }
 
 inspect_route() {
     local document
-    document="$("$IP_BIN" -j route show 10.25.13.64/27 dev "$SHIM")" || fail "failed to inspect shim route"
+    document="$("$IP_BIN" -j route show 10.25.13.64/27)" || fail "failed to inspect shim route"
     "$PYTHON_BIN" -c '
 import json,sys
 x=json.load(sys.stdin)
 if not x:
  raise SystemExit(4)
 valid=(len(x)==1 and x[0].get("dst")=="10.25.13.64/27"
- and x[0].get("dev")=="c1-services-shim")
+ and x[0].get("dev")=="c1-svc-shim"
+ and x[0].get("scope")=="link")
 raise SystemExit(0 if valid else 3)
 ' <<<"$document"
 }

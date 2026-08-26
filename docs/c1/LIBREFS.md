@@ -70,11 +70,13 @@ explicitly non-durable service holding no irreplaceable data. The status remains
 
 Restart authority belongs to systemd, not Docker. `librefs-c1.service` is the only process that
 starts (and restarts) the existing `librefs-c1` container; it runs `manage-c1-librefs` which
-asserts `c1-librefs-storage.service`, `c1-services-shim.service`, and `assert-c1-mount` are
-active before `docker start` runs. On boot, systemd orders these dependencies so the container is
-never started (or restarted) while a partition mount is missing or while the SERVICES shim is down.
-An initial Doco deploy is therefore safe because Doco itself requires the same storage units and
-the SERVICES shim before its controller can start.
+asserts `c1-librefs-storage.service`, `c1-services-network.service` (which transitively requires
+the shim unit `c1-services-shim.service` — the systemd and helper filenames are unchanged; the
+interface on `bond0.2513` is `c1-svc-shim` ≤16 chars), and `assert-c1-mount` are active before
+`docker start` runs. On boot, systemd orders these dependencies so the container is never started
+(or restarted) while a partition mount is missing or while the shim is down. An initial Doco
+deploy is therefore safe because Doco itself requires the same storage units and the network unit
+(which transitively depends on the shim) before its controller can start.
 
 The storage prerequisite creates `/srv/librefs/data` as UID/GID 1000, mode `0750`, only while the
 approved 1 TB partition 1 is mounted at `/srv/librefs`. The directory does not exist beneath an

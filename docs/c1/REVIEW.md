@@ -1,12 +1,16 @@
 # c1 Independent Architecture Review
 
 Date: 2026-08-26
-Final design gate (revised split-storage review): `APPROVED_WITH_CONDITIONS`.
-First apply failed safely on the invalid 16-char XFS label `c1_applications`; partial state was
-rolled back to a blank GPT, the prior plan digest and approval were invalidated, and the corrected
-label contract (`c1_applications` GPT PARTLABEL + `c1_apps` XFS filesystem label) requires fresh
-re-review before any retry. Mission blocked pending fresh 1 TB exact identity/health/signatures/
-plan and the six-line `APPROVE C1 STORAGE` approval under the corrected contract.
+Final design gate: `APPROVED_WITH_CONDITIONS`.
+Storage applied successfully on the corrected retry: two XFS partitions mounted and verified on
+the approved 1 TB NVMe (`c1_librefs` at `/srv/librefs`, `c1_apps` at `/srv/applications`,
+`defaults,noatime`); Docker and containerd `SOURCE` equals `/` source; 512 GB device excluded
+and unmounted. Persistent shim `c1-svc-shim` and network unit `c1-services-network.service`
+active; route `10.25.13.64/27 dev c1-svc-shim` verified with scope `link`. Audit trail
+preserved: first apply failed safely on overlength XFS label and on a filtered-route query
+that hid the shim's `dev` field; corrected retry succeeded under a fresh plan/approval.
+Mission no longer blocked on storage or network; remaining gates are OpenBao writes, push,
+merge, deploy, reboot, and off-host backup/restore.
 Scope: `DISCOVERY.md`, `DESIGN-AND-PLAN.md`, `SECRET-CONTRACT.md`, `LIBREFS.md`,
 `FUTURE-EDGE.md`, adjacent c0 conventions, OpenBao policy patterns, Docker validation, and the Junos
 adoption gate. This is a design review, not an implementation review or live authorization.
@@ -124,7 +128,7 @@ Four findings were opened against the revised boundary. All closed under the rev
 |---|---|---|---|
 | RSS-1 | HIGH | Plan-digest revalidation before retry wipe must distinguish saved, pristine, and partial-child states | `CLOSED`. `apply` revalidation recognizes three pre-write states: `saved` (plan persisted on disk; verified digest matches approval → proceed), `pristine` (no plan on disk; first run → proceed), `partial-child` (only partition 1 or partition 2 filesystem recorded as pending; complete only the missing side and pass UUID/XFS/RW before its fstab entry is committed). Any unrecognized intermediate layout fails closed and refuses the wipe. |
 | RSS-2 | HIGH | NVMe health gate must enumerate critical-warning, media/data-integrity, and available-spare thresholds inside the plan | `CLOSED`. `check` and `plan` bind exact observed values for critical-warning bits, `Media and Data Integrity Errors`, and `Available Spare`/spare-threshold percentage into the plan digest; the plan refuses to enter `apply` when any value is non-zero or below the bound. The 512 GB quarantine (941 media errors, no verified firmware) remains an explicit exclusion, not a fallback. |
-| RSS-3 | HIGH | libreFS restart posture and systemd ownership boundary | `CLOSED`. Compose restart policy is `no`; `librefs-c1.service` + `manage-c1-librefs` own every start/stop and only invoke `docker start` after `c1-librefs-storage.service`, `c1-services-shim.service`, and `assert-c1-mount` report active. The Doco controller uses the same storage prerequisites plus the token TTL gate. Initial Doco deploy is safe because Doco itself refuses to start without those storage units. |
+| RSS-3 | HIGH | libreFS restart posture and systemd ownership boundary | `CLOSED`. Compose restart policy is `no`; `librefs-c1.service` + `manage-c1-librefs` own every start/stop and only invoke `docker start` after `c1-librefs-storage.service`, the network unit `c1-services-network.service` (which transitively Requires/After Docker and the shim unit `c1-services-shim.service` — the systemd and helper filenames are unchanged; the interface is `c1-svc-shim`), and `assert-c1-mount` report active. The Doco controller uses the same storage prerequisites plus the token TTL gate. Initial Doco deploy is safe because Doco itself refuses to start without those storage units. |
 | RSS-4 | HIGH | Engine `SOURCE` provenance and exact Linux filesystem GPT GUIDs | `CLOSED`. Docker and containerd `SOURCE` must equal `/` source under the storage gate; the runbook proves this before any wipe and fails closed on drift. Both partitions use the Linux filesystem GPT type GUID `0FC63DAF-8483-4772-8E79-3D69D8477DE4` and the basic data partition GUID `EBD0A0A2-B9E5-4433-87C0-68B6B72699C7` is rejected; the helper reads GPT type by GUID, not by label. |
 
 ## Corrected split-storage review — additional finding
@@ -153,12 +157,23 @@ command-mockable where it exercises rejection paths, and must fail on any drift.
 - mount-point absence/presence assertion before commit (`/srv/librefs`, `/srv/applications`);
 - stable by-id binding against partition by-id and against any non-by-id input;
 - root-disk (`/`) rejection — the OS device must be refused even when presented as a by-id path;
+- shim interface-naming: helper rejects any link name whose length would exceed Linux `IFNAMSIZ`;
+  the shim unit `c1-services-shim.service` and helper `ensure-c1-services-shim` keep their
+  filenames, and the actual interface on `bond0.2513` is the IFNAMSIZ-safe `c1-svc-shim`;
 - NVMe critical-warning, media/data-integrity, and available-spare gate bound to the plan digest;
-- pending-digest revalidation distinguishing `saved`, `pristine`, and `partial-child`;
 - layout-geometry assertion: one GPT, two 1 MiB-aligned partitions, partition 2 begins at the
   first aligned sector at or after the midpoint of the usable GPT range, partition 1 ends
   immediately before it;
 - filesystem-type assertion: both partitions `XFS` with the reviewed options;
+- apply convergence: when a known UUID-bound completed mount exists, the helper remounts it
+  `noatime` and re-commits the hard fstab entry (UUID-based) before the storage assertion reports
+  active; the remount preserves the original UUID, mountpoint, and non-`noatime` options; any
+  drift fails closed;
+- shim exact-state: route query must not filter on `dev`; real JSON must include
+  `dev: c1-svc-shim`; validators require address `ifname`, route `dev`, and scope `link`;
+- persistent shim/network success: `c1-services-shim.service` and `c1-services-network.service`
+  both active; `c1-svc-shim` is up at `10.25.13.17/32` with route `10.25.13.64/27 dev
+  c1-svc-shim` and scope `link`; Docker and containerd `SOURCE` equals `/` source;
 - no-wipe assertion: byte-identical retry never reformats a `complete` partition or a verified
   pending partition.
 
@@ -171,11 +186,11 @@ command-mockable where it exercises rejection paths, and must fail on any drift.
   basic-data GUID rejected.
 - Plan-digest revalidation distinguishes `saved`, `pristine`, and `partial-child` states; any
   unrecognized intermediate layout fails closed.
-- NVMe critical-warning, media/data-integrity, and available-spare gate bound inside the plan.
 - Compose restart policy disabled for both the controller and libreFS; systemd owns every
   start/stop via `doco-cd-c1.service` and `librefs-c1.service` (`manage-c1-librefs`).
 - Both systemd units `Requires=` `c1-librefs-storage.service`,
-  `c1-applications-storage.service`, `assert-c1-mount`, and `c1-services-shim.service`; the
+  `c1-applications-storage.service`, `assert-c1-mount`, and `c1-services-network.service` (which
+  transitively Requires/After Docker and the shim unit `c1-services-shim.service`); the
   controller additionally runs the token TTL gate.
 - Hard mount dependencies for `/srv/librefs` and `/srv/applications` and no root-disk bind fallback.
 - Single-device `APPROVE C1 STORAGE` contract binding exact 1 TB by-id, plan digest, signatures,
@@ -185,6 +200,7 @@ command-mockable where it exercises rejection paths, and must fail on any drift.
 - Tested libreFS UID/GID 1000, read-only root, dropped capabilities, file secrets, and Bash health.
 - Conservative LACP, MTU, offload, and performance claims.
 - Explicit off-host restore status cap.
+- HAProxy-only future edge and unchanged Junos `adopted: false` gate.
 
 The independent implementation pass initially returned `BLOCKED` with four HIGH and two MEDIUM
 findings. Corrections and focused rechecks closed all of them.
@@ -194,7 +210,7 @@ single-device storage, no engine-config install, OS-disk engine roots, and the
 `doco-cd-c1.service` / `librefs-c1.service` ownership boundary. Final implementation gate for the
 revised split-storage review: `APPROVED_WITH_CONDITIONS`.
 
-- `CLOSED` — Compose restart policy is disabled for both the controller and libreFS; `doco-cd-c1.service` and `librefs-c1.service` (with `manage-c1-librefs`) own their foreground processes. Both units `Requires=` the storage and shim prerequisites; the controller additionally runs the TTL gate before every start.
+- `CLOSED` — Compose restart policy is disabled for both the controller and libreFS; `doco-cd-c1.service` and `librefs-c1.service` (with `manage-c1-librefs`) own their foreground processes. Both units `Requires=` the storage units and `c1-services-network.service` (which transitively Requires/After Docker and the shim unit `c1-services-shim.service` whose interface is `c1-svc-shim`); the controller additionally runs the TTL gate before every start. The network unit runs the exact `ensure.sh apply` on boot.
 - `CLOSED` — replacement token/API-secret rotation force-enables the provider canary, requires the
   exact active provider mapping on public `main`, waits for controller health, triggers a tracked
   Doco poll, and requires success before old-token revocation.
@@ -217,17 +233,18 @@ Repository tests cover exact network/shim state, single-device storage approval/
 filesystem type, no-wipe), token renewal/TTL, controller provider-source/run gates, OpenBao
 policy, rendered Compose, and libreFS hardening.
 
-## Conditions before live mutation or real data
+## Remaining gates before push, deploy, and real data
 
-1. Fresh NVMe health (critical-warning, media/data-integrity, available spare) and exact stable 1 TB by-id identity re-confirmed at apply time.
-2. Fresh single-device 1 TB plan digest with `1TB_SIGNATURES`, `PARTITION_LAYOUT=50% LIBREFS + 50% APPLICATIONS`, and the exact six-line `APPROVE C1 STORAGE` approval; the 512 GB device is excluded and never an approval element.
-3. Conclusive `.65` and `.66` collision checks.
-4. Authenticated OpenBao KV v2, audit, token-limit, policy, and renewal evidence.
-5. Passing Doco/Compose secret-persistence canary.
-6. Passing required cleartext source/denied reachability matrix, or tested TLS/enforceable control.
-7. Passing implementation review with no CRITICAL/HIGH finding.
-8. Required storage, OpenBao, push, merge, reboot, and optional failover approvals.
+Storage and network are applied successfully. The remaining gates are:
 
-These are enforced stop conditions, not implied approvals. Repository implementation may proceed;
-live storage/OpenBao/network mutation may not proceed until its corresponding condition and explicit
-checkpoint are satisfied.
+1. Conclusive `.65` and `.66` collision checks.
+2. Authenticated OpenBao KV v2, audit, token-limit, policy, and renewal evidence.
+3. Passing Doco/Compose secret-persistence canary.
+4. Passing required cleartext source/denied reachability matrix, or tested TLS/enforceable control.
+5. Passing implementation review with no CRITICAL/HIGH finding.
+6. Required OpenBao, push, merge, deploy, reboot, and optional failover approvals.
+7. Off-host target and restore proof for any status above `OPERATIONAL_WITHOUT_DURABILITY`.
+
+These are enforced stop conditions, not implied approvals. The 512 GB device remains excluded
+from any approval and is never an argument. Storage or network mutation is no longer required
+for the current mission state.

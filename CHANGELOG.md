@@ -27,13 +27,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Refactored c0 into a host-scoped Doco-CD layout under `docker/c0/`, separating controller source,
   host prerequisites, and direct-child managed applications.
 - Revised the c1 repository foundation: Docker engine state, containerd, and named volumes stay
-  on the c1 OS disk; the healthy 1 TB NVMe is planned as two approximately equal XFS partitions
-  (`/srv/librefs` and `/srv/applications`); the 512 GB NVMe is quarantined/unmounted/excluded
-  after 941 historical media/data-integrity errors despite successful short/extended self-tests.
-  Revised code/review and exact single-device 1 TB approval remain gates; live c1 deployment is
-  intentionally blocked.
-- Recorded the c1 1 TB apply attempt that failed safely (XFS hard 12-char label limit rejected the
-  16-char `c1_applications` filesystem label on partition 2; filesystem label corrected to
-  `c1_apps`, GPT PARTLABEL `c1_applications` unchanged). Partial state was rolled back to a blank
-  GPT; the prior plan digest and `APPROVE C1 STORAGE` are invalidated, and a fresh single-device
-  plan plus the six-line approval are required before retry.
+  on the c1 OS disk; the healthy 1 TB NVMe is split approximately 50:50 as XFS partitions mounted
+  at `/srv/librefs` (label `c1_librefs`) and `/srv/applications` (XFS label `c1_apps`, GPT
+  PARTLABEL `c1_applications`) and verified `noatime`; the 512 GB NVMe is quarantined,
+  unmounted, and excluded. Revised code and review plus an exact single-device 1 TB approval have
+  landed; the corrected storage plan was approved and the 1 TB split retry succeeded with both
+  partitions mounted and verified. Remaining gates are OpenBao, push/merge/deploy/reboot/backup.
+- Recorded c1 initial apply attempts that failed safely with no live change: the 1 TB apply was
+  rejected for exceeding XFS hard 12-char label length on partition 2 (filesystem label corrected
+  to `c1_apps`; GPT PARTLABEL `c1_applications` unchanged) and rolled back to a blank GPT, and the
+  c1 SERVICES shim creation was rejected for exceeding Linux `IFNAMSIZ` (interface corrected to
+  `c1-svc-shim`; service and helper filenames unchanged). After correction, the fresh single-device
+  plan plus the six-line `APPROVE C1 STORAGE` were approved, the 1 TB split retry succeeded with
+  both partitions mounted and verified `noatime`, and the c1 SERVICES shim `c1-svc-shim` plus the
+  persistent `c1_services` network were applied and verified. Remaining gates are OpenBao,
+  push/merge/deploy/reboot/backup.

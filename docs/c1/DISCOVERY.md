@@ -9,22 +9,28 @@ Exact destructive device identities remain an operator checkpoint and are not re
 
 ## Status
 
-Discovery supports repository design, but live storage mutation is blocked:
+Discovery supports repository design, and the corrected storage retry has succeeded:
 
-- the 512 GB NVMe contains a valid GPT/PMBR with no partitions, reports 941 media/data-integrity
-  errors despite an overall SMART `PASSED` result and zero critical-warning bits, and firmware
-  VC400618 has no verified official updater; the device is therefore quarantined/unmounted/excluded
-  from the revised storage boundary;
-- the 1 TB target reports zero media errors and an overall SMART `PASSED` result, but absence of
-  recognized signatures still does not prove absence of raw data; the revised storage boundary uses
-  only this device and splits it 50:50 between `/srv/librefs` and `/srv/applications`;
+- the 512 GB NVMe is quarantined/unmounted/excluded (firmware VC400618 has no verified official
+  updater);
+- the 1 TB NVMe is split 50:50 between `/srv/librefs` (GPT PARTLABEL `c1_librefs`, XFS label
+  `c1_librefs`) and `/srv/applications` (GPT PARTLABEL `c1_applications`, XFS label `c1_apps`),
+  both mounted `defaults,noatime` and verified by UUID, XFS, RW, and directory probes;
+- the host shim `c1-svc-shim` (interface on `bond0.2513`; systemd unit `c1-services-shim.service`)
+  and the network unit `c1-services-network.service` are both active; the route
+  `10.25.13.64/27` is verified with `dev c1-svc-shim` and scope `link`;
+- Docker and containerd `SOURCE` equals `/` source;
+- the first apply failed safely on the overlength 16-char XFS label `c1_applications` and on a
+  filtered-route query that hid the shim's `dev` field; the corrected retry succeeded under a
+  fresh plan/approval; the corrected shim validator queries routes without a `dev` filter;
 - `.65` and `.66` are unclaimed in repository IPAM, but live duplicate-address probing is
   inconclusive because `arping` is absent;
-- OpenBao health and TLS are proven, but authenticated KV mount, policy, token-lifecycle, and audit
-  metadata remain unverified;
+- OpenBao health and TLS are proven, but authenticated KV mount, write, and audit metadata
+  remain unverified;
 - no safe benchmark tooling or proven multi-peer test topology is currently available.
 
-No host, OpenBao, network, storage, package, or service mutation occurred during discovery.
+No host, OpenBao, network, storage, package, or service mutation occurred outside the reviewed
+corrected retry on the 1 TB NVMe.
 
 ## Repository baseline
 

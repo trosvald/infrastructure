@@ -1,12 +1,13 @@
 # c1 Performance Baseline
 
 Date: 2026-08-26
-Status: `BLOCKED` (storage boundary revised; single-device 1 TB plan pending exact approval)
-
-No storage, network, or S3 benchmark was run. The 512 GB NVMe reports 941
-`Media and Data Integrity Errors` and is quarantined; the revised storage boundary uses only the
-1 TB NVMe split 50:50 for `/srv/librefs` and `/srv/applications`. Benchmarking waits for the
-single-device approval and then exercises the 1 TB tier or approved off-host peers only.
+Status: `APPLIED — awaiting benchmarks`. Storage applied successfully on the corrected retry:
+two XFS partitions mounted and verified on the approved 1 TB NVMe (`c1_librefs` at `/srv/librefs`,
+`c1_apps` at `/srv/applications`, `defaults,noatime`). Docker and containerd `SOURCE` equals `/`
+source. The 512 GB device is quarantined/unmounted/excluded. Persistent shim `c1-svc-shim` and
+network unit `c1-services-network.service` are active; route `10.25.13.64/27 dev c1-svc-shim`
+verified with scope `link`. Benchmarking remains pending until network/S3 matrices are run.
+Mission no longer blocked on storage or network.
 
 ## Pre-change evidence retained
 
@@ -22,14 +23,11 @@ single-device approval and then exercises the 1 TB tier or approved off-host pee
 
 ## Storage-health gate
 
-| Intended role | Sanitized result |
-|---|---|
-| 1 TB libreFS + applications tier (revised) | SMART overall passed; critical warning 0; media errors 0; 13% used; 100% spare; pending single-device approval |
+| 1 TB libreFS + applications tier (applied) | SMART overall passed; critical warning 0; media errors 0; 13% used; 100% spare; two XFS partitions mounted `defaults,noatime` (`c1_librefs` at `/srv/librefs`, `c1_apps` at `/srv/applications`) |
 | quarantined 512 GB | SMART overall passed; critical warning 0; **media/data-integrity errors 941**; 3% used; available spare 91%; firmware VC400618 has no verified official updater |
 
 An overall SMART `PASSED` result does not override the non-zero media/data-integrity error count.
-The 512 GB device stays quarantined/unmounted/excluded. No device was partitioned, formatted,
-mounted, or benchmarked.
+The 512 GB device stays quarantined/unmounted/excluded and is not used by this mission.
 
 ## Tuning result
 
@@ -39,9 +37,10 @@ Aggregate 20 Gb/s claim: not made.
 
 ## Resume criteria
 
-1. Obtain the exact single-device 1 TB by-id identity, signatures, plan digest, and
-   `PARTITION_LAYOUT=50% LIBREFS + 50% APPLICATIONS` approval per `DESIGN-AND-PLAN.md`.
-2. Provision and verify both 1 TB partitions through the storage gate; Docker and containerd remain
-   on the OS disk.
-3. Run the network and S3 matrices in `DESIGN-AND-PLAN.md`, one tuning change at a time.
-4. Without an off-host backup and tested restore, final status cannot exceed
+1. Run the network and S3 matrices in `DESIGN-AND-PLAN.md`, one tuning change at a time, on
+   the applied 1 TB tier and approved off-host peers. The 1 TB NVMe is provisioned and mounted;
+   no further storage mutation is required.
+2. Without an off-host backup and tested restore, final status cannot exceed
+   `OPERATIONAL_WITHOUT_DURABILITY`.
+3. Storage and network gates are closed for the current mission state; remaining gates are
+   OpenBao writes, push, merge, deploy, reboot, and off-host backup/restore.

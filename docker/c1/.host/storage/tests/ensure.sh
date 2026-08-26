@@ -40,8 +40,10 @@ case "$name" in
   if [[ "$*" == *' -o SOURCE '* && "$*" == *'/var/lib/docker'* && "${FAIL:-}" == docker-other ]]; then echo "$FAKE_DEV/other"
   elif [[ "$*" == *' -o SOURCE '* && "$*" == *'/var/lib/containerd'* && "${FAIL:-}" == containerd-other ]]; then echo "$FAKE_DEV/other"
   elif [[ "$*" == *' -o SOURCE '* ]]; then echo "$FAKE_DEV/os-root"
-  elif [[ "$*" == *' -o UUID,FSTYPE,OPTIONS '* && "$*" == *'/srv/librefs'* ]]; then echo 'canary-librefs-uuid xfs rw,noatime'
-  elif [[ "$*" == *' -o UUID,FSTYPE,OPTIONS '* && "$*" == *'/srv/applications'* ]]; then echo 'canary-applications-uuid xfs rw,noatime'
+  elif [[ "$*" == *' -o UUID,FSTYPE,OPTIONS '* && "$*" == *'/srv/librefs'* ]]; then
+   if [[ "${FAIL:-}" == relatime && ! -e "$FAKE_STATE/noatime-librefs" ]]; then echo 'canary-librefs-uuid xfs rw,relatime'; else echo 'canary-librefs-uuid xfs rw,noatime'; fi
+  elif [[ "$*" == *' -o UUID,FSTYPE,OPTIONS '* && "$*" == *'/srv/applications'* ]]; then
+   if [[ "${FAIL:-}" == relatime && ! -e "$FAKE_STATE/noatime-applications" ]]; then echo 'canary-applications-uuid xfs rw,relatime'; else echo 'canary-applications-uuid xfs rw,noatime'; fi
   else exit 91
   fi ;;
  wipefs) if [[ "${FAIL:-}" == signature || ( "${FAIL:-}" == partial-signature && "${@: -1}" == *p1 ) ]]; then echo '{"signatures":[{"type":"ext4","offset":"0x1"}]}'; else echo '{"signatures":[]}'; fi ;;
@@ -96,6 +98,7 @@ case "$name" in
   [[ "${FAIL:-}" != mount-fail ]] || exit 85
   target="${@: -1}"
   touch "$FAKE_STATE/mounted-${target##*/}"
+  if [[ "$*" == *'noatime'* ]]; then touch "$FAKE_STATE/noatime-${target##*/}"; fi
   ;;
  xfs_info) echo 'naming =version 2 bsize=4096 ascii-ci=0, ftype=1' ;;
  *) exit 90 ;;
@@ -238,6 +241,11 @@ run '' verify >/dev/null
 mkfs_count="$(grep -c 'mkfs.xfs -f' "$work/log")"
 printf '%s' "$approval" | run '' apply "$one" "$digest" >/dev/null
 [[ "$(grep -c 'mkfs.xfs -f' "$work/log")" == "$mkfs_count" ]]
+rm -f "$work/state/noatime-librefs" "$work/state/noatime-applications"
+printf '%s' "$approval" | run relatime apply "$one" "$digest" >/dev/null
+[[ -e "$work/state/noatime-librefs" && -e "$work/state/noatime-applications" ]]
+grep -F 'mount -o remount,noatime /srv/librefs' "$work/log" >/dev/null
+grep -F 'mount -o remount,noatime /srv/applications' "$work/log" >/dev/null
 sgdisk_count="$(grep -c '^sgdisk ' "$work/log")"
 must_fail layout-drift verify
 must_fail layout-type verify

@@ -1,7 +1,7 @@
 [Unit]
 Description=Start c1 libreFS after verified storage and network prerequisites
-Requires=docker.service c1-librefs-storage.service c1-services-shim.service
-After=docker.service c1-librefs-storage.service c1-services-shim.service network-online.target
+Requires=docker.service c1-librefs-storage.service c1-services-network.service
+After=docker.service c1-librefs-storage.service c1-services-network.service network-online.target
 Wants=network-online.target
 
 [Service]

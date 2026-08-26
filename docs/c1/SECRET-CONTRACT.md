@@ -1,8 +1,11 @@
 # c1 Secret Contract
 
 Date: 2026-08-26
-Status: design; no OpenBao value or policy has been changed; mission blocked pending revised
-code/review and exact storage approval
+Status: design; storage and network applied and verified (1 TB split: `c1_librefs` at `/srv/librefs`,
+`c1_apps` at `/srv/applications`, `defaults,noatime`; Docker/containerd `SOURCE` equals `/` source;
+`c1-svc-shim` and `c1-services-network.service` active; 512 GB excluded). No OpenBao value or policy
+has been changed; remaining gates are OpenBao writes, push, merge, deploy, reboot, off-host backup/
+restore.
 
 ## Boundary
 
