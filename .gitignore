@@ -1,6 +1,7 @@
 .claude/
 .codex/
 .omp/
+.private/
 .DS_Store
 Thumbs.db
 kubeconfig
