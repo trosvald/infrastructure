@@ -1,0 +1,13 @@
+[Unit]
+Description=Ensure exact c1 SERVICES Docker IPvlan network
+Requires=docker.service c1-services-shim.service
+After=docker.service c1-services-shim.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ensure-c1-services-network apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

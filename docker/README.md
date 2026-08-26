@@ -9,8 +9,9 @@ Inventory last verified over SSH on 2026-08-25. The canonical hostnames are `c0`
 | `c0` | Core services | Intel Core i7-7700T, 4 cores/8 threads | 32 GiB | Debian 13.6, kernel `6.12.101+deb13-amd64` | Docker Engine 29.7.2, Compose 5.5.0 |
 | `c1` | General services | Intel Core i7-8700T, 6 cores/12 threads | 64 GiB | Debian 13.6, kernel `6.12.101+deb13-amd64` | Docker Engine 29.7.2, Compose 5.5.0 |
 
-c0 runs Doco-CD, OpenBao, its certificate renewer, PowerDNS, and Omada Controller. c1 has no
-persistent containers.
+c0 runs Doco-CD, OpenBao, its certificate renewer, PowerDNS, and Omada Controller. The reviewed c1
+Doco-CD, storage, network, token-lifecycle, and libreFS configuration is repository-only and remains
+undeployed pending every checkpoint in `docs/c1/OPERATIONS.md`.
 
 ## Doco-CD on c0
 
@@ -95,6 +96,21 @@ then configured manually with a local owner and site. Initial device adoption fa
 Device Account username/password did not match; adoption succeeded after correcting those
 credentials. cAdvisor and native observability remain undeployed on c0.
 
+## Doco-CD and libreFS on c1
+
+c1 mirrors the c0 ownership boundary under `docker/c1/`: `.doco-cd/` is bootstrap-owned, `.host/`
+contains fail-closed host prerequisites, and only direct non-hidden children such as `librefs/` are
+Doco-managed applications. Doco-CD remains pinned to 0.111.0, polls public `main` every 180 seconds,
+binds API and metrics only on loopback, and uses a root-only file token for the exact `doco-c1`
+OpenBao policy. It has no c0 SOPS identity.
+
+libreFS is pinned by the tested amd64 manifest digest, runs as UID/GID 1000 with a read-only root,
+receives only `_FILE` secret paths, publishes no host ports, and uses static address
+`10.25.13.65` on external `c1_services`. Its only writable persistent bind is the asserted
+`/srv/librefs/data` mount. The repository does not authorize creating the network, storage,
+OpenBao records, controller, or application. Use `just docker validate-c1` for offline validation
+and `docs/c1/OPERATIONS.md` for the gated procedure.
+
 ## Application inventory
 
 | Node | Doco-CD project | Address/network | Exposure | State |
@@ -122,10 +138,15 @@ Blocky runbook.
 | --- | --- | --- | ---: | --- |
 | `c0` | `sda` | SDLF1DAM800G-1HHS SSD | 800 GB | Debian system disk; LVM-backed ext4 root |
 | `c1` | `sda` | Samsung SSD 860 EVO | 500 GB | Debian system disk; LVM-backed ext4 root |
-| `c1` | `nvme1n1` | PNY CS1031 | 1 TB | No mounted filesystem |
-| `c1` | `nvme0n1` | TEAM TM8FP6512G | 512 GB | No mounted filesystem |
+| `c1` | `nvme1n1` | PNY CS1031 | 1 TB | Planned 50:50 split: `/srv/librefs` (XFS) and `/srv/applications` (XFS); unmounted |
+| `c1` | `nvme0n1` | TEAM TM8FP6512G | 512 GB | Quarantined/unmounted/excluded: 941 historical media/data-integrity errors; never an argument, fallback, or backup candidate |
 
-Do not assign persistent service paths to the unmounted c1 NVMe devices until their partitioning, filesystem, redundancy, and backup roles are designed.
+Docker engine state, containerd, and named volumes stay on the c1 OS disk (`sda`). The healthy 1 TB
+NVMe is planned as two approximately equal XFS partitions — `/srv/librefs` for the libreFS data
+mount and `/srv/applications` for future explicit application/database bind directories. The 512 GB
+NVMe is quarantined/unmounted/excluded after 941 historical media errors despite successful
+short/extended self-tests; firmware VC400618 has no verified official updater. Revised c1 code/review
+and exact single-device 1 TB approval remain gates; live deployment is intentionally blocked.
 
 ## Networking
 

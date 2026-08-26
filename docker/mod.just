@@ -25,6 +25,11 @@ validate-c0: validate-openbao validate-powerdns validate-blocky validate-omada-c
         assert not offenders, f"Doco-CD can auto-discover forbidden files: {offenders}"
     PY
 
+[doc('Validate the c1 host-scoped Doco-CD and libreFS configuration')]
+validate-c1:
+    cd "{{ source_directory() }}/.."
+    docker/c1/tests/validate.sh
+
 [private]
 validate-openbao:
     cd "{{ source_directory() }}/.."

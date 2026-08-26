@@ -1,0 +1,14 @@
+[Unit]
+Description=Create the c1 SERVICES IPvlan host shim
+Wants=network-online.target
+After=network-online.target sys-subsystem-net-devices-bond0.2513.device
+Requires=sys-subsystem-net-devices-bond0.2513.device
+Before=doco-cd-c1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ensure-c1-services-shim apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

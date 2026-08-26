@@ -5,6 +5,8 @@ on:
     paths:
       - docker/**
       - docs/OMADA.md
+      - docs/c1/**
+      - CHANGELOG.md
       - docs/BLOCKY.md
       - .sops.yaml
       - .justfile
@@ -16,6 +18,8 @@ on:
     branches: [main]
     paths:
       - docker/**
+      - docs/c1/**
+      - CHANGELOG.md
       - .sops.yaml
       - docs/OMADA.md
       - docs/BLOCKY.md
@@ -48,12 +52,18 @@ jobs:
             aqua:getsops/sops
             aqua:gitleaks/gitleaks
             aqua:jqlang/jq
+            aqua:mikefarah/yq
+            aqua:rhysd/actionlint
             pipx:yamllint
             python
           cache: true
       - name: Verify scanner canary and scan repository
         run: scripts/gitleaks-scan.sh
+      - name: Validate workflow syntax
+        run: actionlint
       - name: Verify Docker Compose prerequisite
         run: docker compose version
       - name: Validate c0 Doco-CD configuration
         run: just docker validate-c0
+      - name: Validate c1 shell and configuration contracts
+        run: just docker validate-c1
