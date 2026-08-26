@@ -40,8 +40,7 @@ stable_device() {
     fi
     pvs_output="$("$PVS_BIN" --noheadings -o pv_name 2>/dev/null)" || fail 'failed to inspect LVM physical volumes'
     if grep -Fxq "$resolved" <<<"$pvs_output"; then fail "$role target is an LVM physical volume"; fi
-    set +e; "$MDADM_BIN" --examine "$resolved" >/dev/null 2>&1; status=$?; set -e
-    case "$status" in 1) ;; 0) fail "$role target has RAID metadata" ;; *) fail 'failed to inspect RAID metadata' ;; esac
+    assert_no_raid "$resolved" "$role"
     set +e; "$FUSER_BIN" -s "$resolved"; status=$?; set -e
     case "$status" in 1) ;; 0) fail "$role target is in use" ;; *) fail 'failed to inspect open-device users' ;; esac
     "$SMARTCTL_BIN" -H "$resolved" >/dev/null || fail "$role target lacks passing health evidence"
@@ -66,6 +65,21 @@ approved_half_signatures() {
         esac
     done
     [[ "$saw_gpt" == true ]]
+}
+
+assert_no_raid() {
+    local device="$1" role="$2" output status
+    set +e
+    output="$("$MDADM_BIN" --examine --export "$device" 2>/dev/null)"
+    status=$?
+    set -e
+    case "$status" in
+        0|1) ;;
+        *) fail "failed to inspect $role RAID metadata" ;;
+    esac
+    if grep -q '^MD_UUID=' <<<"$output"; then
+        fail "$role target has RAID metadata"
+    fi
 }
 
 evidence() {
@@ -175,15 +189,7 @@ verify_saved_identity() {
     if grep -Fxq "$resolved" <<<"$pvs_output"; then
         fail "$role target is an LVM physical volume"
     fi
-    set +e
-    "$MDADM_BIN" --examine "$resolved" >/dev/null 2>&1
-    status=$?
-    set -e
-    case "$status" in
-        1) ;;
-        0) fail "$role target has RAID metadata" ;;
-        *) fail 'failed to inspect RAID metadata' ;;
-    esac
+    assert_no_raid "$resolved" "$role"
     "$SMARTCTL_BIN" -H "$resolved" >/dev/null \
         || fail "$role target lacks passing health evidence"
 }

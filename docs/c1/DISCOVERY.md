@@ -12,8 +12,10 @@ Exact destructive device identities remain an operator checkpoint and are not re
 Discovery supports repository design, but live storage mutation is blocked:
 
 - the intended 512 GB libreFS NVMe contains a valid GPT/PMBR despite having no partitions;
-- neither NVMe has SMART/NVMe health evidence because `smartctl` and `nvme-cli` are absent;
-- absence of recognized signatures on the 1 TB NVMe does not prove absence of raw data;
+- post-design diagnostics report 941 NVMe media/data-integrity errors on that 512 GB target despite
+  an overall SMART `PASSED` result and zero critical-warning bits;
+- the 1 TB target reports zero media errors and an overall SMART `PASSED` result, but absence of
+  recognized signatures still does not prove absence of raw data;
 - `.65` and `.66` are unclaimed in repository IPAM, but live duplicate-address probing is
   inconclusive because `arping` is absent;
 - OpenBao health and TLS are proven, but authenticated KV mount, policy, token-lifecycle, and audit
@@ -89,8 +91,8 @@ No repository source claims `.65` or `.66` individually.
 | Sanitized role | Model and usable size | Evidence | Status |
 |---|---|---|---|
 | OS, excluded | Samsung SSD 860 EVO 500GB, 465.8 GiB | EFI and `/boot` partitions plus LVM root and swap | Never touch |
-| libreFS target | TEAM TM8FP6512G, 476.9 GiB; identity suffix `0351` | No partitions, but valid primary/backup GPT and PMBR | Blocked pending provenance and exact approval |
-| container tier target | PNY CS1031 1TB SSD, 931.5 GiB; identity suffix `0E10` | No recognized signature or partition table | Blocked pending health and exact approval |
+| libreFS target | TEAM TM8FP6512G, 476.9 GiB; identity suffix `0351` | No partitions; valid primary/backup GPT and PMBR; 941 media/data-integrity errors, 13 unsafe shutdowns, 3% used, 91% spare | **Blocked: do not format or use for libreFS** |
+| container tier target | PNY CS1031 1TB SSD, 931.5 GiB; identity suffix `0E10` | No recognized signature; SMART passed, zero media errors, 94 unsafe shutdowns, 13% used, 100% spare | Blocked pending exact approval and raw-data disposition |
 
 The host has no containers, Compose projects, or Docker volumes. It has three untagged images and
 about 1.0 GB of reclaimable image data. No valuable running Docker state was identified, but image
@@ -108,7 +110,8 @@ no active containerd drop-ins, Docker/containerd systemd drop-ins, mount require
 `/run/containerd/containerd.sock`. A minimal root override can therefore preserve every other
 effective setting, but all facts require immediate recheck before cutover.
 
-No disk benchmark ran. `fio`, `ioping`, `nvme-cli`, and `smartctl` are absent.
+No disk benchmark ran. Diagnostics and benchmark tools were installed after repository review, but
+the 512 GB media-error finding stopped storage mutation and benchmarking.
 
 ## Network state
 
@@ -246,14 +249,15 @@ regression.
 
 ## Discovery blockers and required next evidence
 
-1. Install reviewed read-only diagnostic packages, then capture NVMe SMART/health and NIC firmware,
-   offload, queue, ring, coalescing, pause, and detailed error counters.
-2. Explain and approve removal of the 512 GB disk's existing GPT; inspect both targets immediately
-   before any destructive operation.
-3. Resolve exact stable by-id paths privately and bind them to the required operator approval without
+1. Replace the 512 GB target or obtain an independent vendor-backed diagnosis that explains the 941
+   media/data-integrity errors and proves the device safe. Overall SMART `PASSED` is insufficient.
+2. After hardware remediation, rerun NVMe health, stable identity, signatures, and the complete
+   byte-bound storage plan. Do not reuse the current plan digest.
+3. Explain and explicitly approve any remaining GPT removal only after the health blocker closes.
+4. Resolve exact stable by-id paths privately and bind them to the required operator approval without
    committing them.
-4. Perform safe duplicate-address detection for `.65` and `.66` after `arping` is available.
-5. Authenticate to OpenBao through the approved hidden-input procedure to verify KV v2, audit state,
+5. Perform safe duplicate-address detection for `.65` and `.66` after `arping` is available.
+6. Authenticate to OpenBao through the approved hidden-input procedure to verify KV v2, audit state,
    policy behavior, and token lifecycle without exposing values.
-6. Identify benchmark peers and off-host backup target. Without an off-host target and tested
+7. Identify benchmark peers and off-host backup target. Without an off-host target and tested
    restore, final status cannot exceed `OPERATIONAL_WITHOUT_DURABILITY`.

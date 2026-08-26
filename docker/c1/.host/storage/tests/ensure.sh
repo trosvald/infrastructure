@@ -41,7 +41,7 @@ case "$name" in
  wipefs) if [[ "${FAIL:-}" == signature-one && "$*" == *disk-one* ]]; then echo '{"signatures":[{"type":"ext4","offset":"0x1"}]}'; elif [[ "${FAIL:-}" == signature-half && "$*" == *disk-half* ]]; then echo '{"signatures":[{"type":"ext4","offset":"0x1"}]}'; elif [[ "$*" == *disk-half* ]]; then echo '{"signatures":[{"type":"gpt","offset":"0x200"},{"type":"gpt","offset":"0xffff"},{"type":"PMBR","offset":"0x1fe"}]}'; else echo '{"signatures":[]}'; fi ;;
  smartctl) [[ "${FAIL:-}" != health ]] ;;
  pvs) [[ "${FAIL:-}" == lvm ]] && printf '%s\n%s\n' "$FAKE_DEV/disk-one" "$FAKE_DEV/disk-half" || true ;;
- mdadm) [[ "${FAIL:-}" == raid ]] ;;
+ mdadm) if [[ "${FAIL:-}" == raid ]]; then echo 'MD_UUID=safe-canary-array'; exit 0; elif [[ "${FAIL:-}" == mdadm-gpt ]]; then exit 0; else exit 1; fi ;;
  fuser) [[ "${FAIL:-}" == use ]] ;;
  sha256sum) command sha256sum ;;
  id) [[ "${FAIL:-}" == nonroot ]] && echo 1000 || echo 0 ;;
@@ -75,6 +75,7 @@ run() { env "${common[@]}" FAIL="${1:-}" "$SCRIPT" "${@:2}"; }
 must_fail() { if run "$@" >/dev/null 2>&1; then printf 'expected storage failure: %s\n' "$*" >&2; exit 1; fi; }
 one="$work/by-id/canary-one"; half="$work/by-id/canary-half"
 run '' check "$one" "$half" >/dev/null
+run mdadm-gpt check "$one" "$half" >/dev/null
 plan1="$(run '' plan "$one" "$half")"; plan2="$(run '' plan "$one" "$half")"; [[ "$plan1" == "$plan2" ]]
 digest="${plan1##*PLAN_SHA256=}"
 [[ "$digest" =~ ^[0-9a-f]{64}$ ]]; [[ "$plan1" == *'OS_DISK_EXCLUDED=true'* ]]; [[ "$plan1" == *'512GB_SIGNATURES=PMBR@0x1fe;gpt@0x200;gpt@0xffff'* ]]
