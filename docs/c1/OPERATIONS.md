@@ -10,10 +10,11 @@ are both active. Audit trail preserved: first apply failed safely on overlength 
 filtered-route query; corrected retry succeeded. Mission no longer blocked on storage or
 network; remaining gates are OpenBao writes, push, merge, deploy, reboot, off-host backup/
 restore.
-
 This runbook is subordinate to `DESIGN-AND-PLAN.md`, `REVIEW.md`, `SECRET-CONTRACT.md`, and
-`LIBREFS.md`. Repository validation is safe and offline:
-
+`LIBREFS.md`. Repository validation is safe, offline, and pinned: `docker/c1` activates the
+exact Docker Compose 5.5.0 plugin locked in `.mise/mise.lock`. Doco 0.111.0 embeds Compose
+v5.5.0, so the runtime credential canary executes the same Compose injection semantics in
+local and CI as in live Doco:
 ```sh
 just docker validate-c1
 ```
@@ -261,11 +262,34 @@ active (the network unit itself depends on the shim).
 
 ## Controller and libreFS checkpoint
 
-Do not deploy libreFS with real credentials until the secret-persistence canary and the complete
-allowed and denied cleartext source matrix pass. Before `main` contains the app, the explicitly
-weakened initial check proves API authentication and Git polling only; no prior token may be revoked
-on that evidence. After merge, the default checker refuses to run unless public `main` contains the
-exact provider-backed mapping, and its successful tracked poll proves OpenBao resolution.
+Live Doco 0.111.0 rejected the original Compose `secrets.environment` source for the libreFS
+credentials (only `file` is supported). The first deploy failed before container creation; no
+credential material was rendered. The corrected pattern uses top-level Compose `configs.content`
+populated from the Doco-resolved `LIBREFS_ROOT_USER` and `LIBREFS_ROOT_PASSWORD` variables and
+mounted at `/run/secrets/librefs_root_user` and `/run/secrets/librefs_root_password` with mode
+`0400`, UID/GID `1000`. These are config-backed credential files, not Docker secrets. The
+container environment still exposes only the `_FILE` paths. Resolved values exist only in
+Doco's in-memory rendered project and may be materialized in protected engine or Doco artifacts
+during the deploy window. A full exact-value leakage scan covering container environment,
+rendered Compose output, project labels, runtime secret/config metadata, Doco logs/working
+trees/data volume/persisted deployment artifacts, Docker and containerd metadata, journald,
+application logs, temporary directories, and backup inputs is a blocking live canary. Mission
+is blocked pending a new PR, merge, and successful Doco redeploy under the corrected pattern.
+
+The runtime test always creates a uniquely named isolated network and container, generates
+per-run CSPRNG canaries, executes the actual `compose up`, and proves container health, exact
+file ownership and mode on the config-backed credential files at
+`/run/secrets/librefs_root_{user,password}`, UID 1000 reads, and the absence of canary material
+in inspect, environment, and logs. The runtime test then cleans up the isolated network and
+container. The runtime test never skips when `c1_services` exists; the isolated test network is
+always freshly created and torn down.
+
+Do not deploy libreFS with real credentials until the exact-value leakage scan passes and the
+complete allowed and denied cleartext source matrix is verified. Before `main` contains the app,
+the explicitly weakened initial check proves API authentication and Git polling only; no prior
+token may be revoked on that evidence. After merge, the default checker refuses to run unless
+public `main` contains the exact provider-backed mapping, and its successful tracked poll proves
+OpenBao resolution.
 
 Controller rollback retains `doco-cd-c1-data`:
 

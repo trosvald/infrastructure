@@ -34,8 +34,49 @@ Discovery supports repository design, and the corrected storage retry has succee
   Doco policy cannot call `capabilities-self`; recovery used a short-lived admin token via
   `sys/capabilities-accessor` and did not broaden the Doco policy. The short-lived admin token
   was revoked and removed. No secrets, recipients, hashes, or token values are recorded here.
-- no safe benchmark tooling or proven multi-peer test topology is currently available.
 
+## Doco credential-materialization correction
+
+Live Doco 0.111.0 rejected the top-level Compose `secrets.environment` source for the libreFS
+application because `file` is the only supported source for `secrets.environment`. The first
+Doco deploy therefore failed before container creation; no secret values were ever rendered,
+no container was created, and no engine artifact contains credential material. The corrected
+pattern follows the official Doco external-secrets example using top-level Compose
+`configs.content` populated from the Doco-resolved `LIBREFS_ROOT_USER` and `LIBREFS_ROOT_PASSWORD`
+variables. The resulting config files are mounted at `/run/secrets/librefs_root_user` and
+`/run/secrets/librefs_root_password` with mode `0400`, UID/GID `1000`; the container environment
+still exposes only the `MINIO_ROOT_USER_FILE` / `MINIO_ROOT_PASSWORD_FILE` paths and never the
+raw values. These are config-backed credential files, not Docker secrets.
+
+## Writable-root exception for libreFS (operator selection)
+
+Doco/Compose v5.5 rejects inline Compose `configs` for a read-only root filesystem: config mounts
+require a writable layer to materialize the file. After review proved this incompatibility, the
+operator explicitly selected a writable-root exception for the libreFS container only. The
+exception is documented and the writable-layer custody risk is owned:
+
+- The `read_only: true` declaration is omitted for `librefs-c1`; the container root is writable.
+- Every other hardening control is retained: UID/GID `1000`, `cap_drop: [ALL]`,
+  `security_opt: [no-new-privileges:true]`, no privileged mode, no devices, no Docker socket, no
+  host PID/IPC/network, the explicit `/srv/librefs/data:/data` bind with
+  `bind.create_host_path: false`, `/tmp` tmpfs `rw,nosuid,nodev,noexec,mode=1777`, the
+  `/run/secrets/librefs_root_{user,password}` config mounts at mode `0400` UID/GID `1000`,
+  resource/PID/nofile ceilings, JSON log limits, `restart: no`, and no host ports.
+- Writable-layer custody risk: the libreFS container can write to its own root filesystem;
+  any path the process can reach is a potential write target. Mitigations are the bind
+  source-of-truth on the host, the tmpfs-only `/tmp`, the read-only credentials at
+  `/run/secrets/*`, the dropped capabilities, and the `restart: no` ownership by systemd.
+  Any persistent write outside `/data` is a containment breach and stops the deploy.
+- The exception is scope-limited to libreFS only; future c1 applications must keep `read_only:
+  true` unless they repeat this reviewed exception.
+
+Resolved values exist only in Doco's in-memory rendered project and may be materialized in
+protected engine or Doco artifacts during the deploy window. A full exact-value leakage scan
+covering container environment, rendered Compose output, project labels, runtime secret/
+config metadata, Doco logs/working trees/data volume/persisted deployment artifacts, Docker and
+containerd metadata, journald, application logs, temporary directories, and backup inputs is a
+blocking live canary. Mission is blocked pending a new PR, merge, and successful Doco redeploy
+under the corrected pattern.
 No host, network, storage, package, or service mutation occurred outside the reviewed corrected
 retry on the 1 TB NVMe and the reviewed OpenBao checkpoint.
 
