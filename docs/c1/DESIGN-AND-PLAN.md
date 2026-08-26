@@ -1,7 +1,8 @@
 # c1 Design and Plan
 
-Date: 2026-08-26  
-Status: ready for independent review; live mutation blocked by the checkpoints below
+Date: 2026-08-26
+Status: storage boundary revised (1 TB only, 50:50 split; 512 GB quarantined/excluded); ready for
+independent re-review; mission blocked pending revised code/review and exact storage approval
 
 This plan follows `docs/c1/DISCOVERY.md`. It does not authorize storage, OpenBao, network, push,
 merge, reboot, or link-failure mutation.
@@ -23,15 +24,16 @@ c1 Doco-CD 0.111.0, bootstrap-owned
        |                                |
        v                                v
 Docker + containerd                 OpenBao TLS
-persistent roots on 1 TB XFS        kv/docker/c1/*
+persistent roots remain on OS       kv/docker/c1/*
        |
        +-- external IPvlan c1_services
-             parent bond0.2513, MTU 1496
-             allocation 10.25.13.64/27
-             host shim 10.25.13.17/32
-             |
-             `-- libreFS 10.25.13.65
-                   /data -> 512 GB XFS
+       |     parent bond0.2513, MTU 1496
+       |     allocation 10.25.13.64/27
+       |     host shim 10.25.13.17/32
+       |     `-- libreFS 10.25.13.65
+       |           /data -> 1 TB NVMe partition 1
+       |
+       `-- future application binds -> 1 TB NVMe partition 2
 ```
 
 Management remains `eno1`, `10.25.10.101/24`, default gateway `10.25.10.1`, DNS
@@ -39,115 +41,101 @@ Management remains `eno1`, `10.25.10.101/24`, default gateway `10.25.10.1`, DNS
 
 ## Storage decision
 
-### Layout
+### Revised layout
+
+The operator revised the storage boundary after the 512 GB health finding. Docker engine state stays
+on the OS disk. The healthy 1 TB NVMe is split approximately 50:50 for libreFS and explicit
+application bind data.
 
 | Physical role | Partition/filesystem | Mount | Persistent content |
 |---|---|---|---|
-| 500 GB SATA OS disk | unchanged | existing mounts | operating system only |
-| approved 1 TB NVMe | GPT, one aligned XFS partition, CRC/reflink, verified `ftype=1`, label `c1_containers` | `/srv/containers` | Docker root, containerd root, Doco named volume, future application state |
-| approved 512 GB NVMe | GPT, one aligned XFS partition, CRC/reflink, verified `ftype=1`, label `c1_librefs` | `/srv/librefs` | libreFS `/srv/librefs/data` only |
+| 500 GB SATA OS disk | unchanged | existing mounts | OS, `/var/lib/docker`, `/var/lib/containerd`, container writable layers, images, Doco named volume |
+| approved 1 TB NVMe partition 1 | aligned XFS, CRC/reflink, `ftype=1`, label `c1_librefs` | `/srv/librefs` | libreFS `/srv/librefs/data` only |
+| approved 1 TB NVMe partition 2 | aligned XFS, CRC/reflink, `ftype=1`, label `c1_applications` | `/srv/applications` | future explicit application/database bind directories |
+| 512 GB NVMe | unchanged and unmounted | none | quarantined; not used by this mission |
 
-Use filesystem UUIDs in `/etc/fstab`. Stable by-id paths identify destructive inputs and are kept in
-a root-only host-local approval record, not Git. Labels are diagnostic, never the mount authority.
-Mount options are `defaults,noatime`; no `nofail` and no continuous `discard`. Enable and verify
-`fstrim.timer`.
+The split uses one GPT and two aligned partitions. Partition 2 begins at the first 1 MiB-aligned
+sector at or after the midpoint of the usable GPT range; partition 1 ends immediately before it.
+The resulting capacities differ only by alignment/GPT overhead rather than promising identical byte
+counts.
 
-XFS is selected because it supports Docker overlay/containerd storage and the selected libreFS build
-passed ordinary filesystem-backed operation. Docker validation must prove `ftype=1`. LVM, RAID,
-multiple partitions, exotic allocation tuning, and using the 1 TB disk as a backup are rejected.
+Use filesystem UUIDs in `/etc/fstab`. The stable 1 TB by-id path identifies the only destructive
+input and remains root-only host state, not Git. Labels are diagnostic only. Mount options are
+`defaults,noatime`; no `nofail` and no continuous `discard`. Enable and verify `fstrim.timer`.
 
-### Engine roots and mount ordering
+XFS is selected for both partitions. LVM, RAID, exotic allocation tuning, and using the second
+partition as a backup for libreFS are rejected: both partitions share one device and host.
 
-Docker 29 stores image/layer data under the system containerd root as well as Docker `data-root`.
-Configure both:
+### Docker and application-state boundary
+
+No Docker or containerd root migration occurs:
 
 ```text
-Docker data-root: /srv/containers/docker
-containerd root: /srv/containers/containerd
-containerd state: existing volatile /run location
+Docker data-root: /var/lib/docker
+containerd root: /var/lib/containerd
+containerd state: /run/containerd
 ```
 
-Containerd and Docker systemd drop-ins use `RequiresMountsFor=/srv/containers` and order after the
-mount. A root-owned pre-start assertion verifies expected source/UUID, XFS, RW state, and `ftype=1`;
-a directory alone never passes. Containerd starts before Docker.
+No c1 Docker daemon configuration or containerd root override is installed. Docker images, layers,
+container writable state, and named volumes—including the Doco volume—remain on the OS disk.
 
-libreFS uses long-syntax bind mount `/srv/librefs/data:/data` with
-`bind.create_host_path: false`. Provisioning creates `data` only while `/srv/librefs` is the verified
-512 GB mount, then makes it UID/GID 1000 mode `0750`. The directory is absent beneath the unmounted
-OS mountpoint. Missing/wrong storage therefore prevents Compose startup rather than writing to the
-OS disk.
+`/srv/applications` is not a Docker engine root. Future Mattermost, Forgejo, PostgreSQL, and other
+ordinary application state use explicit reviewed bind directories below it. A container receives no
+path there unless its Compose project declares that exact bind with `create_host_path: false`.
+
+libreFS uses `/srv/librefs/data:/data` with `bind.create_host_path: false`. Provisioning creates the
+directory only while `/srv/librefs` is the verified first partition, then sets UID/GID 1000 and mode
+`0750`. The directory is absent beneath an unmounted mountpoint, preventing OS-disk fallback.
 
 ### Provisioning interface
 
 `docker/c1/.host/storage/ensure.sh` exposes:
 
-- `check`: read-only inventory/assertions, sanitized output;
-- `plan`: read-only destructive plan with hashed/suffixed identity evidence and a SHA-256 digest over
-  the exact stable paths, resolved devices, models, sizes, observed signatures/GPT state, roles,
-  intended wipe/partition/format actions, mount paths, and OS-disk exclusion;
-- `apply`: accepts exact stable by-id inputs, the reviewed plan digest, and the exact approval token
-  through protected stdin; it recomputes the plan immediately before writes and requires a
-  byte-identical digest.
+- `check <1TB-by-id>`: read-only identity, health, use, signature, NVMe critical-warning,
+  media/data-integrity, and available-spare checks; rejects any non-zero critical-warning,
+  non-zero media/data-integrity counter, or below-bound available-spare;
+- `plan <1TB-by-id>`: a digest-bound destructive plan containing exact identity, size, signatures,
+  sector split, GPT type GUID `0FC63DAF-8483-4772-8E79-3D69D8477DE4` for both partitions (basic-data
+  GUID `EBD0A0A2-B9E5-4433-87C0-68B6B72699C7` rejected), NVMe health gate values, two labels/mounts,
+  actions, and OS/512 GB exclusions;
+- `apply <1TB-by-id> <PLAN_SHA256>`: protected-stdin approval, immediate plan recomputation,
+  pre-write revalidation distinguishing `saved` (verified digest matches approval → proceed),
+  `pristine` (no plan on disk → proceed), and `partial-child` (only one partition recorded as
+  pending → complete only the missing side and verify UUID/XFS/RW before its fstab entry commits),
+  and only the approved single-device operation. Any unrecognized intermediate layout fails closed;
+- `verify`: non-destructive UUID/XFS/RW/fstab/directory verification for both partitions, and
+  Docker/containerd `SOURCE` must equal `/` source.
 
-Initial planning rejects the root/boot/swap backing disk, unstable names, symlink/target
-disagreement, mounts, partitions, unapproved signatures, LVM, RAID, holders, open files, size/model
-mismatch, and changed evidence. A persisted approved transaction permits only its own verified
-pending or complete single-partition state. The known 512 GB GPT becomes expected only when the
-approved plan explicitly identifies and authorizes its removal. Before the first write, apply
-atomically persists the complete approved plan.
-Each disk records an atomic pending UUID immediately after formatting; the filesystem is then
-mounted by its partition and fully asserted before the hard UUID fstab entry is committed. Only
-after fstab verification does pending state become complete. A retry with the same byte-identical
-approval resumes a verified pending stage or skips a verified complete stage; it never reformats a
-disk carrying complete state. Offline tests cover mount failure before fstab, resume, idempotent
-complete re-entry, and rejection boundaries without creating a real block-device signature.
+Initial planning rejects the root/boot/swap disk, unstable or partition by-id input, mounts,
+partitions, signatures, LVM, RAID, holders, open users, failed health (non-zero critical-warning,
+non-zero media/data-integrity counter, or below-bound available-spare), size/model mismatch,
+non-Linux-filesystem GPT type GUID, changed evidence, and Docker/containerd `SOURCE` not equal to
+`/` source. The 1 TB target currently has no recognized signature.
 
-The existing GPT on the 512 GB target is an immediate stop condition until its provenance, observed
-signature state, plan digest, and removal are explicitly approved.
+Before the first write, apply atomically persists the complete approved plan. It creates the GPT and
+both partition entries in one step, then provisions each partition independently. Each filesystem
+records an atomic pending UUID immediately after formatting, mounts by partition, and passes
+UUID/XFS/RW checks before its hard fstab entry is committed. Only after fstab verification does
+pending state become complete. A byte-identical retry resumes verified pending state or skips a
+verified complete partition; it never reformats complete state. Any unrecognized intermediate
+layout fails closed.
 
-### Engine migration
+The 512 GB device is never an argument, an implicit fallback, or a backup candidate. Its historical
+media/data-integrity counter (941), existing GPT, and successful short/extended self-tests remain
+documented, but it stays quarantined/unmounted/excluded. Firmware VC400618 has no verified official
+updater; release depends on a documented replacement or future verified update path.
 
-Read-only follow-up established the current engine contract: `/etc/containerd/config.toml` disables
-CRI and has no active root override; effective root/state are `/var/lib/containerd` and
-`/run/containerd`, snapshotter is overlayfs, Docker connects to `/run/containerd/containerd.sock`,
-neither unit has a drop-in or mount requirement, and `/etc/docker/daemon.json` is absent.
+### Rollback
 
-After approval and configuration backup:
+Before formatting, rollback is no-op: no engine or OS configuration changes exist. After GPT or
+filesystem creation, formatting cannot recover prior unknown content. The root-only pre-write
+signature/GPT evidence documents the destructive boundary but is not a data backup.
 
-1. prove current containers/volumes/projects and valuable state again;
-2. capture sanitized effective containerd config and exact Docker/containerd unit properties again;
-3. stop Doco if present, Docker socket/Docker, and containerd;
-4. prove no process uses either old root;
-5. mount/assert `/srv/containers`;
-6. copy `/var/lib/containerd/` to `/srv/containers/containerd/` and `/var/lib/docker/` to
-   `/srv/containers/docker/` with numeric ownership, hardlinks, ACLs, xattrs, sparse files, and
-   timestamps preserved;
-7. add a minimal containerd systemd drop-in that preserves the existing config and changes only the
-   `ExecStart` root argument to `/srv/containers/containerd`, plus `RequiresMountsFor`; add a minimal
-   Docker `daemon.json` containing only `data-root` and a mount-order drop-in;
-8. start containerd, then Docker;
-9. verify effective config, roots, prior inventory, image usability, and one disposable
-   pull/create/remove smoke;
-10. stop both engines, remove only the new overrides/config, start the untouched old roots, and
-    prove the original inventory and image usability;
-11. stop engines again, discard the disposable new-root writes, recopy the still-authoritative old
-    roots, reapply the reviewed minimal overrides, start, and repeat acceptance;
-12. declare the second successful switch the no-production-write transaction boundary; only then
-    may Doco or libreFS create durable state;
-13. retain old roots read-only until reboot and mission acceptance; retire them only under a
-    separate cleanup approval.
-
-The copy primitive is reviewed before use and equivalent to:
-
-```text
-rsync -aHAXSx --numeric-ids SOURCE/ DESTINATION/
-```
-
-No cleanup/prune command is permitted. The rollback rehearsal intentionally discards only the
-documented disposable smoke delta. After production writes begin, rollback requires quiescing
-applications and a separately reviewed export/restore or delta migration; no automatic backward
-metadata copy is safe. Formatting cannot recover unknown pre-existing disk content, and a GPT
-backup restores metadata only.
+If mount/fstab application fails, the pending-state transaction resumes only with the same plan
+digest and approval. A verified complete partition is never reformatted by retry. If either mount is
+later wrong or absent, Docker continues on the OS disk while libreFS and affected bind-mounted
+applications fail closed; keep those applications stopped and repair the mount rather than creating
+fallback directories.
 
 ## Network decision
 
@@ -227,9 +215,13 @@ c1 controller contract:
 - `SECRET_PROVIDER_ACCESS_TOKEN_FILE=/run/secrets/openbao_token`;
 - scoped `extra_hosts` mapping `vault.monosense.io` to `10.25.13.34`, preserving TLS SNI;
 - API and token values mounted from root-only files.
-- Docker restart policy disabled; `doco-cd-c1.service` owns the foreground Compose process;
-- systemd requires Docker, the container/libreFS mount assertions, and the SERVICES shim, then runs
-  the real token TTL gate before every controller start;
+- Docker restart policy disabled for both the controller and libreFS; `doco-cd-c1.service` and
+  `librefs-c1.service` (with `manage-c1-librefs`) own their foreground processes. systemd requires
+  Docker, `c1-librefs-storage.service`, `c1-applications-storage.service`, `assert-c1-mount`, and
+  `c1-services-shim.service`, then runs the real token TTL gate before every controller start;
+  `librefs-c1.service` only invokes `docker start` after the same storage units, the shim, and the
+  mount assertion have all reported active. An initial Doco deploy is safe because Doco itself
+  refuses to start without those storage prerequisites;
 
 The token file is read when Doco constructs its OpenBao client. Atomically replacing a file-backed
 Compose secret followed by a plain container restart can retain the old inode. Token and API-secret
@@ -332,11 +324,10 @@ revert it. Write results to `docs/c1/PERFORMANCE-BASELINE.md` after live testing
 
 | Purpose | Planned files |
 |---|---|
-| controller | `docker/c1/.doco-cd.yaml`, `.doco-cd/docker-compose.app.yaml`, `.doco-cd/poll-config.yml` |
+| libreFS | `docker/c1/librefs/.doco-cd.yaml`, `compose.yml`, `tests/validate.sh`, `librefs-c1.service`, `manage-c1-librefs` |
 | network prerequisite | `docker/c1/.host/networks/services/ensure.sh`, tests, shim/systemd templates |
-| storage prerequisite | `docker/c1/.host/storage/ensure.sh`, tests, assertion and systemd/config templates |
+| storage prerequisite | `docker/c1/.host/storage/ensure.sh`, tests, and single-device approval/assertion helpers (no engine config install) |
 | token lifecycle | `docker/c1/.host/openbao/` renewal/install scripts and systemd templates |
-| libreFS | `docker/c1/librefs/.doco-cd.yaml`, `compose.yml`, `tests/validate.sh` |
 | OpenBao policy | `docker/c0/openbao/policies/doco-c1.hcl` plus offline capability assertions |
 | validation | `docker/mod.just`, `.github/workflows/docker.yaml`, `docker/README.md` |
 | design/operations | `docs/c1/*.md`, `CHANGELOG.md` |
@@ -348,17 +339,30 @@ introduced.
 
 `just docker validate-c1` must prove:
 
+- storage regression matrix: signature stability across `check → plan → apply`; rejection of LVM/
+  RAID/holder/`fuser`/open users on the 1 TB device and any non-1 TB by-id input; mount-source
+  absence assertion before commit (`/srv/librefs`, `/srv/applications`); stable by-id binding
+  against partition by-id and any non-by-id input; root-disk device rejection; NVMe
+  critical-warning, media/data-integrity, and available-spare bound to the plan digest;
+  `saved`/`pristine`/`partial-child` pending-digest state revalidation; one GPT with two
+  1 MiB-aligned partitions geometry assertion; `XFS` filesystem-type assertion; no-wipe assertion
+  on byte-identical retry;
 - exact Doco image, names, paths, polling, loopback listeners, provider file auth, no SOPS identity,
   volume/log/health behavior, and bootstrap discovery exclusions;
-- network absent/create/exact/drift/ambiguous/parent/attached/post-create failures;
-- storage check/plan/apply approval parser and every reject path with command mocks only;
+- storage check/plan/apply approves only the single 1 TB by-id, rejects the OS device, every
+  non-1 TB by-id input, and the 512 GB device; the approval parser enforces the exact six-line
+  APPROVE C1 STORAGE block, rejects any 512GB line, and rejects mismatched PARTITION_LAYOUT;
 - no committed stable IDs, UUIDs, serials, secrets, or approval tokens;
 - OpenBao policy permits only intended read and self-renew paths and denies metadata/list/write,
-  unrelated c1/global/c0/Junos, delete, and sudo;
 - rendered libreFS image/platform/IP/network/mount/no-port/no-socket/non-root/read-only/security,
-  limits/logs/health/secrets and absence of `latest` or plaintext credentials;
+  limits/logs/health/secrets, absence of `latest` or plaintext credentials, and `restart: no` so
+  Docker cannot auto-restart libreFS;
 - Compose render uses safe non-secret CI canaries;
 - no recognized Compose filename under `.doco-cd` or `.host`;
+- rendered `librefs-c1.service` and `manage-c1-librefs` ordering requires
+  `c1-librefs-storage.service`, `c1-applications-storage.service`, `assert-c1-mount`, and
+  `c1-services-shim.service` active before `docker start`; `doco-cd-c1.service` requires the same
+  storage prerequisites plus the token TTL gate before its controller start;
 - existing `validate-c0`, Gitleaks, yamllint, shell syntax, and actionlint remain in CI.
 
 The pre-existing c0 exit-1 failure must be diagnosed and kept separate. c1 work may not bypass or
@@ -373,8 +377,8 @@ weaken it.
 5. atomic local commits; no push;
 6. approved diagnostic-package install and c1 configuration backups;
 7. exact disk health/identity/content recheck and storage approval;
-8. provision/mount 1 TB tier, migrate containerd and Docker, verify rollback;
-9. provision/mount 512 GB tier and prove fail-closed bind source;
+8. provision/mount 1 TB partitions (libreFS and applications) on the approved single NVMe, verify UUID/XFS/RW/fstab assertions for both;
+9. Docker/containerd roots remain on the OS disk; prove libreFS and affected bind-mounted applications fail closed if either partition is missing;
 10. conclusive `.65/.66` collision checks;
 11. apply shim/network and prove management/LACP/VLAN state;
 12. separate OpenBao approval, policy/KV/token/audit/backup work;
@@ -391,22 +395,23 @@ weaken it.
 
 ### Storage approval
 
-Immediately before destructive work, present both exact stable by-id paths, model/size, current
-signatures, roles `/srv/containers` and `/srv/librefs`, explicit OS-disk exclusion, and rollback
-limits.
+Immediately before destructive work, present the exact stable 1 TB by-id path, model/size, current
+signatures, the two partition roles `/srv/librefs` and `/srv/applications`, the explicit OS-disk
+exclusion, the explicit 512 GB exclusion (quarantined/unmounted, no argument to the script), and
+rollback limits.
 
-The generated plan and approval presentation also include `PLAN_SHA256`, each observed signature,
-the explicit GPT/wipe action, OS-disk exclusion, and formatting rollback limits. The operator
-approval must contain the required identity lines plus the evidence binding:
+The generated plan and approval presentation also include `PLAN_SHA256`, the single-device identity,
+the observed 1 TB signatures, the explicit GPT/wipe action, the exact 50:50 partition split, the
+OS-disk and 512 GB exclusions, and formatting rollback limits. The operator approval must contain
+the required identity lines plus the evidence binding:
 
 ```text
 APPROVE C1 STORAGE
 1TB=<exact stable by-id>
-512GB=<exact stable by-id>
 PLAN_SHA256=<exact reviewed plan digest>
 1TB_SIGNATURES=<exact observed state>
-512GB_SIGNATURES=<exact observed GPT/PMBR state>
-ACKNOWLEDGE_WIPE=ERASE APPROVED TARGETS ONLY
+PARTITION_LAYOUT=50% LIBREFS + 50% APPLICATIONS
+ACKNOWLEDGE_WIPE=ERASE APPROVED 1TB TARGET ONLY
 ```
 
 A vague confirmation is invalid. Stop on ambiguity, changed signatures, unexplained content, health
@@ -417,18 +422,17 @@ bond-member failure. No force push, auto-approve, yolo mode, c0/SRX SSH, or Juno
 
 Immediate stops also include management-route/interface/DNS change, unhealthy LACP aggregator, IP
 collision/inconclusive final probe, OpenBao sealed/TLS failure, excess policy privilege, secret
-leakage, unpinned/unverified image, root-disk fallback, mission-caused CI/Gitleaks failure,
+leakage, unpinned/unverified image, any 512 GB device reference, mission-caused CI/Gitleaks failure,
 unresolved CRITICAL/HIGH review finding, required SRX mutation, or claimed backup without restore.
 
 ## Risk register
 
 | Severity | Risk | Required closure |
 |---|---|---|
-| CRITICAL | unexplained GPT on 512 GB target | provenance/content review plus exact destructive approval |
-| CRITICAL | wrong disk/OS disk destruction | stable by-id binding, root-device rejection, immediate recheck, exact approval |
+| CRITICAL | wrong disk/OS disk destruction | single 1 TB by-id binding, OS-device rejection, immediate recheck, exact approval |
+| CRITICAL | 512 GB device reused or referenced | script takes no 512 GB argument; quarantine enforced by exclusion, not by approval |
 | HIGH | missing NVMe health evidence | install diagnostics and accept healthy counters before format |
 | HIGH | `.65/.66` collision unknown | conclusive duplicate-address procedure before assignment |
-| HIGH | Docker starts without 1 TB mount | fstab hard requirement, systemd RequiresMountsFor, pre-start assertion, negative test |
 | HIGH | libreFS writes to OS disk | no underlying `data` directory, create_host_path false, mount assertion, negative test |
 | HIGH | Doco/Compose secret persistence | canary leakage scan; block real credentials on unexpected persistence |
 | HIGH | over-broad or expiring token | exact policy capability tests, periodic renewal/alert, controlled replacement/restart |

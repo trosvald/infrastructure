@@ -1,7 +1,8 @@
 # c1 libreFS Design and Operations
 
-Date: 2026-08-26  
-Status: design; service not deployed
+Date: 2026-08-26
+Status: design; service not deployed; storage boundary revised to single 1 TB device (50:50 split);
+512 GB excluded/quarantined; Compose restart policy is `no`, owned by `librefs-c1.service`
 
 ## Service boundary
 
@@ -62,14 +63,22 @@ explicitly non-durable service holding no irreplaceable data. The status remains
 - `HOME=/tmp`;
 - two Compose secrets sourced from Doco-resolved deployment variables;
 - application environment contains only the two `_FILE` paths;
-- restart policy `unless-stopped`;
+- restart policy `no` (Docker must never auto-restart libreFS);
 - stop grace period 60 seconds;
 - containment ceilings: 4 CPUs, 8 GiB memory, 8 GiB memory+swap, 512 PIDs, and nofile 65536;
 - JSON logs limited to 10 MiB times three files.
 
+Restart authority belongs to systemd, not Docker. `librefs-c1.service` is the only process that
+starts (and restarts) the existing `librefs-c1` container; it runs `manage-c1-librefs` which
+asserts `c1-librefs-storage.service`, `c1-services-shim.service`, and `assert-c1-mount` are
+active before `docker start` runs. On boot, systemd orders these dependencies so the container is
+never started (or restarted) while a partition mount is missing or while the SERVICES shim is down.
+An initial Doco deploy is therefore safe because Doco itself requires the same storage units and
+the SERVICES shim before its controller can start.
+
 The storage prerequisite creates `/srv/librefs/data` as UID/GID 1000, mode `0750`, only while the
-512 GB filesystem is mounted. The directory does not exist beneath an unmounted `/srv/librefs`.
-Docker must fail rather than create it on the OS disk.
+approved 1 TB partition 1 is mounted at `/srv/librefs`. The directory does not exist beneath an
+unmounted `/srv/librefs`. Docker must fail rather than create it on the OS disk.
 
 Compose-secret UID/GID/mode behavior must be proven on c1 with non-secret canaries before real
 credentials. If UID 1000 cannot read a protected secret without widening host access, deployment
@@ -166,7 +175,8 @@ are measured. Keep explicit free-space headroom; do not promise a number before 
 
 ## Backup and restore
 
-The 1 TB local application tier is not a backup for `/srv/librefs`. A valid backup target is off-host
+The 1 TB local application partition (`/srv/applications`) shares a device and host with
+`/srv/librefs` and is therefore not a backup for `/srv/librefs`. A valid backup target is off-host
 and in a separate failure domain.
 
 Before status can become durable:

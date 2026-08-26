@@ -11,11 +11,13 @@ Exact destructive device identities remain an operator checkpoint and are not re
 
 Discovery supports repository design, but live storage mutation is blocked:
 
-- the intended 512 GB libreFS NVMe contains a valid GPT/PMBR despite having no partitions;
-- post-design diagnostics report 941 NVMe media/data-integrity errors on that 512 GB target despite
-  an overall SMART `PASSED` result and zero critical-warning bits;
+- the 512 GB NVMe contains a valid GPT/PMBR with no partitions, reports 941 media/data-integrity
+  errors despite an overall SMART `PASSED` result and zero critical-warning bits, and firmware
+  VC400618 has no verified official updater; the device is therefore quarantined/unmounted/excluded
+  from the revised storage boundary;
 - the 1 TB target reports zero media errors and an overall SMART `PASSED` result, but absence of
-  recognized signatures still does not prove absence of raw data;
+  recognized signatures still does not prove absence of raw data; the revised storage boundary uses
+  only this device and splits it 50:50 between `/srv/librefs` and `/srv/applications`;
 - `.65` and `.66` are unclaimed in repository IPAM, but live duplicate-address probing is
   inconclusive because `arping` is absent;
 - OpenBao health and TLS are proven, but authenticated KV mount, policy, token-lifecycle, and audit
@@ -91,27 +93,30 @@ No repository source claims `.65` or `.66` individually.
 | Sanitized role | Model and usable size | Evidence | Status |
 |---|---|---|---|
 | OS, excluded | Samsung SSD 860 EVO 500GB, 465.8 GiB | EFI and `/boot` partitions plus LVM root and swap | Never touch |
-| libreFS target | TEAM TM8FP6512G, 476.9 GiB; identity suffix `0351` | No partitions; valid primary/backup GPT and PMBR; 941 media/data-integrity errors, 13 unsafe shutdowns, 3% used, 91% spare | **Blocked: do not format or use for libreFS** |
-| container tier target | PNY CS1031 1TB SSD, 931.5 GiB; identity suffix `0E10` | No recognized signature; SMART passed, zero media errors, 94 unsafe shutdowns, 13% used, 100% spare | Blocked pending exact approval and raw-data disposition |
+| libreFS and applications target (1 TB, 50:50 split) | PNY CS1031 1TB SSD, 931.5 GiB; identity suffix `0E10` | No recognized signature; SMART passed, zero media errors, 94 unsafe shutdowns, 13% used, 100% spare | Approved device; pending exact single-device approval and raw-data disposition |
+| quarantined 512 GB | TEAM TM8FP6512G, 476.9 GiB; identity suffix `0351` | No partitions; valid primary/backup GPT and PMBR; 941 media/data-integrity errors, 13 unsafe shutdowns, 3% used, 91% spare; firmware VC400618 has no verified official updater | **Quarantined/unmounted/excluded: never an argument, never a fallback, never a backup** |
 
 The host has no containers, Compose projects, or Docker volumes. It has three untagged images and
 about 1.0 GB of reclaimable image data. No valuable running Docker state was identified, but image
 inactivity alone is not proof of disposability.
 
-Docker uses the containerd image store. `/var/lib/docker` is only about 260 KiB while
-`/var/lib/containerd` holds about 986 MiB. Changing Docker `data-root` alone therefore does not
-satisfy the requirement to place all engine image/layer state on the 1 TB tier; the design must
-move and mount-order both Docker and containerd persistent roots.
+Docker uses the containerd image store. `/var/lib/docker` is about 260 KiB and `/var/lib/containerd`
+is about 986 MiB. Under the revised storage boundary these engine roots stay on the OS disk; no
+Docker `data-root` change, no containerd root override, and no engine persistent-root migration is
+planned. The 1 TB NVMe hosts only the `/srv/librefs` and `/srv/applications` partitions for
+container bind sources, not engine roots.
 
 A follow-up read-only engine query found `/etc/containerd/config.toml` only disables CRI; there are
 no active containerd drop-ins, Docker/containerd systemd drop-ins, mount requirements, or
 `/etc/docker/daemon.json`. Effective containerd root/state are `/var/lib/containerd` and
 `/run/containerd`, the snapshotter is overlayfs, and Docker connects to
-`/run/containerd/containerd.sock`. A minimal root override can therefore preserve every other
-effective setting, but all facts require immediate recheck before cutover.
+`/run/containerd/containerd.sock`. This effective state is retained as-is; no engine configuration is
+installed by this mission. Docker and containerd remain usable from the OS disk while `/srv/librefs`
+or `/srv/applications` is absent; affected bind-mounted applications fail closed.
 
-No disk benchmark ran. Diagnostics and benchmark tools were installed after repository review, but
-the 512 GB media-error finding stopped storage mutation and benchmarking.
+No disk benchmark ran. Diagnostics and benchmark tools were installed after repository review. The
+512 GB media-error finding and the storage-boundary revision ended the need to benchmark that
+device; benchmarks target the 1 TB tier or approved off-host peers only.
 
 ## Network state
 
@@ -249,15 +254,12 @@ regression.
 
 ## Discovery blockers and required next evidence
 
-1. Replace the 512 GB target or obtain an independent vendor-backed diagnosis that explains the 941
-   media/data-integrity errors and proves the device safe. Overall SMART `PASSED` is insufficient.
-2. After hardware remediation, rerun NVMe health, stable identity, signatures, and the complete
-   byte-bound storage plan. Do not reuse the current plan digest.
-3. Explain and explicitly approve any remaining GPT removal only after the health blocker closes.
-4. Resolve exact stable by-id paths privately and bind them to the required operator approval without
-   committing them.
-5. Perform safe duplicate-address detection for `.65` and `.66` after `arping` is available.
-6. Authenticate to OpenBao through the approved hidden-input procedure to verify KV v2, audit state,
-   policy behavior, and token lifecycle without exposing values.
+1. Resolve exact stable by-id paths privately and bind the single 1 TB identity to the exact six-line
+   `APPROVE C1 STORAGE` approval without committing it. The 512 GB device is quarantined and never an
+   argument; an independent vendor-backed diagnosis explaining the 941 media/data-integrity errors
+   remains a separate optional evidence path, not a blocker for the 1 TB mission.
+2. Rerun NVMe health, stable identity, signatures, and the complete byte-bound single-device plan
+   against the 1 TB target. Do not reuse any prior plan digest.
+3. Perform safe duplicate-address detection for `.65` and `.66` after `arping` is available.
 7. Identify benchmark peers and off-host backup target. Without an off-host target and tested
    restore, final status cannot exceed `OPERATIONAL_WITHOUT_DURABILITY`.

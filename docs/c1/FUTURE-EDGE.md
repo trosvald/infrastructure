@@ -1,7 +1,8 @@
 # c1 Future Edge and Applications
 
-Date: 2026-08-26  
-Status: design reservation only; nothing in this document is deployed by the current mission
+Date: 2026-08-26
+Status: design reservation only; nothing in this document is deployed by the current mission;
+application paths revised to `/srv/applications`
 
 ## Boundary
 
@@ -42,9 +43,10 @@ Live collision checks and repository IPAM updates are required again before `.66
 
 ## Storage
 
-Future ordinary state lives in explicit directories below `/srv/containers/apps`, on the 1 TB
-application tier. Each project has separate ownership, quota/capacity monitoring, backup schedule,
-and restore procedure. PostgreSQL data is never stored in a container writable layer.
+Future ordinary state lives in explicit directories below `/srv/applications/apps`, on the 1 TB
+application partition (`/srv/applications`). Each project has separate ownership, quota/capacity
+monitoring, backup schedule, and restore procedure. PostgreSQL data is never stored in a container
+writable layer.
 
 All durable application and database backups are off-host. A second directory or disk on c1 is the
 same failure domain and is not a backup.
@@ -141,7 +143,7 @@ Before any future service is deployed:
 1. pin exact images and inspect their runtime/file-secret contracts;
 2. update the secret contract and least-privilege policy only for deployed consumers;
 3. add offline Compose/security/leakage tests;
-4. provision application directories only on the mounted 1 TB tier;
+4. provision application directories only below `/srv/applications` on the mounted 1 TB partition 2;
 5. prove off-host backup and isolated restore;
 6. prove private-network isolation and HAProxy-only exposure;
 7. review CrowdSec failure and rollback behavior;

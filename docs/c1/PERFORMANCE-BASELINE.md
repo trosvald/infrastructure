@@ -1,11 +1,12 @@
 # c1 Performance Baseline
 
-Date: 2026-08-26  
-Status: `BLOCKED`
+Date: 2026-08-26
+Status: `BLOCKED` (storage boundary revised; single-device 1 TB plan pending exact approval)
 
-No storage, network, or S3 benchmark was run. The intended 512 GB libreFS NVMe reports 941
-`Media and Data Integrity Errors`. This is an immediate storage-health stop condition; benchmarking
-or formatting that device would create load without establishing that it is safe for object data.
+No storage, network, or S3 benchmark was run. The 512 GB NVMe reports 941
+`Media and Data Integrity Errors` and is quarantined; the revised storage boundary uses only the
+1 TB NVMe split 50:50 for `/srv/librefs` and `/srv/applications`. Benchmarking waits for the
+single-device approval and then exercises the 1 TB tier or approved off-host peers only.
 
 ## Pre-change evidence retained
 
@@ -23,25 +24,24 @@ or formatting that device would create load without establishing that it is safe
 
 | Intended role | Sanitized result |
 |---|---|
-| 1 TB container/application tier | SMART overall passed; critical warning 0; media errors 0; 13% used |
-| 512 GB libreFS tier | SMART overall passed; critical warning 0; **media/data-integrity errors 941**; 3% used; available spare 91% |
+| 1 TB libreFS + applications tier (revised) | SMART overall passed; critical warning 0; media errors 0; 13% used; 100% spare; pending single-device approval |
+| quarantined 512 GB | SMART overall passed; critical warning 0; **media/data-integrity errors 941**; 3% used; available spare 91%; firmware VC400618 has no verified official updater |
 
 An overall SMART `PASSED` result does not override the non-zero media/data-integrity error count.
-The 512 GB device was not partitioned, formatted, mounted, or benchmarked.
+The 512 GB device stays quarantined/unmounted/excluded. No device was partitioned, formatted,
+mounted, or benchmarked.
 
 ## Tuning result
 
 Retained tuning changes: none.  
 Reverted tuning changes: none.  
-Aggregate 20 Gb/s claim: not made.  
-S3 latency/throughput claims: not made.
+Aggregate 20 Gb/s claim: not made.
 
 ## Resume criteria
 
-1. Replace the 512 GB NVMe or obtain independent vendor-backed evidence that explains the error
-   count and proves the device safe.
-2. Rerun sanitized health, identity, signatures, and storage-plan evidence; discard the current plan
-   digest.
-3. Obtain the exact storage approval for the remediated hardware.
-4. Provision and verify storage, network, OpenBao, Doco, and libreFS through their gates.
-5. Run the network and S3 matrices in `DESIGN-AND-PLAN.md`, one tuning change at a time.
+1. Obtain the exact single-device 1 TB by-id identity, signatures, plan digest, and
+   `PARTITION_LAYOUT=50% LIBREFS + 50% APPLICATIONS` approval per `DESIGN-AND-PLAN.md`.
+2. Provision and verify both 1 TB partitions through the storage gate; Docker and containerd remain
+   on the OS disk.
+3. Run the network and S3 matrices in `DESIGN-AND-PLAN.md`, one tuning change at a time.
+4. Without an off-host backup and tested restore, final status cannot exceed

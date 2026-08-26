@@ -138,10 +138,15 @@ Blocky runbook.
 | --- | --- | --- | ---: | --- |
 | `c0` | `sda` | SDLF1DAM800G-1HHS SSD | 800 GB | Debian system disk; LVM-backed ext4 root |
 | `c1` | `sda` | Samsung SSD 860 EVO | 500 GB | Debian system disk; LVM-backed ext4 root |
-| `c1` | `nvme1n1` | PNY CS1031 | 1 TB | No mounted filesystem |
-| `c1` | `nvme0n1` | TEAM TM8FP6512G | 512 GB | No mounted filesystem |
+| `c1` | `nvme1n1` | PNY CS1031 | 1 TB | Planned 50:50 split: `/srv/librefs` (XFS) and `/srv/applications` (XFS); unmounted |
+| `c1` | `nvme0n1` | TEAM TM8FP6512G | 512 GB | Quarantined/unmounted/excluded: 941 historical media/data-integrity errors; never an argument, fallback, or backup candidate |
 
-Do not assign persistent service paths to the unmounted c1 NVMe devices until their partitioning, filesystem, redundancy, and backup roles are designed.
+Docker engine state, containerd, and named volumes stay on the c1 OS disk (`sda`). The healthy 1 TB
+NVMe is planned as two approximately equal XFS partitions — `/srv/librefs` for the libreFS data
+mount and `/srv/applications` for future explicit application/database bind directories. The 512 GB
+NVMe is quarantined/unmounted/excluded after 941 historical media errors despite successful
+short/extended self-tests; firmware VC400618 has no verified official updater. Revised c1 code/review
+and exact single-device 1 TB approval remain gates; live deployment is intentionally blocked.
 
 ## Networking
 

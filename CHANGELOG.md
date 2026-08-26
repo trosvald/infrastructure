@@ -26,3 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Refactored c0 into a host-scoped Doco-CD layout under `docker/c0/`, separating controller source,
   host prerequisites, and direct-child managed applications.
+- Revised the c1 repository foundation: Docker engine state, containerd, and named volumes stay
+  on the c1 OS disk; the healthy 1 TB NVMe is planned as two approximately equal XFS partitions
+  (`/srv/librefs` and `/srv/applications`); the 512 GB NVMe is quarantined/unmounted/excluded
+  after 941 historical media/data-integrity errors despite successful short/extended self-tests.
+  Revised code/review and exact single-device 1 TB approval remain gates; live c1 deployment is
+  intentionally blocked.

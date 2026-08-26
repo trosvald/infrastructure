@@ -1,7 +1,8 @@
 # c1 Secret Contract
 
-Date: 2026-08-26  
-Status: design; no OpenBao value or policy has been changed
+Date: 2026-08-26
+Status: design; no OpenBao value or policy has been changed; mission blocked pending revised
+code/review and exact storage approval
 
 ## Boundary
 
@@ -19,6 +20,7 @@ is `root:root` mode `0700`; each file is `root:root` mode `0600` or stricter. Ne
 environment variable, Compose value, command argument, log field, or Git object. The token is never
 backed up; loss requires administrator-mediated replacement. The API secret is also regenerated on
 loss, then Doco is recreated. Neither bootstrap value has an off-host copy.
+
 No c0 SOPS age identity is copied to c1.
 
 OpenBao Shamir shares are never requested, handled, automated, copied, or stored by this mission.

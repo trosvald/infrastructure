@@ -9,7 +9,7 @@ services:
     container_name: librefs-c1
     command: ["server", "/data", "--console-address", ":9001"]
     user: "1000:1000"
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     environment:
       HOME: /tmp

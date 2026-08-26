@@ -14,7 +14,7 @@ s=r["services"]["librefs"]
 assert s["image"] == "ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab"
 assert s["platform"] == "linux/amd64" and s["container_name"] == "librefs-c1"
 assert s["command"] == ["server","/data","--console-address",":9001"] and s["user"] == "1000:1000"
-assert s["read_only"] is True and s["restart"] == "unless-stopped"
+assert s["read_only"] is True and s["restart"] == "no"
 assert s["environment"] == {"HOME":"/tmp","MINIO_ROOT_PASSWORD_FILE":"/run/secrets/librefs_root_password","MINIO_ROOT_USER_FILE":"/run/secrets/librefs_root_user"}
 assert s["cap_drop"] == ["ALL"] and s["security_opt"] == ["no-new-privileges:true"]
 assert s["tmpfs"] == ["/tmp:rw,nosuid,nodev,noexec,mode=1777"]

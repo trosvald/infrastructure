@@ -7,12 +7,10 @@ CMP_BIN="${CMP_BIN:-cmp}"
 ID_BIN="${ID_BIN:-id}"
 SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
 SYSTEMD_ROOT="${SYSTEMD_ROOT:-/etc/systemd/system}"
-DOCKER_CONFIG_DIR="${DOCKER_CONFIG_DIR:-/etc/docker}"
 LOCAL_SBIN="${LOCAL_SBIN:-/usr/local/sbin}"
-readonly INSTALL_BIN CMP_BIN ID_BIN SYSTEMCTL_BIN SYSTEMD_ROOT DOCKER_CONFIG_DIR LOCAL_SBIN
+readonly INSTALL_BIN CMP_BIN ID_BIN SYSTEMCTL_BIN SYSTEMD_ROOT LOCAL_SBIN
 
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-
 verify_file() {
     local source="$1" destination="$2"
     [[ -f "$destination" && ! -L "$destination" ]] \
@@ -20,7 +18,6 @@ verify_file() {
     "$CMP_BIN" -s "$source" "$destination" \
         || fail "installed file differs from reviewed source: $destination"
 }
-
 refuse_conflict() {
     local source="$1" destination="$2"
     [[ ! -e "$destination" && ! -L "$destination" ]] && return 0
@@ -29,52 +26,46 @@ refuse_conflict() {
     "$CMP_BIN" -s "$source" "$destination" \
         || fail "refusing to overwrite existing configuration: $destination"
 }
-
 verify_all() {
     verify_file "$HERE/assert-mount.sh" "$LOCAL_SBIN/assert-c1-mount"
-    verify_file "$HERE/templates/containerd-c1-storage.conf" \
-        "$SYSTEMD_ROOT/containerd.service.d/c1-storage.conf"
-    verify_file "$HERE/templates/docker-c1-storage.conf" \
-        "$SYSTEMD_ROOT/docker.service.d/c1-storage.conf"
     verify_file "$HERE/templates/c1-librefs-storage.service" \
         "$SYSTEMD_ROOT/c1-librefs-storage.service"
-    verify_file "$HERE/templates/daemon.json" "$DOCKER_CONFIG_DIR/daemon.json"
-    printf 'c1 engine storage configuration matches reviewed sources\n'
+    verify_file "$HERE/templates/c1-applications-storage.service" \
+        "$SYSTEMD_ROOT/c1-applications-storage.service"
+    verify_file "$HERE/../systemd/manage-librefs.sh" "$LOCAL_SBIN/manage-c1-librefs"
+    verify_file "$HERE/../systemd/librefs-c1.service" "$SYSTEMD_ROOT/librefs-c1.service"
+    printf 'c1 storage assertion assets match reviewed sources\n'
 }
-
 apply_all() {
-    [[ "$($ID_BIN -u)" == 0 ]] || fail 'configuration installation requires root'
+    [[ "$($ID_BIN -u)" == 0 ]] || fail 'storage asset installation requires root'
     refuse_conflict "$HERE/assert-mount.sh" "$LOCAL_SBIN/assert-c1-mount"
-    refuse_conflict "$HERE/templates/containerd-c1-storage.conf" \
-        "$SYSTEMD_ROOT/containerd.service.d/c1-storage.conf"
-    refuse_conflict "$HERE/templates/docker-c1-storage.conf" \
-        "$SYSTEMD_ROOT/docker.service.d/c1-storage.conf"
     refuse_conflict "$HERE/templates/c1-librefs-storage.service" \
         "$SYSTEMD_ROOT/c1-librefs-storage.service"
-    refuse_conflict "$HERE/templates/daemon.json" "$DOCKER_CONFIG_DIR/daemon.json"
-
-    "$INSTALL_BIN" -d -o root -g root -m 0755 "$LOCAL_SBIN" \
-        "$SYSTEMD_ROOT/containerd.service.d" "$SYSTEMD_ROOT/docker.service.d" \
-        "$DOCKER_CONFIG_DIR"
+    refuse_conflict "$HERE/templates/c1-applications-storage.service" \
+        "$SYSTEMD_ROOT/c1-applications-storage.service"
+    refuse_conflict "$HERE/../systemd/manage-librefs.sh" "$LOCAL_SBIN/manage-c1-librefs"
+    refuse_conflict "$HERE/../systemd/librefs-c1.service" "$SYSTEMD_ROOT/librefs-c1.service"
+    "$INSTALL_BIN" -d -o root -g root -m 0755 "$LOCAL_SBIN" "$SYSTEMD_ROOT"
     "$INSTALL_BIN" -o root -g root -m 0755 "$HERE/assert-mount.sh" \
         "$LOCAL_SBIN/assert-c1-mount"
-    "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/templates/containerd-c1-storage.conf" \
-        "$SYSTEMD_ROOT/containerd.service.d/c1-storage.conf"
-    "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/templates/docker-c1-storage.conf" \
-        "$SYSTEMD_ROOT/docker.service.d/c1-storage.conf"
     "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/templates/c1-librefs-storage.service" \
         "$SYSTEMD_ROOT/c1-librefs-storage.service"
-    "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/templates/daemon.json" \
-        "$DOCKER_CONFIG_DIR/daemon.json"
+    "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/templates/c1-applications-storage.service" \
+        "$SYSTEMD_ROOT/c1-applications-storage.service"
+    "$INSTALL_BIN" -o root -g root -m 0755 "$HERE/../systemd/manage-librefs.sh" \
+        "$LOCAL_SBIN/manage-c1-librefs"
+    "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/../systemd/librefs-c1.service" \
+        "$SYSTEMD_ROOT/librefs-c1.service"
     verify_all >/dev/null
     "$SYSTEMCTL_BIN" daemon-reload
-    "$SYSTEMCTL_BIN" enable c1-librefs-storage.service
-    printf 'c1 engine storage configuration installed; engines were not started\n'
+    "$SYSTEMCTL_BIN" enable c1-librefs-storage.service c1-applications-storage.service \
+        librefs-c1.service
+    printf 'c1 storage and libreFS startup assets installed; services were not started\n'
 }
 
-[[ $# == 1 ]] || fail 'usage: install-engine-config.sh {check|apply}'
+[[ $# == 1 ]] || fail 'usage: install-storage-assets.sh {check|apply}'
 case "$1" in
     check) verify_all ;;
     apply) apply_all ;;
-    *) fail 'usage: install-engine-config.sh {check|apply}' ;;
+    *) fail 'usage: install-storage-assets.sh {check|apply}' ;;
 esac

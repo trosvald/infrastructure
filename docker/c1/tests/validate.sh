@@ -6,8 +6,9 @@ yamllint docker/c1/.doco-cd.yaml docker/c1/.doco-cd/docker-compose.app.yaml dock
 bash -n docker/c1/.host/networks/services/ensure.sh docker/c1/.host/networks/services/ensure-shim.sh \
   docker/c1/.host/networks/services/tests/ensure.sh docker/c1/.host/networks/services/tests/ensure-shim.sh \
   docker/c1/.host/storage/ensure.sh docker/c1/.host/storage/assert-mount.sh \
-  docker/c1/.host/storage/install-engine-config.sh docker/c1/.host/storage/tests/ensure.sh \
-  docker/c1/.host/storage/tests/install-engine-config.sh \
+  docker/c1/.host/storage/install-storage-assets.sh docker/c1/.host/storage/tests/ensure.sh \
+  docker/c1/.host/storage/tests/install-storage-assets.sh \
+  docker/c1/.host/systemd/manage-librefs.sh docker/c1/.host/systemd/tests/manage-librefs.sh \
   docker/c1/.host/openbao/renew-token.sh docker/c1/.host/openbao/check-token-ttl.sh \
   docker/c1/.host/openbao/check-doco-controller.sh docker/c1/.host/openbao/install-token.sh \
   docker/c1/.host/openbao/install-api-secret.sh docker/c1/.host/openbao/tests/helpers.sh \
@@ -16,7 +17,8 @@ python3 docker/c0/openbao/policies/tests/test_doco_c1_policy.py
 docker/c1/.host/networks/services/tests/ensure.sh
 docker/c1/.host/networks/services/tests/ensure-shim.sh
 docker/c1/.host/storage/tests/ensure.sh
-docker/c1/.host/storage/tests/install-engine-config.sh
+docker/c1/.host/storage/tests/install-storage-assets.sh
+docker/c1/.host/systemd/tests/manage-librefs.sh
 docker/c1/.host/openbao/tests/helpers.sh
 docker/c1/.host/openbao/tests/controller.sh
 docker/c1/librefs/tests/validate.sh
@@ -60,13 +62,27 @@ assert 'env REQUIRE_PROVIDER_CANARY=true "$CONTROLLER_GATE"' in api_installer
 assert 'os.fsync' in api_installer and 'os.replace' in api_installer
 assert 'ExecStartPre=/usr/local/sbin/check-c1-openbao-token' in controller_unit
 assert 'up --force-recreate --no-deps doco-cd' in controller_unit and 'Restart=on-failure' in controller_unit
+assert 'c1-librefs-storage.service c1-applications-storage.service' in controller_unit
 assert 'Persistent=true' in timer and 'OnBootSec=5min' in timer and 'OnUnitActiveSec=6h' in timer
-containerd=(root/".host/storage/templates/containerd-c1-storage.conf").read_text()
-docker_dropin=(root/".host/storage/templates/docker-c1-storage.conf").read_text()
-daemon=json.loads((root/".host/storage/templates/daemon.json").read_text())
-assert 'RequiresMountsFor=/srv/containers' in containerd and '--root /srv/containers/containerd' in containerd
-assert 'ExecStartPre=/usr/local/sbin/assert-c1-mount containers /srv/containers' in containerd
-assert 'RequiresMountsFor=/srv/containers' in docker_dropin and daemon=={"data-root":"/srv/containers/docker"}
+storage=(root/".host/storage/ensure.sh").read_text()
+storage_installer=(root/".host/storage/install-storage-assets.sh").read_text()
+librefs_unit=(root/".host/storage/templates/c1-librefs-storage.service").read_text()
+applications_unit=(root/".host/storage/templates/c1-applications-storage.service").read_text()
+assert '512GB_EXCLUDED=true' in storage and 'DOCKER_ROOTS_REMAIN_OS=true' in storage
+assert 'c1_librefs' in storage and 'c1_applications' in storage and '/srv/containers' not in storage
+assert 'c1-librefs-storage.service c1-applications-storage.service' in storage_installer
+assert 'RequiresMountsFor=/srv/librefs' in librefs_unit
+librefs_start_unit=(root/".host/systemd/librefs-c1.service").read_text()
+assert 'c1-librefs-storage.service' in librefs_start_unit
+assert 'ExecStartPre=/usr/local/sbin/assert-c1-mount librefs /srv/librefs' in librefs_start_unit
+assert 'ExecStart=/usr/local/sbin/manage-c1-librefs start' in librefs_start_unit
+assert 'RequiresMountsFor=/srv/applications' in applications_unit
+for obsolete in (
+ root/".host/storage/templates/containerd-c1-storage.conf",
+ root/".host/storage/templates/docker-c1-storage.conf",
+ root/".host/storage/templates/daemon.json",
+):
+ assert not obsolete.exists()
 recognized={"compose.yaml","compose.yml","docker-compose.yml","docker-compose.yaml"}
 for boundary in (root/".doco-cd",root/".host"):
  offenders=sorted(p for p in boundary.rglob("*") if p.name in recognized)
