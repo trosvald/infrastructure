@@ -5,15 +5,41 @@
       - junos_operation in ['check', 'diff', 'deploy']
       - junos_operation != 'deploy' or junos_commit_comment | length >= 12
 
-- name: Require the fixed tracked adoption record for deployment
+- name: Reject uncommitted adoption authorization
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ role_path }}/../../../.."
+      - diff
+      - --quiet
+      - HEAD
+      - --
+      - ansible/junos/adoption.yml
+  changed_when: false
+  delegate_to: localhost
+  when: junos_operation == 'deploy'
+
+- name: Read the committed adoption authorization
+  ansible.builtin.command:
+    argv:
+      - git
+      - -C
+      - "{{ role_path }}/../../../.."
+      - show
+      - HEAD:ansible/junos/adoption.yml
+  register: junos_committed_adoption
+  changed_when: false
+  delegate_to: localhost
+  when: junos_operation == 'deploy'
+
+- name: Require the committed adoption authorization for deployment
   ansible.builtin.assert:
     that:
-      - >-
-        (lookup('ansible.builtin.file', role_path ~ '/../../adoption.yml') | from_yaml).adopted
-        | default(false) | bool
+      - (junos_committed_adoption.stdout | from_yaml).adopted | default(false) | bool
     fail_msg: >-
-      Routine deployment is disabled while the fixed tracked adoption record is false. Complete
-      the separately reviewed direct-configuration cleanup and parity adoption procedure first.
+      Routine deployment is disabled until the committed adoption record is true and the
+      working copy matches HEAD. Complete the reviewed parity adoption procedure first.
   when: junos_operation == 'deploy'
 
 - name: Refuse unsafe or overrideable build directory
@@ -115,37 +141,45 @@
       - junos_commit_comment == 'Ansible candidate ' ~ junos_expected_digest
     fail_msg: "Deployment requires the exact rendered candidate digest in its commit comment."
   when: junos_operation == 'deploy'
-- name: Load candidate and run commit-check without activation
-  juniper.device.junos_config:
-    lines: "{{ junos_fresh_candidate_lines }}"
-    src_format: set
-    update: merge
-    check_commit: true
-    confirm: 0
-    comment: "{{ junos_commit_comment }}"
-  register: candidate_result
-  diff: true
-  no_log: true
+- name: Validate and review the candidate without activation
+  block:
+    - name: Load candidate and run commit-check without activation
+      juniper.device.junos_config:
+        lines: "{{ junos_fresh_candidate_lines }}"
+        src_format: set
+        update: merge
+        check_commit: true
+        confirm: 0
+        comment: "{{ junos_commit_comment }}"
+      register: candidate_result
+      diff: true
+      no_log: true
 
-- name: Require candidate diff evidence when Junos reports a change
-  ansible.builtin.assert:
-    that:
-      - not (candidate_result.changed | default(false) | bool) or
-        (candidate_result.diff is defined and candidate_result.diff.prepared is defined and
-        candidate_result.diff.prepared | string | trim | length > 0)
-    fail_msg: "Junos reported a changed candidate without prepared diff evidence."
-  when: junos_operation == 'diff'
+    - name: Require candidate diff evidence when Junos reports a change
+      ansible.builtin.assert:
+        that:
+          - not (candidate_result.changed | default(false) | bool) or
+            (candidate_result.diff is defined and candidate_result.diff.prepared is defined and
+            candidate_result.diff.prepared | string | trim | length > 0)
+        fail_msg: "Junos reported a changed candidate without prepared diff evidence."
+      when: junos_operation == 'diff'
 
-- name: Persist only the bounded candidate diff for review
-  ansible.builtin.copy:
-    content: >-
-      {{ candidate_result.diff.prepared | string
-         if (candidate_result.changed | default(false) | bool)
-         else 'No candidate difference reported\n' }}
-    dest: "{{ junos_diff_path }}"
-    mode: "0600"
-  delegate_to: localhost
-  no_log: true
+    - name: Persist only the bounded candidate diff for review
+      ansible.builtin.copy:
+        content: >-
+          {{ candidate_result.diff.prepared | string
+             if (candidate_result.changed | default(false) | bool)
+             else 'No candidate difference reported\n' }}
+        dest: "{{ junos_diff_path }}"
+        mode: "0600"
+      delegate_to: localhost
+      no_log: true
+  always:
+    - name: Discard the validated NETCONF candidate
+      ansible.netcommon.netconf_rpc:
+        rpc: discard-changes
+      changed_when: false
+      no_log: true
 
 - name: Commit the validated candidate with a ten-minute rollback timer
   juniper.device.junos_config:
@@ -153,6 +187,7 @@
     src_format: set
     update: merge
     check_commit: false
+    # The pinned juniper.device NETCONF plugin serializes confirm-timeout in seconds.
     confirm: 600
     comment: "{{ junos_commit_comment }}"
   register: deployment_result
@@ -167,7 +202,7 @@
 - name: Verify post-commit operational state
   juniper.device.junos_command:
     commands:
-      - show system commit detail
+      - show system commit
       - show configuration groups ANSIBLE_SRX1500 | display set
       - show configuration apply-groups | display set
       - show interfaces terse | match 'irb[.]2510|irb[.]2512'
@@ -194,6 +229,14 @@
     junos_running_apply_lines: >-
       {{ postcheck_result.stdout[2].splitlines() | map('trim')
          | reject('equalto', '') | list | sort }}
+    junos_reviewed_ordered_lines: >-
+      {{ junos_fresh_candidate_lines
+         | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+         | list }}
+    junos_running_ordered_lines: >-
+      {{ postcheck_result.stdout[1].splitlines() | map('trim')
+         | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+         | list }}
   when: junos_operation == 'deploy'
   no_log: true
 
@@ -215,6 +258,7 @@
       - junos_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
       - junos_running_group_lines == junos_reviewed_group_lines
       - junos_running_apply_lines == junos_reviewed_apply_lines
+      - junos_running_ordered_lines == junos_reviewed_ordered_lines
       - postcheck_result.stdout[3] is search('(?m)^\\s*irb[.]2510\\s+up\\s+up(?:\\s|$)')
       - postcheck_result.stdout[3] is search('(?m)^\\s*irb[.]2512\\s+up\\s+up(?:\\s|$)')
       - postcheck_result.stdout[4] is search('(?m)^\\s*\\S+\\s+VLAN-MGMT\\s+2510\\b')

@@ -46,6 +46,10 @@
         confirm_reviewed_apply_lines: >-
           {{ confirm_candidate_text.splitlines() | map('trim')
              | select('match', '^set apply-groups ANSIBLE_SRX1500$') | list | sort }}
+        confirm_reviewed_ordered_lines: >-
+          {{ confirm_candidate_text.splitlines() | map('trim')
+             | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+             | list }}
       no_log: true
 
     - name: Read device identity before the final confirmation boundary
@@ -66,7 +70,7 @@
     - name: Re-read the newest commit and all required evidence immediately before confirmation
       juniper.device.junos_command:
         commands:
-          - show system commit detail
+          - show system commit
           - show configuration groups ANSIBLE_SRX1500 | display set
           - show configuration apply-groups | display set
           - show interfaces terse | match 'irb[.]2510|irb[.]2512'
@@ -90,6 +94,10 @@
         confirm_running_apply_lines: >-
           {{ confirm_pending.stdout[2].splitlines() | map('trim')
              | reject('equalto', '') | list | sort }}
+        confirm_running_ordered_lines: >-
+          {{ confirm_pending.stdout[1].splitlines() | map('trim')
+             | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+             | list }}
       no_log: true
 
     - name: Require the same newest pending commit and exact managed candidate
@@ -106,6 +114,7 @@
           - confirm_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
           - confirm_running_group_lines == confirm_reviewed_group_lines
           - confirm_running_apply_lines == confirm_reviewed_apply_lines
+          - confirm_running_ordered_lines == confirm_reviewed_ordered_lines
         fail_msg: "Pending commit or complete managed configuration changed; refusing confirmation."
       no_log: true
 

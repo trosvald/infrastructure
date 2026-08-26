@@ -49,6 +49,8 @@ class NetconfContractTests(unittest.TestCase):
         self.assertIn("check_commit: true", role)
         self.assertIn("check_commit: false", role)
         self.assertIn("confirm: 600", role)
+        self.assertIn("ansible.netcommon.netconf_rpc:", role)
+        self.assertIn("rpc: discard-changes", role)
         self.assertIn("rstrip=false", role)
         self.assertIn('lines: "{{ junos_fresh_candidate_lines }}"', role)
         self.assertIn('digest="$(sha256_file "$candidate_path")"', deploy)
@@ -64,6 +66,7 @@ class NetconfContractTests(unittest.TestCase):
             self.assertIn("running_apply_lines ==", text)
             self.assertIn("show configuration groups ANSIBLE_SRX1500 | display set", text)
             self.assertIn("show configuration apply-groups | display set", text)
+            self.assertIn("running_ordered_lines == ", text)
 
     def test_operational_evidence_is_concrete(self):
         for relative in ("roles/junos_intent/tasks/main.yml", "playbooks/verify.yml", "playbooks/confirm.yml"):
@@ -121,9 +124,10 @@ class NetconfContractTests(unittest.TestCase):
         role = self.read("roles/junos_intent/tasks/main.yml")
         drift = self.read("playbooks/drift.yml")
         self.assertIn("adopted: false", adoption)
-        self.assertIn("lookup('ansible.builtin.file', role_path ~ '/../../adoption.yml')", role)
-        self.assertIn("lookup('ansible.builtin.file', playbook_dir ~ '/../adoption.yml')", drift)
-        self.assertIn("migration prerequisite", drift)
+        self.assertIn("HEAD:ansible/junos/adoption.yml", role)
+        self.assertIn("HEAD:ansible/junos/adoption.yml", drift)
+        self.assertIn("diff", role)
+        self.assertIn("parity migration", drift)
 
     def test_drift_does_not_persist_whole_configuration(self):
         drift = self.read("playbooks/drift.yml")
@@ -133,6 +137,7 @@ class NetconfContractTests(unittest.TestCase):
         self.assertNotIn(".drift.set", drift)
         self.assertIn("drift_missing[:50]", drift)
         self.assertIn("drift_extra[:50]", drift)
+        self.assertIn("drift_order_mismatch", drift)
 
 
 if __name__ == "__main__":

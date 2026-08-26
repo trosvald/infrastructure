@@ -5,15 +5,39 @@
   serial: 1
   any_errors_fatal: true
   tasks:
-    - name: Require completed adoption from the fixed tracked record
+    - name: Reject uncommitted adoption authorization
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ playbook_dir }}/../../.."
+          - diff
+          - --quiet
+          - HEAD
+          - --
+          - ansible/junos/adoption.yml
+      changed_when: false
+      delegate_to: localhost
+
+    - name: Read the committed adoption authorization
+      ansible.builtin.command:
+        argv:
+          - git
+          - -C
+          - "{{ playbook_dir }}/../../.."
+          - show
+          - HEAD:ansible/junos/adoption.yml
+      register: drift_committed_adoption
+      changed_when: false
+      delegate_to: localhost
+
+    - name: Require completed adoption from committed Git content
       ansible.builtin.assert:
         that:
-          - >-
-            (lookup('ansible.builtin.file', playbook_dir ~ '/../adoption.yml') | from_yaml).adopted
-            | default(false) | bool
+          - (drift_committed_adoption.stdout | from_yaml).adopted | default(false) | bool
         fail_msg: >-
-          Drift is fail-closed before adoption. Complete the separately reviewed direct-config
-          cleanup and effective-parity migration prerequisite before requesting drift analysis.
+          Drift is fail-closed before adoption. Complete the reviewed direct-config cleanup and
+          parity migration, commit the adoption record, and keep its working copy clean.
     - name: Render the reviewed candidate in memory
       ansible.builtin.command:
         argv:
@@ -56,6 +80,14 @@
         drift_expected_lines: "{{ drift_candidate.stdout_lines | select('match', '^set groups ANSIBLE_SRX1500 ') | list | sort }}"
         drift_actual_lines: "{{ drift_configuration.stdout[0].splitlines() | select('match', '^set groups ANSIBLE_SRX1500 ') | list | sort }}"
         drift_apply_groups: "{{ drift_configuration.stdout[1].splitlines() | select('search', 'ANSIBLE_SRX1500') | list }}"
+        drift_expected_ordered_lines: >-
+          {{ drift_candidate.stdout_lines
+             | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+             | list }}
+        drift_actual_ordered_lines: >-
+          {{ drift_configuration.stdout[0].splitlines()
+             | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+             | list }}
       no_log: true
     - name: Require a non-empty rendered candidate for drift comparison
       ansible.builtin.assert:
@@ -77,6 +109,7 @@
       ansible.builtin.set_fact:
         drift_missing: "{{ drift_expected_lines | difference(drift_actual_lines) | list }}"
         drift_extra: "{{ drift_actual_lines | difference(drift_expected_lines) | list }}"
+        drift_order_mismatch: "{{ drift_expected_ordered_lines != drift_actual_ordered_lines }}"
       no_log: true
     - name: Convert differences to value-free schema path identifiers
       ansible.builtin.command:
@@ -143,6 +176,7 @@
           actual_paths: {{ drift_actual_lines | length }}
           missing_count: {{ drift_missing | length }}
           extra_count: {{ drift_extra | length }}
+          ordered_policy_mismatch: {{ drift_order_mismatch | bool | lower }}
           missing_paths:
           {% for path_id in drift_missing_ids %}
           - {{ path_id | to_json }}

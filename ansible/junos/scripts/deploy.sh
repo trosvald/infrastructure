@@ -14,8 +14,13 @@ adoption_file="$project_dir/adoption.yml"
   echo "Fixed adoption record is not tracked" >&2
   exit 1
 }
+git -C "$project_dir" diff --quiet HEAD -- adoption.yml || {
+  echo "Fixed adoption record has uncommitted changes" >&2
+  exit 1
+}
 require_mise_tools yq ansible-playbook
-yq -e '.adopted == true' "$adoption_file" >/dev/null || {
+git -C "$project_dir" show HEAD:ansible/junos/adoption.yml |
+  yq -e '.adopted == true' - >/dev/null || {
   echo "Routine deployment is disabled until the fixed adoption record is true" >&2
   exit 1
 }

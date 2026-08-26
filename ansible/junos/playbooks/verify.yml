@@ -45,6 +45,10 @@
         verify_reviewed_apply_lines: >-
           {{ verify_candidate_text.splitlines() | map('trim')
              | select('match', '^set apply-groups ANSIBLE_SRX1500$') | list | sort }}
+        verify_reviewed_ordered_lines: >-
+          {{ verify_candidate_text.splitlines() | map('trim')
+             | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+             | list }}
       no_log: true
 
 
@@ -65,7 +69,7 @@
     - name: Read commit, managed configuration, and required operational evidence
       juniper.device.junos_command:
         commands:
-          - show system commit detail
+          - show system commit
           - show configuration groups ANSIBLE_SRX1500 | display set
           - show configuration apply-groups | display set
           - show interfaces terse | match 'irb[.]2510|irb[.]2512'
@@ -89,6 +93,10 @@
         verify_running_apply_lines: >-
           {{ verify_operational.stdout[2].splitlines() | map('trim')
              | reject('equalto', '') | list | sort }}
+        verify_running_ordered_lines: >-
+          {{ verify_operational.stdout[1].splitlines() | map('trim')
+             | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+             | list }}
       no_log: true
 
     - name: Require the newest pending commit and exact managed candidate
@@ -105,6 +113,7 @@
           - verify_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
           - verify_running_group_lines == verify_reviewed_group_lines
           - verify_running_apply_lines == verify_reviewed_apply_lines
+          - verify_running_ordered_lines == verify_reviewed_ordered_lines
         fail_msg: "Newest pending commit or complete managed configuration is not bound to this digest."
       no_log: true
 
