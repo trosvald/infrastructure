@@ -87,12 +87,16 @@ credentials. If UID 1000 cannot read the protected config-backed credential file
 `/run/secrets/librefs_root_user` and `/run/secrets/librefs_root_password` without widening host
 access, deployment stops; it does not fall back to plaintext environment values, plaintext
 compose `secrets.environment` content, or root execution without a new review. The runtime test
-always creates a uniquely named isolated network and container, generates per-run CSPRNG
-canaries, executes the actual `compose up`, and proves container health, exact file ownership
-and mode on the config-backed credential files, UID 1000 reads, and the absence of canary
-material in inspect, environment, and logs. The runtime test then cleans up the isolated
-network and container. The runtime test never skips when `c1_services` exists; the isolated
-test network is always freshly created and torn down.
+always creates a uniquely named isolated bridge network, container, and Docker named data
+volume (pre-owned `1000:1000`/`0750`, not a host temp bind) so containerized Linux Docker clients
+and CI exercise Compose 5.5 injection without host-path namespace mismatch; the production
+`/srv/librefs/data` bind with `create_host_path: false` remains statically asserted and
+live-verified separately. It generates per-run CSPRNG canaries, executes the actual
+`compose up`, and proves container health, exact file ownership and mode on the
+config-backed credential files, UID 1000 reads, and the absence of canary material in inspect,
+environment, and logs. The runtime test then cleans up the isolated bridge network, container,
+and named volume. The runtime test never skips when `c1_services` exists; the isolated test
+network and named volume are always freshly created and torn down.
 
 Restart authority belongs to systemd, not Docker. `librefs-c1.service` is the only process that
 starts (and restarts) the existing `librefs-c1` container; it runs `manage-c1-librefs` which

@@ -173,10 +173,14 @@ command-mockable where it exercises rejection paths, and must fail on any drift.
   every other hardening control is retained (UID/GID 1000, cap_drop ALL, no-new-privileges, /data
   bind create_host_path:false, /tmp tmpfs, limits/logs, restart:no, no ports/socket); any persistent
   write outside `/data` is a containment breach and stops the deploy;
-- runtime test always creates a uniquely named isolated network and container, generates per-run
-  CSPRNG canaries, executes the actual `compose up`, proves container health, exact file
-  ownership and mode on the config-backed credential files, UID 1000 reads, and the absence of
-  canary material in inspect, environment, and logs; cleans up the isolated network and container;
+- runtime test always creates a uniquely named isolated bridge network, container, and Docker
+  named data volume (pre-owned `1000:1000`/`0750`, not a host temp bind) so containerized
+  Linux Docker clients and CI exercise Compose 5.5 injection without host-path namespace
+  mismatch; the production `/srv/librefs/data` bind with `create_host_path: false` remains
+  statically asserted and live-verified separately. The test generates per-run CSPRNG canaries,
+  executes the actual `compose up`, proves container health, exact file ownership and mode on the
+  config-backed credential files, UID 1000 reads, and the absence of canary material in inspect,
+  environment, and logs; cleans up the isolated bridge network, container, and named volume;
   the runtime test never skips when `c1_services` exists;
 - Compose 5.5.0 plugin lock: `.mise/mise.lock` records Docker Compose 5.5.0 and CI activates
   that exact plugin. Doco 0.111.0 embeds Compose v5.5.0, so the runtime credential canary
@@ -271,28 +275,17 @@ not Docker secrets. Because Doco/Compose v5.5 rejects inline Compose `configs` f
 root filesystem, the operator selected a writable-root exception for libreFS only (see
 `LIBREFS.md` and `DESIGN-AND-PLAN.md`); every other hardening control is retained and any
 persistent write outside `/data` is a containment breach. The runtime test always creates a
-uniquely named isolated network and container, generates per-run CSPRNG canaries, executes the
-actual `compose up`, proves container health, exact file ownership and mode, UID 1000 reads,
+uniquely named isolated bridge network, container, and Docker named data volume (pre-owned
+`1000:1000`/`0750`, not a host temp bind) so containerized Linux Docker clients and CI
+exercise Compose 5.5 injection without host-path namespace mismatch; the production
+`/srv/librefs/data` bind with `create_host_path: false` remains statically asserted and
+live-verified separately. The test generates per-run CSPRNG canaries, executes the actual
+`compose up`, proves container health, exact file ownership and mode, UID 1000 reads,
 and the absence of canary material in inspect, environment, and logs; cleans up the isolated
-network and container; never skips when `c1_services` exists.
-Doco credential-materialization audit: the first live Doco 0.111.0 deploy attempted to feed
-Doco-resolved `LIBREFS_ROOT_USER` / `LIBREFS_ROOT_PASSWORD` into top-level Compose
-`secrets.environment`. Doco 0.111.0 rejected that source because only `file` is supported for
-`secrets.environment`. The deploy failed before container creation; no rendered project, no
-container, and no engine artifact contains the credential material. The corrected pattern
-uses top-level Compose `configs.content` populated from the Doco-resolved variables and
-mounted at `/run/secrets/librefs_root_user` and `/run/secrets/librefs_root_password` with mode
-`0400`, UID/GID `1000`. The container environment still exposes only the `_FILE` paths.
-Resolved values exist only in Doco's in-memory rendered project and may be materialized in
-protected engine or Doco artifacts during the deploy window. Config-backed credential files,
-not Docker secrets. Because Doco/Compose v5.5 rejects inline Compose `configs` for a read-only
-root filesystem, the operator selected a writable-root exception for libreFS only (see
-`LIBREFS.md` and `DESIGN-AND-PLAN.md`); every other hardening control is retained and any
-persistent write outside `/data` is a containment breach. The runtime test always creates a
-uniquely named isolated network and container, generates per-run CSPRNG canaries, executes the
-actual `compose up`, proves container health, exact file ownership and mode, UID 1000 reads,
-and the absence of canary material in inspect, environment, and logs; cleans up the isolated
-network and container; never skips when `c1_services` exists.
+bridge network, container, and named volume; never skips when `c1_services` exists.
+persistent write outside `/data` is a containment breach. Persistent write outside `/data` is
+statically asserted for the `/srv/librefs/data` bind and re-asserted by the runtime test.
+
 These are enforced stop conditions, not implied approvals. The 512 GB device remains excluded
 from any approval and is never an argument. Storage, network, and OpenBao mutation are no longer
 required for the current mission state.

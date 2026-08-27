@@ -276,13 +276,17 @@ trees/data volume/persisted deployment artifacts, Docker and containerd metadata
 application logs, temporary directories, and backup inputs is a blocking live canary. Mission
 is blocked pending a new PR, merge, and successful Doco redeploy under the corrected pattern.
 
-The runtime test always creates a uniquely named isolated network and container, generates
-per-run CSPRNG canaries, executes the actual `compose up`, and proves container health, exact
-file ownership and mode on the config-backed credential files at
+The runtime test always creates a uniquely named isolated bridge network, container, and
+Docker named data volume (pre-owned `1000:1000`/`0750`, not a host temp bind) so
+containerized Linux Docker clients and CI exercise Compose 5.5 injection without host-path
+namespace mismatch; the production `/srv/librefs/data` bind with `create_host_path: false`
+remains statically asserted and live-verified separately. The test generates per-run CSPRNG
+canaries, executes the actual `compose up`, and proves container health, exact file ownership
+and mode on the config-backed credential files at
 `/run/secrets/librefs_root_{user,password}`, UID 1000 reads, and the absence of canary material
-in inspect, environment, and logs. The runtime test then cleans up the isolated network and
-container. The runtime test never skips when `c1_services` exists; the isolated test network is
-always freshly created and torn down.
+in inspect, environment, and logs. The runtime test then cleans up the isolated bridge
+network, container, and named volume. The runtime test never skips when `c1_services` exists;
+the isolated test network and named volume are always freshly created and torn down.
 
 Do not deploy libreFS with real credentials until the exact-value leakage scan passes and the
 complete allowed and denied cleartext source matrix is verified. Before `main` contains the app,

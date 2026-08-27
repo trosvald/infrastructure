@@ -433,10 +433,13 @@ introduced.
   other hardening control and `restart: no` are still asserted, and any persistent write
   outside `/data` is a containment breach;
 - the runtime credential canary executes the actual `compose up` with per-run CSPRNG canaries
-  on a uniquely named isolated network and container (never reusing `c1_services`); proves
-  container health, exact file ownership and mode on the config-backed credential files, UID
-  1000 reads, and the absence of canary material in inspect, environment, and logs; cleans up
-  the isolated network and container;
+  on a uniquely named isolated bridge network, container, and Docker named data volume
+  (pre-owned `1000:1000`/`0750`, not a host temp bind) so containerized Linux Docker clients and
+  CI exercise Compose 5.5 injection without host-path namespace mismatch; the production
+  `/srv/librefs/data` bind with `create_host_path: false` remains statically asserted and
+  live-verified separately. The canary proves container health, exact file ownership and mode
+  on the config-backed credential files, UID 1000 reads, and the absence of canary material in
+  inspect, environment, and logs; cleans up the isolated bridge network, container, and named volume;
 - `validate-c1` runs against the exact Compose 5.5.0 plugin locked in `.mise/mise.lock` and
   activated by CI. Doco 0.111.0 embeds Compose v5.5.0, so the runtime credential canary
   executes the same Compose injection semantics in local and CI as in live Doco.

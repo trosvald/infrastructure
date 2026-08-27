@@ -8,6 +8,7 @@ test_id="$$"
 test_octet=$((test_id % 180 + 40))
 test_network="librefs-config-test-$test_id"
 test_container="librefs-c1-config-test-$test_id"
+test_volume="librefs-config-test-data-$test_id"
 test_subnet="172.29.${test_octet}.0/24"
 test_gateway="172.29.${test_octet}.1"
 test_ip="172.29.${test_octet}.65"
@@ -17,6 +18,7 @@ export LIBREFS_ROOT_USER LIBREFS_ROOT_PASSWORD
 cleanup() {
     docker rm -f "$test_container" >/dev/null 2>&1 || true
     docker network rm "$test_network" >/dev/null 2>&1 || true
+    docker volume rm "$test_volume" >/dev/null 2>&1 || true
     rm -rf "$work"
 }
 trap cleanup EXIT
@@ -80,9 +82,12 @@ printf 'libreFS rendered Compose contract passed\n'
 
 docker network create --driver bridge --subnet "$test_subnet" \
     --gateway "$test_gateway" "$test_network" >/dev/null
-data_dir="$work/data"
-mkdir "$data_dir"
-chmod 0777 "$data_dir"
+docker volume create "$test_volume" >/dev/null
+docker run --rm --platform linux/amd64 --network none --user 0:0 \
+    --mount type=volume,src="$test_volume",dst=/data \
+    --entrypoint /bin/sh \
+    ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab \
+    -ec 'chown 1000:1000 /data; chmod 0750 /data'
 override="$work/override.yml"
 cat >"$override" <<'YAML'
 ---
@@ -91,11 +96,11 @@ services:
   librefs:
     container_name: ${LIBREFS_TEST_CONTAINER:?required}
     volumes:
-      - type: bind
-        source: ${LIBREFS_TEST_DATA:?required}
+      - type: volume
+        source: librefs_test_data
         target: /data
-        bind:
-          create_host_path: false
+        volume:
+          nocopy: true
     networks:
       c1_services:
         ipv4_address: ${LIBREFS_TEST_IP:?required}
@@ -103,12 +108,16 @@ networks:
   c1_services:
     name: ${LIBREFS_TEST_NETWORK:?required}
     external: true
+volumes:
+  librefs_test_data:
+    name: ${LIBREFS_TEST_VOLUME:?required}
+    external: true
 YAML
 LIBREFS_TEST_PROJECT="librefs-c1-config-test-$test_id" \
 LIBREFS_TEST_CONTAINER="$test_container" \
-LIBREFS_TEST_DATA="$data_dir" \
 LIBREFS_TEST_IP="$test_ip" \
 LIBREFS_TEST_NETWORK="$test_network" \
+LIBREFS_TEST_VOLUME="$test_volume" \
     docker compose -f "$COMPOSE" -f "$override" up -d --pull always >/dev/null
 ready=false
 for _ in $(seq 1 60); do
