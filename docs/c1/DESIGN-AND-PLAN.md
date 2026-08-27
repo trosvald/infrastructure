@@ -270,6 +270,27 @@ requires public `main` to contain the exact reviewed provider-backed libreFS map
 container health and an authenticated tracked Doco poll that exercises OpenBao resolution. The old
 token is not revoked on a pre-merge Git-only poll.
 
+### Credential-materialization correction (live Doco 0.111.0)
+
+The first live Doco deploy attempted to feed Doco-resolved `LIBREFS_ROOT_USER` and
+`LIBREFS_ROOT_PASSWORD` into top-level Compose `secrets.environment`. Doco 0.111.0 rejected that
+source because only `file` is supported for `secrets.environment`. The deploy failed before
+container creation; no rendered project, no container, and no engine artifact contains the
+credential material. The corrected pattern follows the official Doco external-secrets example
+using top-level Compose `configs.content` populated from the Doco-resolved variables and mounted
+at `/run/secrets/librefs_root_user` and `/run/secrets/librefs_root_password` with mode `0400`,
+UID/GID `1000`. The container environment still exposes only the `_FILE` paths; the resolved
+values exist only in Doco's in-memory rendered project and may be materialized in protected
+engine or Doco artifacts during the deploy window. A full exact-value leakage scan covering
+container environment, rendered Compose output, project labels, runtime secret/config metadata,
+Doco logs/working trees/data volume/persisted deployment artifacts, Docker and containerd
+metadata, journald, application logs, temporary directories, and backup inputs is a blocking
+live canary. Mission is blocked pending a new PR, merge, and successful Doco redeploy under the
+corrected pattern. The token and API-secret rotation contract below is preserved. The libreFS
+container uses a writable-root exception (see `libreFS decision`) so the
+`configs.content`-mounted credential files can be materialized; this is the only container
+that omits `read_only: true` and the omission is operator-selected after review.
+
 Doco 0.111.0 resolves ordinary KV values before computing its rendered project hash; a changed
 value can trigger recreation on the next poll. Credential rotation is gated by stopping Doco before
 the KV write and starting/recreating it only when the application recreation is intended. The
@@ -305,10 +326,23 @@ ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd7
 ```
 
 Use `linux/amd64`, command `server /data --console-address :9001`, static `.65`, no host ports,
-UID/GID 1000, read-only root, all capabilities dropped, no-new-privileges, hardened `/tmp`, exact
-bind, Compose secrets, resource/PID/nofile ceilings, 60-second grace, and bounded logs. The
-Bash `/dev/tcp` HTTP readiness check is proven against this image.
+UID/GID 1000, all capabilities dropped, no-new-privileges, hardened `/tmp`, exact bind, top-level
+Compose `configs.content` mounting the Doco-resolved `LIBREFS_ROOT_USER`/`LIBREFS_ROOT_PASSWORD`
+values at `/run/secrets/librefs_root_{user,password}` mode `0400` UID/GID 1000, resource/
+PID/nofile ceilings, 60-second grace, and bounded logs. The Bash `/dev/tcp` HTTP readiness check
+is proven against this image.
 
+**Writable-root exception (operator selection).** Doco/Compose v5.5 rejects inline Compose
+`configs` for a read-only root filesystem because the config file cannot be materialized on a
+read-only layer. After review proved this incompatibility, the operator explicitly selected a
+writable-root exception for the libreFS container only. The `read_only: true` declaration is
+omitted; the container root is writable. Every other hardening control above is retained. The
+exception is scope-limited to libreFS only; future c1 applications must keep `read_only: true`
+unless they repeat this reviewed exception. Writable-layer custody risk: the libreFS process
+can write to its own root filesystem; any reachable path is a potential write target.
+Mitigations are the bind source-of-truth on the host, the tmpfs-only `/tmp`, the read-only
+credentials at `/run/secrets/*`, the dropped capabilities, and the `restart: no` ownership by
+systemd. Any persistent write outside `/data` is a containment breach and stops the deploy.
 Initial cleartext access is allowed only from management `10.25.10.0/24` and SERVICES
 `10.25.13.0/24`; every other routed source and the public internet must fail for both API and
 console. The required matrix uses one management client, the c1 SERVICES shim, one denied client in
@@ -392,9 +426,23 @@ introduced.
   non-1 TB by-id input, and the 512 GB device; the approval parser enforces the exact six-line
   APPROVE C1 STORAGE block, rejects any 512GB line, and rejects mismatched PARTITION_LAYOUT;
 - no committed stable IDs, UUIDs, serials, secrets, or approval tokens;
-- rendered libreFS image/platform/IP/network/mount/no-port/no-socket/non-root/read-only/security,
-  limits/logs/health/secrets, absence of `latest` or plaintext credentials, and `restart: no` so
-  Docker cannot auto-restart libreFS;
+- rendered libreFS image/platform/IP/network/mount/no-port/no-socket/UID 1000/cap_drop ALL/
+  no-new-privileges/limits/logs/health/secrets and absence of `latest` or plaintext credentials.
+  `read_only: true` is intentionally omitted for libreFS only (operator-selected writable-root
+  exception; Doco/Compose v5.5.0 rejects inline Compose `configs` on a read-only root); every
+  other hardening control and `restart: no` are still asserted, and any persistent write
+  outside `/data` is a containment breach;
+- the runtime credential canary executes the actual `compose up` with per-run CSPRNG canaries
+  on a uniquely named isolated bridge network, container, and Docker named data volume
+  (pre-owned `1000:1000`/`0750`, not a host temp bind) so containerized Linux Docker clients and
+  CI exercise Compose 5.5 injection without host-path namespace mismatch; the production
+  `/srv/librefs/data` bind with `create_host_path: false` remains statically asserted and
+  live-verified separately. The canary proves container health, exact file ownership and mode
+  on the config-backed credential files, UID 1000 reads, and the absence of canary material in
+  inspect, environment, and logs; cleans up the isolated bridge network, container, and named volume;
+- `validate-c1` runs against the exact Compose 5.5.0 plugin locked in `.mise/mise.lock` and
+  activated by CI. Doco 0.111.0 embeds Compose v5.5.0, so the runtime credential canary
+  executes the same Compose injection semantics in local and CI as in live Doco.
 - rendered `librefs-c1.service` and `manage-c1-librefs` ordering requires
   `c1-librefs-storage.service`, `c1-applications-storage.service`, `assert-c1-mount`, and
   `c1-services-network.service` active before `docker start` (the systemd unit and helper filenames
@@ -402,7 +450,7 @@ introduced.
   unit transitively Requires/After Docker and the shim unit `c1-services-shim.service`, whose
   interface is `c1-svc-shim` ≤16 chars); `doco-cd-c1.service` requires the same storage
   prerequisites plus the token TTL gate before its controller start;
-- existing `validate-c0`, Gitleaks, yamllint, shell syntax, and actionlint remain in CI.
+- `validate-c0`, Gitleaks, yamllint, shell syntax, and actionlint remain in CI.
 
 The pre-existing c0 exit-1 failure must be diagnosed and kept separate. c1 work may not bypass or
 weaken it.

@@ -49,6 +49,7 @@ jobs:
           install_args: >-
             aqua:astral-sh/uv
             aqua:casey/just
+            aqua:docker/compose
             aqua:getsops/sops
             aqua:gitleaks/gitleaks
             aqua:jqlang/jq
@@ -61,8 +62,12 @@ jobs:
         run: scripts/gitleaks-scan.sh
       - name: Validate workflow syntax
         run: actionlint
-      - name: Verify Docker Compose prerequisite
-        run: docker compose version
+      - name: Activate locked Docker Compose
+        run: |
+          install -d -m 0755 "$HOME/.docker/cli-plugins"
+          ln -sf "$(command -v docker-cli-plugin-docker-compose)" \
+            "$HOME/.docker/cli-plugins/docker-compose"
+          test "$(docker compose version --short)" = "5.5.0"
       - name: Validate c0 Doco-CD configuration
         run: just docker validate-c0
       - name: Validate c1 shell and configuration contracts

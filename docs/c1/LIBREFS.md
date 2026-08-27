@@ -53,7 +53,18 @@ explicitly non-durable service holding no irreplaceable data. The status remains
 - static address: `10.25.13.65`;
 - platform: `linux/amd64`;
 - user: `1000:1000`;
-- `read_only: true`;
+- **Writable-root exception (operator selection).** Doco/Compose v5.5 rejects inline Compose
+  `configs` for a read-only root filesystem because the config file cannot be materialized on
+  a read-only layer. After review proved this incompatibility, the operator explicitly selected
+  a writable-root exception for the libreFS container only. The `read_only: true` declaration is
+  omitted; the container root is writable. Every other hardening control below is retained. The
+  exception is scope-limited to libreFS only; future c1 applications must keep `read_only: true`
+  unless they repeat this reviewed exception.
+- Writable-layer custody risk: the libreFS process can write to its own root filesystem; any
+  reachable path is a potential write target. Mitigations are the bind source-of-truth on the
+  host, the tmpfs-only `/tmp`, the read-only credentials at `/run/secrets/*`, the dropped
+  capabilities, and the `restart: no` ownership by systemd. Any persistent write outside
+  `/data` is a containment breach and stops the deploy.
 - `cap_drop: [ALL]`;
 - `security_opt: [no-new-privileges:true]`;
 - no privileged mode, devices, Docker socket, host PID, host IPC, or host network;
@@ -61,12 +72,31 @@ explicitly non-durable service holding no irreplaceable data. The status remains
   `bind.create_host_path: false`;
 - `/tmp` tmpfs: `rw,nosuid,nodev,noexec,mode=1777`;
 - `HOME=/tmp`;
-- two Compose secrets sourced from Doco-resolved deployment variables;
-- application environment contains only the two `_FILE` paths;
+- two top-level Compose `configs.content` entries populated from the Doco-resolved
+  `LIBREFS_ROOT_USER` and `LIBREFS_ROOT_PASSWORD` deployment variables (config-backed credential
+  files, not Docker secrets), mounted at `/run/secrets/librefs_root_user` and
+  `/run/secrets/librefs_root_password` with mode `0400`, UID/GID `1000`;
+- application environment contains only the two `_FILE` paths; resolved values never appear in
+  the container environment;
 - restart policy `no` (Docker must never auto-restart libreFS);
 - stop grace period 60 seconds;
 - containment ceilings: 4 CPUs, 8 GiB memory, 8 GiB memory+swap, 512 PIDs, and nofile 65536;
 - JSON logs limited to 10 MiB times three files.
+Compose-config UID/GID/mode behavior must be proven on c1 with non-secret canaries before real
+credentials. If UID 1000 cannot read the protected config-backed credential files at
+`/run/secrets/librefs_root_user` and `/run/secrets/librefs_root_password` without widening host
+access, deployment stops; it does not fall back to plaintext environment values, plaintext
+compose `secrets.environment` content, or root execution without a new review. The runtime test
+always creates a uniquely named isolated bridge network, container, and Docker named data
+volume (pre-owned `1000:1000`/`0750`, not a host temp bind) so containerized Linux Docker clients
+and CI exercise Compose 5.5 injection without host-path namespace mismatch; the production
+`/srv/librefs/data` bind with `create_host_path: false` remains statically asserted and
+live-verified separately. It generates per-run CSPRNG canaries, executes the actual
+`compose up`, and proves container health, exact file ownership and mode on the
+config-backed credential files, UID 1000 reads, and the absence of canary material in inspect,
+environment, and logs. The runtime test then cleans up the isolated bridge network, container,
+and named volume. The runtime test never skips when `c1_services` exists; the isolated test
+network and named volume are always freshly created and torn down.
 
 Restart authority belongs to systemd, not Docker. `librefs-c1.service` is the only process that
 starts (and restarts) the existing `librefs-c1` container; it runs `manage-c1-librefs` which
@@ -77,14 +107,6 @@ interface on `bond0.2513` is `c1-svc-shim` ≤16 chars), and `assert-c1-mount` a
 (or restarted) while a partition mount is missing or while the shim is down. An initial Doco
 deploy is therefore safe because Doco itself requires the same storage units and the network unit
 (which transitively depends on the shim) before its controller can start.
-
-The storage prerequisite creates `/srv/librefs/data` as UID/GID 1000, mode `0750`, only while the
-approved 1 TB partition 1 is mounted at `/srv/librefs`. The directory does not exist beneath an
-unmounted `/srv/librefs`. Docker must fail rather than create it on the OS disk.
-
-Compose-secret UID/GID/mode behavior must be proven on c1 with non-secret canaries before real
-credentials. If UID 1000 cannot read a protected secret without widening host access, deployment
-stops; it does not fall back to plaintext environment values or root execution without a new review.
 
 ## Healthcheck
 

@@ -10,14 +10,21 @@ services:
     command: ["server", "/data", "--console-address", ":9001"]
     user: "1000:1000"
     restart: "no"
-    read_only: true
     environment:
       HOME: /tmp
       MINIO_ROOT_USER_FILE: /run/secrets/librefs_root_user
       MINIO_ROOT_PASSWORD_FILE: /run/secrets/librefs_root_password
-    secrets:
-      - librefs_root_user
-      - librefs_root_password
+    configs:
+      - source: librefs_root_user
+        target: /run/secrets/librefs_root_user
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
+      - source: librefs_root_password
+        target: /run/secrets/librefs_root_password
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
     cap_drop:
       - ALL
     security_opt:
@@ -63,11 +70,11 @@ services:
         max-size: 10m
         max-file: "3"
 
-secrets:
+configs:
   librefs_root_user:
-    environment: LIBREFS_ROOT_USER
+    content: ${LIBREFS_ROOT_USER:?required}
   librefs_root_password:
-    environment: LIBREFS_ROOT_PASSWORD
+    content: ${LIBREFS_ROOT_PASSWORD:?required}
 
 networks:
   c1_services:

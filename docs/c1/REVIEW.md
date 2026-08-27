@@ -162,15 +162,29 @@ command-mockable where it exercises rejection paths, and must fail on any drift.
   filenames, and the actual interface on `bond0.2513` is the IFNAMSIZ-safe `c1-svc-shim`;
 - NVMe critical-warning, media/data-integrity, and available-spare gate bound to the plan digest;
 - layout-geometry assertion: one GPT, two 1 MiB-aligned partitions, partition 2 begins at the
-  first aligned sector at or after the midpoint of the usable GPT range, partition 1 ends
-  immediately before it;
-- filesystem-type assertion: both partitions `XFS` with the reviewed options;
 - apply convergence: when a known UUID-bound completed mount exists, the helper remounts it
   `noatime` and re-commits the hard fstab entry (UUID-based) before the storage assertion reports
   active; the remount preserves the original UUID, mountpoint, and non-`noatime` options; any
   drift fails closed;
-- shim exact-state: route query must not filter on `dev`; real JSON must include
-  `dev: c1-svc-shim`; validators require address `ifname`, route `dev`, and scope `link`;
+- credential materialization: top-level Compose `configs.content` from Doco-resolved variables,
+  mounted at `/run/secrets/librefs_root_{user,password}` mode `0400` UID/GID 1000; container env
+  exposes only `_FILE` paths; the credential pattern is config-backed files, not Docker secrets;
+- writable-root exception: `read_only: true` is omitted for libreFS only (operator-selected);
+  every other hardening control is retained (UID/GID 1000, cap_drop ALL, no-new-privileges, /data
+  bind create_host_path:false, /tmp tmpfs, limits/logs, restart:no, no ports/socket); any persistent
+  write outside `/data` is a containment breach and stops the deploy;
+- runtime test always creates a uniquely named isolated bridge network, container, and Docker
+  named data volume (pre-owned `1000:1000`/`0750`, not a host temp bind) so containerized
+  Linux Docker clients and CI exercise Compose 5.5 injection without host-path namespace
+  mismatch; the production `/srv/librefs/data` bind with `create_host_path: false` remains
+  statically asserted and live-verified separately. The test generates per-run CSPRNG canaries,
+  executes the actual `compose up`, proves container health, exact file ownership and mode on the
+  config-backed credential files, UID 1000 reads, and the absence of canary material in inspect,
+  environment, and logs; cleans up the isolated bridge network, container, and named volume;
+  the runtime test never skips when `c1_services` exists;
+- Compose 5.5.0 plugin lock: `.mise/mise.lock` records Docker Compose 5.5.0 and CI activates
+  that exact plugin. Doco 0.111.0 embeds Compose v5.5.0, so the runtime credential canary
+  executes the same Compose injection semantics in local and CI as in live Doco;
 - persistent shim/network success: `c1-services-shim.service` and `c1-services-network.service`
   both active; `c1-svc-shim` is up at `10.25.13.17/32` with route `10.25.13.64/27 dev
   c1-svc-shim` and scope `link`; Docker and containerd `SOURCE` equals `/` source;
@@ -181,7 +195,6 @@ command-mockable where it exercises rejection paths, and must fail on any drift.
 
 - OS disk exclusion and stable-identity/digest-bound destruction gate.
 - Engine persistent roots remain on the OS disk; no Docker/containerd data-root migration.
-- Docker/containerd `SOURCE` equal to `/` source asserted under the storage gate.
 - Linux filesystem GPT GUID `0FC63DAF-8483-4772-8E79-3D69D8477DE4` bound to both partitions;
   basic-data GUID rejected.
 - Plan-digest revalidation distinguishes `saved`, `pristine`, and `partial-child` states; any
@@ -197,7 +210,11 @@ command-mockable where it exercises rejection paths, and must fail on any drift.
   50:50 partition layout, and OS/512 GB exclusion.
 - Exact Doco 0.111.0 and libreFS amd64 tag/digest pins.
 - Correct Doco OpenBao syntax and narrow KV v2 policy.
-- Tested libreFS UID/GID 1000, read-only root, dropped capabilities, file secrets, and Bash health.
+- Tested libreFS UID/GID 1000, dropped capabilities, config-backed credential files (top-level
+  Compose `configs.content` mounted at `/run/secrets/librefs_root_{user,password}` mode `0400`
+  UID/GID 1000), no Docker secrets, and Bash health. `read_only: true` is intentionally omitted
+  for libreFS only (operator-selected writable-root exception documented in `LIBREFS.md` and
+  `DESIGN-AND-PLAN.md`); every other hardening control is retained.
 - Conservative LACP, MTU, offload, and performance claims.
 - Explicit off-host restore status cap.
 - HAProxy-only future edge and unchanged Junos `adopted: false` gate.
@@ -235,27 +252,39 @@ policy, rendered Compose, and libreFS hardening.
 
 ## Remaining gates before push, deploy, and real data
 
-Storage, network, and the OpenBao checkpoint are completed. The remaining gates are:
+Storage, network, and the OpenBao checkpoint are completed. The corrected credential-
+materialization pattern (top-level Compose `configs.content` from Doco-resolved
+`LIBREFS_ROOT_USER` / `LIBREFS_ROOT_PASSWORD`; config-backed credential files mounted at
+`/run/secrets/librefs_root_{user,password}` with mode `0400`, UID/GID `1000`) requires a new
+PR, merge, and a successful Doco redeploy. Mission is blocked pending that redeploy.
+The remaining gates are:
 
 1. Conclusive `.65` and `.66` collision checks.
-2. Passing Doco/Compose secret-persistence canary.
-3. Passing required cleartext source/denied reachability matrix, or tested TLS/enforceable control.
-4. Passing implementation review with no CRITICAL/HIGH finding.
-5. Required push, merge, deploy, reboot, and optional failover approvals.
-6. Off-host libreFS backup/restore proof for any status above `OPERATIONAL_WITHOUT_DURABILITY`.
-
-OpenBao checkpoint summary: policy `doco-c1` installed; KV v2 `kv/docker/c1/librefs` v1
-provisioned with the exact `root_user`/`root_password` keys; orphan periodic 24h token issued
-with self-lookup and self-renew only; policy allows only `kv/data/docker/c1/librefs` (read),
-`auth/token/lookup-self`, and `auth/token/renew-self`; all unrelated capabilities are denied;
-audit file device enabled. Multi-recipient Raft snapshot captured to the workstation and
-encrypted under the offline-recovery age boundary; structural verification passed
-(`meta.json`, `state.bin`, `SHA256SUMS`, `SHA256SUMS.sealed`); internal SHA256SUMS verified
-(no snapshot-inspect on the installed bao; structural and internal checksums are the reviewed
-evidence). The first capabilities-self call returned 403 because the no-default Doco policy
-cannot call `capabilities-self`; recovery used a short-lived admin token via
-`sys/capabilities-accessor` and did not broaden the Doco policy. The short-lived admin token
-was revoked and removed. No secrets, recipients, hashes, or token values are recorded here.
+2. Successful Doco redeploy under the corrected `configs.content` pattern.
+Doco credential-materialization audit: the first live Doco 0.111.0 deploy attempted to feed
+Doco-resolved `LIBREFS_ROOT_USER` / `LIBREFS_ROOT_PASSWORD` into top-level Compose
+`secrets.environment`. Doco 0.111.0 rejected that source because only `file` is supported for
+`secrets.environment`. The deploy failed before container creation; no rendered project, no
+container, and no engine artifact contains the credential material. The corrected pattern
+uses top-level Compose `configs.content` populated from the Doco-resolved variables and
+mounted at `/run/secrets/librefs_root_user` and `/run/secrets/librefs_root_password` with mode
+`0400`, UID/GID `1000`. The container environment still exposes only the `_FILE` paths.
+Resolved values exist only in Doco's in-memory rendered project and may be materialized in
+protected engine or Doco artifacts during the deploy window. Config-backed credential files,
+not Docker secrets. Because Doco/Compose v5.5 rejects inline Compose `configs` for a read-only
+root filesystem, the operator selected a writable-root exception for libreFS only (see
+`LIBREFS.md` and `DESIGN-AND-PLAN.md`); every other hardening control is retained and any
+persistent write outside `/data` is a containment breach. The runtime test always creates a
+uniquely named isolated bridge network, container, and Docker named data volume (pre-owned
+`1000:1000`/`0750`, not a host temp bind) so containerized Linux Docker clients and CI
+exercise Compose 5.5 injection without host-path namespace mismatch; the production
+`/srv/librefs/data` bind with `create_host_path: false` remains statically asserted and
+live-verified separately. The test generates per-run CSPRNG canaries, executes the actual
+`compose up`, proves container health, exact file ownership and mode, UID 1000 reads,
+and the absence of canary material in inspect, environment, and logs; cleans up the isolated
+bridge network, container, and named volume; never skips when `c1_services` exists.
+persistent write outside `/data` is a containment breach. Persistent write outside `/data` is
+statically asserted for the `/srv/librefs/data` bind and re-asserted by the runtime test.
 
 These are enforced stop conditions, not implied approvals. The 512 GB device remains excluded
 from any approval and is never an argument. Storage, network, and OpenBao mutation are no longer

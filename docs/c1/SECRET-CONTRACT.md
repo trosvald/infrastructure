@@ -59,16 +59,32 @@ external_secrets:
 ```
 
 The first `kv` is the provider reference type; the second is the KV mount name. Doco supplies the
-resolved values only to the Compose deployment process. Compose creates two runtime secrets from
-the deployment variables. The libreFS container receives only:
+resolved values only to the Compose deployment process. The first Doco deploy attempted to feed
+these resolved values into top-level Compose `secrets.environment`; Doco 0.111.0 rejected that
+source because only `file` is supported for `secrets.environment`. The deploy failed before
+container creation; no rendered project, no container, and no engine artifact contains the
+credential material. The corrected pattern follows the official Doco external-secrets example:
+top-level Compose `configs.content` is populated from the Doco-resolved `LIBREFS_ROOT_USER`
+and `LIBREFS_ROOT_PASSWORD` variables, and the resulting config files are mounted at
+`/run/secrets/librefs_root_user` and `/run/secrets/librefs_root_password` with mode `0400`,
+UID/GID `1000`. These are config-backed credential files, not Docker secrets. The libreFS
+container uses a writable-root exception (operator-selected; see `LIBREFS.md`) so these
+config files can be materialized; `read_only: true` is intentionally omitted for libreFS only,
+and every other hardening control is retained.
 
 ```text
 MINIO_ROOT_USER_FILE=/run/secrets/librefs_root_user
 MINIO_ROOT_PASSWORD_FILE=/run/secrets/librefs_root_password
 ```
 
-The values themselves must not appear in the container environment or Docker inspect output.
-Runtime secret files remain sensitive engine state even when they are not visible in inspect.
+The resolved values themselves must not appear in the container environment, Docker inspect
+output, or any ordinary log. Resolved values exist only in Doco's in-memory rendered project and
+may be materialized in protected engine or Doco artifacts during the deploy window. A full
+exact-value leakage scan covering container environment, rendered Compose output, project
+labels, runtime secret/config metadata, Doco logs/working trees/data volume/persisted deployment
+artifacts, Docker and containerd metadata, journald, application logs, temporary directories,
+and backup inputs is a blocking live canary. Mission is blocked pending a new PR, merge, and
+successful Doco redeploy under the corrected pattern.
 
 ## Doco policy
 
