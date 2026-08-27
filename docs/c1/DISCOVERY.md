@@ -27,12 +27,17 @@ runtime contents were observed only inside the two approved `/run/secrets` files
 location contained the credential values. The writable-layer diff against the static
 `/srv/librefs/data` bind and the read-only mounts showed writes only on the `/run/secrets`
 paths (config file materialization by Compose) and on the `/data` bind (libreFS data
-operations); no writes were observed elsewhere. Rotation scan remains pending. The checker
-false-negative discovered during this verification: the Doco single-run response wraps the run
-status under a top-level `.content` field; the source and test are being fixed to parse that
-structure. Mission is not marked complete — remaining gates are token rotation scan, push, merge
-follow-up if any, deploy verification on the next change, reboot, and off-host libreFS backup/
-restore.
+operations); no writes were observed elsewhere. The rotation leakage gate is closed: OpenBao
+KV v2 `kv/docker/c1/librefs` was rotated twice with CAS ending at version 3; each new pair
+was rematerialized through Doco's OpenBao provider; the second rotation proved the prior pair
+absent from runtime files, inspect/env/logs, Doco and libreFS journals, Doco volume/worktrees,
+Docker container metadata, containerd, and the export; the current pair existed only in the two
+approved `/run/secrets` files. Short-lived admin token revoked; local rotation/comparison
+material removed. The checker false-negative discovered during verification: the Doco single-run
+response wraps the run status under a top-level `.content` field; the source and test fix is
+in progress. Mission is not marked complete — remaining live gates are approved reboot
+persistence and optional separately approved bond-member failover; the off-host libreFS backup
+is a verified absent status cap (`OPERATIONAL_WITHOUT_DURABILITY`), not an unrun status check.
 - the 512 GB NVMe is quarantined/unmounted/excluded (firmware VC400618 has no verified official
   updater);
 - the 1 TB NVMe is split 50:50 between `/srv/librefs` (GPT PARTLABEL `c1_librefs`, XFS label
@@ -56,6 +61,37 @@ restore.
   Doco policy cannot call `capabilities-self`; recovery used a short-lived admin token via
   `sys/capabilities-accessor` and did not broaden the Doco policy. The short-lived admin token
   was revoked and removed. No secrets, recipients, hashes, or token values are recorded here.
+- the credential rotation leakage gate is closed: OpenBao KV v2 `kv/docker/c1/librefs` was
+  rotated twice with CAS ending at version 3; each new pair was rematerialized through Doco's
+  OpenBao provider. The exact-value scan passed for the first rotated pair; after the second
+  rotation it proved the prior pair absent from the current runtime files, container inspect/
+  environment/logs, Doco and libreFS journals, the Doco data volume and working trees, Docker
+  container metadata, containerd, and the export. The current pair existed only in the two
+  approved `/run/secrets` files. The short-lived admin token was revoked; local rotation/
+  comparison material was removed. The new repository helper
+  `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` codifies the fail-closed
+  rematerialization procedure (stop `librefs-c1.service`, remove only the stateless container,
+  invoke an isolated local-only Git custom target through Doco to recreate with current provider
+  values, normalize provenance to remote `main`, restart/check the systemd gate, clean both
+  the temporary source tree and the cache); a failed rematerialization can cause service
+  unavailability but never data loss and must be rerun after correcting Doco or provider
+  health.
+
+- the S3 and performance matrices are complete: a scoped non-root S3 probe used the pinned
+  `quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727`
+  on `c1_services`, created a temporary bucket/user/policy limited to `GetBucketLocation`/
+  `ListBucket`/`Get/Put/DeleteObject` for that bucket, passed ready/upload/stat/download/
+  checksum/delete, and proved unauthorized bucket creation denied; synthetic artifacts cleaned.
+  512 MiB same-host Docker-network S3 baseline: upload 567,957,345 B/s, download
+  1,863,741,635 B/s (local bridge + storage + application evidence, not external 10 Gb/s
+  proof). Workstation-to-c1 SERVICES TCP baseline over the actual routed path: sender
+  113,948,113 bit/s, receiver 112,622,607 bit/s for 256 MiB (path and workstation limited,
+  not LACP capacity);
+- the off-host libreFS backup check confirmed that Doco manages only `doco-cd-c1` and
+  `librefs-c1`; no libreFS backup service, project, or target exists on c1 (only the Debian
+  `dpkg-db-backup` units). No restore was possible; final durability cap remains
+  `OPERATIONAL_WITHOUT_DURABILITY`. Mission is not marked complete; remaining live gates are
+  approved reboot persistence and optional separately approved bond-member failover.
 
 ## Doco credential-materialization correction
 
@@ -96,9 +132,12 @@ Resolved values exist only in Doco's in-memory rendered project and may be mater
 protected engine or Doco artifacts during the deploy window. A full exact-value leakage scan
 covering container environment, rendered Compose output, project labels, runtime secret/
 config metadata, Doco logs/working trees/data volume/persisted deployment artifacts, Docker and
-containerd metadata, journald, application logs, temporary directories, and backup inputs is a
-blocking live canary. Mission is blocked pending a new PR, merge, and successful Doco redeploy
-under the corrected pattern.
+containerd metadata, journald, application logs, temporary directories, and backup inputs was a
+blocking live canary at PR6 design time. PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) is
+merged; the scan passed on the merged artifact. The credential rotation leakage gate is closed:
+OpenBao KV v2 `kv/docker/c1/librefs` was rotated twice with CAS ending at version 3, and each
+rotation proved the prior pair absent from every location while the current pair existed only
+in the two approved `/run/secrets` files.
 No host, network, storage, package, or service mutation occurred outside the reviewed corrected
 retry on the 1 TB NVMe and the reviewed OpenBao checkpoint.
 
@@ -247,8 +286,16 @@ Official 0.111.0 sources verify:
 - the token file is parsed when provider configuration is constructed and the client retains that
   token; token replacement requires controlled controller force-recreation so a replaced
   file-backed secret is remounted;
-- ordinary KV values are resolved before the rendered project hash is compared; a value change can
-  trigger recreation on the next poll, so operator-gated rotation stops Doco before the KV write;
+- ordinary KV values are resolved before the rendered project hash is compared, but live proof
+  under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) showed that an ordinary KV value
+  change alone does NOT redeploy or rematerialize the container when the Git source is
+  unchanged: Doco and the existing `librefs-c1` container continue to hold the prior pair.
+  Operator-gated rotation therefore uses the fail-closed rematerialize helper
+  (`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh`) to stop the systemd
+  service, remove only the stateless container (never `/data` or named volumes), invoke an
+  isolated local-only Git custom target through Doco to recreate with current provider
+  values, normalize provenance to remote `main`, restart/check the systemd gate, and clean
+  both the temporary source tree and the cache;
 - values may feed Compose `configs` or `secrets`, avoiding application environment values when the
   selected image supports file variables.
 

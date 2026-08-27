@@ -1,7 +1,7 @@
 # c1 Secret Contract
 
 Date: 2026-08-26
-Status: storage and network applied and verified (1 TB split: `c1_librefs` at `/srv/librefs`,
+Status: design; storage and network applied and verified (1 TB split: `c1_librefs` at `/srv/librefs`,
 `c1_apps` at `/srv/applications`, `defaults,noatime`; Docker/containerd `SOURCE` equals `/` source;
 `c1-svc-shim` and `c1-services-network.service` active; 512 GB excluded). OpenBao checkpoint
 completed: policy `doco-c1` installed; KV v2 `kv/docker/c1/librefs` v1 provisioned with the exact
@@ -12,11 +12,17 @@ enabled. Multi-recipient Raft snapshot captured to the workstation and encrypted
 offline-recovery age boundary; structural verification passed (`meta.json`, `state.bin`,
 `SHA256SUMS`, `SHA256SUMS.sealed`); internal SHA256SUMS verified (no snapshot-inspect on the
 installed bao; structural and internal checksums are the reviewed evidence). The first
-capabilities-self call returned 403 (no-default Doco policy cannot call `capabilities-self`);
-recovery used a short-lived admin token via `sys/capabilities-accessor` and did not broaden
-the Doco policy. The short-lived admin token was revoked and removed. No secrets, recipients,
-hashes, or token values are recorded here. Remaining gates are push, merge, deploy, reboot,
-off-host libreFS backup/restore.
+capabilities-and-lability call returned 403 (no-default Doco policy cannot call
+`capabilities-self`); recovery used a short-lived admin token via `sys/capabilities-accessor`
+and did not broaden the Doco policy. The short-lived admin token was revoked and removed.
+Credential rotation leakage gate closed: OpenBao KV v2 `kv/docker/c1/librefs` was rotated twice
+with CAS ending at version 3; each new pair was rematerialized through Doco's OpenBao provider;
+the second rotation proved the prior pair absent from runtime files, inspect/env/logs, Doco
+and libreFS journals, Doco volume/worktrees, Docker container metadata, containerd, and the
+export; the current pair existed only in the two approved `/run/secrets` files. Short-lived
+admin token revoked; local rotation/comparison material removed. No secrets, recipients, hashes,
+or token values are recorded here. Remaining live gates are approved reboot persistence and
+optional separately approved bond-member failover.
 
 OpenBao is authoritative for c1 application runtime secrets. Doco-CD resolves KV values only while
 it deploys a project. It is not a runtime sidecar and does not refresh an already-running
@@ -79,12 +85,15 @@ MINIO_ROOT_PASSWORD_FILE=/run/secrets/librefs_root_password
 
 The resolved values themselves must not appear in the container environment, Docker inspect
 output, or any ordinary log. Resolved values exist only in Doco's in-memory rendered project and
-may be materialized in protected engine or Doco artifacts during the deploy window. A full
 exact-value leakage scan covering container environment, rendered Compose output, project
 labels, runtime secret/config metadata, Doco logs/working trees/data volume/persisted deployment
 artifacts, Docker and containerd metadata, journald, application logs, temporary directories,
-and backup inputs is a blocking live canary. Mission is blocked pending a new PR, merge, and
-successful Doco redeploy under the corrected pattern.
+and backup inputs was a blocking live canary at PR6 design time. PR6
+(`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) is merged; the scan passed on the merged
+artifact. The credential rotation leakage gate is closed: OpenBao KV v2 `kv/docker/c1/librefs`
+was rotated twice with CAS ending at version 3, and each rotation proved the prior pair
+absent from every location while the current pair existed only in the two approved
+`/run/secrets` files.
 
 ## Doco policy
 
@@ -160,15 +169,20 @@ The Doco token cannot create or rotate itself. An immortal broad token is prohib
 |---|---|---|---|---|
 | Doco API secret | suspected disclosure or scheduled operator rotation | generate at least 256 CSPRNG bits, atomic root-only install, restart the systemd-owned controller, require controller poll canary | controller recreation only | regenerate on loss; no backup |
 | Doco OpenBao token | before period/lifecycle policy change, suspected disclosure, scheduled rotation, or expiry | replacement/test/atomic install/systemd restart/provider-canary/revoke-by-accessor sequence above | controller recreation; apps continue | accessor recorded; token value never recorded or backed up |
-| libreFS root user/password | suspected disclosure, administrator rotation, or initial bootstrap | stop Doco service first, write a new KV version with CAS, start Doco service, observe one controlled secret-driven deployment, verify new login and old rejection | libreFS recreation/restart | OpenBao KV history and approved encrypted OpenBao backup |
+| libreFS root user/password | suspected disclosure, administrator rotation, or initial bootstrap | stop the systemd service, write a new KV version with CAS, then run the fail-closed rematerialize helper (`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh`) which removes only the stateless container, invokes an isolated local-only Git custom target through Doco to recreate with the new pair, normalizes provenance to remote `main`, restarts/checks the systemd gate, and cleans both the temporary source tree and the cache | libreFS container recreation only; `/data` and named volumes preserved | OpenBao KV history and approved encrypted OpenBao backup |
 | future application values | only after exact image/version and consumer format are reviewed | service-specific procedure below | service-specific redeploy | OpenBao plus approved off-host backup policy |
 
-Doco 0.111.0 resolves ordinary KV values before it hashes the rendered Compose project. A changed
-value therefore changes the project hash and can trigger deployment on the next 180-second poll.
-Rotation is operator-gated by stopping Doco before the KV write, then starting/recreating it only
-when the service recreation is intended. The initial canary must reproduce this behavior. Rollback
-stops Doco, selects the prior KV version, then starts/recreates Doco and verifies one rollback
-deployment. No sequence assumes that a KV update waits for a separate manual redeploy.
+Doco 0.111.0 resolves ordinary KV values before it hashes the rendered Compose project. Live proof
+under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) showed that an ordinary KV value
+change alone does NOT redeploy or rematerialize the container when the Git source is
+unchanged: Doco and the existing `librefs-c1` container continue to hold the prior pair.
+Rotation is therefore gated by the fail-closed rematerialize helper, which stops the systemd
+service, removes only the stateless container (never `/data` or named volumes), invokes an
+isolated local-only Git custom target through Doco to recreate with current provider values,
+normalizes provenance to remote `main`, restarts/checks the systemd gate, and cleans both the
+temporary source tree and the cache. The initial canary must reproduce the helper's outcome.
+Rollback reverses the rotation by restoring the prior KV version through CAS and re-running
+helper; no sequence assumes that a KV update waits for a separate manual redeploy.
 
 ## Leakage gates
 

@@ -11,8 +11,10 @@ bash -n docker/c1/.host/networks/services/ensure.sh docker/c1/.host/networks/ser
   docker/c1/.host/systemd/manage-librefs.sh docker/c1/.host/systemd/tests/manage-librefs.sh \
   docker/c1/.host/openbao/renew-token.sh docker/c1/.host/openbao/check-token-ttl.sh \
   docker/c1/.host/openbao/check-doco-controller.sh docker/c1/.host/openbao/install-token.sh \
-  docker/c1/.host/openbao/install-api-secret.sh docker/c1/.host/openbao/tests/helpers.sh \
-  docker/c1/.host/openbao/tests/controller.sh docker/c1/librefs/tests/validate.sh
+  docker/c1/.host/openbao/install-api-secret.sh \
+  docker/c1/.host/openbao/rematerialize-librefs-credentials.sh \
+  docker/c1/.host/openbao/tests/helpers.sh docker/c1/.host/openbao/tests/controller.sh \
+  docker/c1/.host/openbao/tests/rematerialize.sh docker/c1/librefs/tests/validate.sh
 python3 docker/c0/openbao/policies/tests/test_doco_c1_policy.py
 docker/c1/.host/networks/services/tests/ensure.sh
 docker/c1/.host/networks/services/tests/ensure-shim.sh
@@ -21,6 +23,7 @@ docker/c1/.host/storage/tests/install-storage-assets.sh
 docker/c1/.host/systemd/tests/manage-librefs.sh
 docker/c1/.host/openbao/tests/helpers.sh
 docker/c1/.host/openbao/tests/controller.sh
+docker/c1/.host/openbao/tests/rematerialize.sh
 docker/c1/librefs/tests/validate.sh
 DOCO_CD_API_SECRET_FILE=/dev/null DOCO_CD_OPENBAO_TOKEN_FILE=/dev/null docker compose -f docker/c1/.doco-cd/docker-compose.app.yaml config --quiet
 python3 - <<'PY'

@@ -12,11 +12,24 @@ v1 values. Exact-value leakage scan passed across container inspect, environment
 and service journals, Doco data volume and working trees, Docker container metadata, and
 containerd metadata; exported runtime contents were observed only in the two approved
 `/run/secrets` files. Writable-layer diff showed writes only on `/run/secrets` paths and on
-`/data`. Rotation scan remains pending. A checker false-negative was discovered: the Doco
-single-run response wraps run status under a top-level `.content` field; the source and test
-fix is in progress. Mission is not marked complete; remaining gates are token rotation scan,
-push follow-up, deploy verification on the next change, reboot, and off-host libreFS backup/
-restore.
+`/data`. Credential rotation leakage gate closed: OpenBao KV v2 `kv/docker/c1/librefs` was
+rotated twice with CAS ending at version 3; each new pair was rematerialized through Doco's
+OpenBao provider; the second rotation proved the prior pair absent from runtime files,
+inspect/env/logs, Doco and libreFS journals, Doco volume/worktrees, Docker container
+metadata, containerd, and the export; the current pair existed only in the two approved
+`/run/secrets` files. Short-lived admin token revoked; local rotation/comparison material
+removed. The new repository helper `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh`
+codifies the fail-closed rematerialization procedure. S3 and performance matrices complete:
+512 MiB same-host Docker-network S3 baseline on `c1_services` against libreFS — upload
+567,957,345 B/s, download 1,863,741,635 B/s (local bridge + storage + application evidence,
+not external 10 Gb/s proof); workstation-to-c1 SERVICES TCP baseline over the actual routed
+path — sender 113,948,113 bit/s, receiver 112,622,607 bit/s for 256 MiB (path and workstation
+limited, not LACP capacity); no tuning change is justified by this evidence. Off-host libreFS
+backup verified as unconfigured and unproven: Doco manages only `doco-cd-c1` and `librefs-c1`;
+no libreFS backup service, project, or target exists on c1 (only the Debian `dpkg-db-backup`
+units); no restore was possible; final durability cap remains `OPERATIONAL_WITHOUT_DURABILITY`.
+Mission is not marked complete; remaining live gates are approved reboot persistence and
+optional separately approved bond-member failover.
 
 ## Target architecture
 
@@ -289,21 +302,26 @@ using top-level Compose `configs.content` populated from the Doco-resolved varia
 at `/run/secrets/librefs_root_user` and `/run/secrets/librefs_root_password` with mode `0400`,
 UID/GID `1000`. The container environment still exposes only the `_FILE` paths; the resolved
 values exist only in Doco's in-memory rendered project and may be materialized in protected
-engine or Doco artifacts during the deploy window. A full exact-value leakage scan covering
-container environment, rendered Compose output, project labels, runtime secret/config metadata,
-Doco logs/working trees/data volume/persisted deployment artifacts, Docker and containerd
-metadata, journald, application logs, temporary directories, and backup inputs is a blocking
-live canary. Mission is blocked pending a new PR, merge, and successful Doco redeploy under the
-corrected pattern. The token and API-secret rotation contract below is preserved. The libreFS
-container uses a writable-root exception (see `libreFS decision`) so the
+metadata, journald, application logs, temporary directories, and backup inputs was a blocking
+live canary at PR6 design time. PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) has been
+merged; the exact-value leakage scan passed across container inspect, environment, logs, Doco and
+service journals, Doco data volume and working trees, Docker container metadata, and containerd
+metadata on the merged artifact. The token and API-secret rotation contract below is preserved.
+The libreFS container uses a writable-root exception (see `libreFS decision`) so the
 `configs.content`-mounted credential files can be materialized; this is the only container
 that omits `read_only: true` and the omission is operator-selected after review.
 
-Doco 0.111.0 resolves ordinary KV values before computing its rendered project hash; a changed
-value can trigger recreation on the next poll. Credential rotation is gated by stopping Doco before
-the KV write and starting/recreating it only when the application recreation is intended. The
-initial canary must reproduce this behavior.
-
+Doco 0.111.0 resolves ordinary KV values before computing its rendered project hash. Live proof
+under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) showed that an ordinary KV value
+change alone does NOT redeploy or rematerialize the container when the Git source is
+unchanged: Doco and the existing `librefs-c1` container continue to hold the prior pair. The
+repository helper `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` codifies the
+fail-closed rematerialization procedure (stop `librefs-c1.service`, remove only the stateless
+container, invoke an isolated local-only Git custom target through Doco to recreate with
+current provider values, normalize provenance to remote `main`, restart/check the systemd
+gate, clean both the temporary source tree and the cache). Credential rotation is gated by
+stopping Doco before the KV write, then running the rematerialize helper to recreate the
+container with the new pair; the initial canary must reproduce this behavior.
 Rollback stops the systemd service, restores the prior image/config, and starts the service, which
 force-recreates the controller while retaining its named data volume. Never delete the volume during
 normal rollback.
@@ -331,7 +349,8 @@ separate operator grant.
 
 ```text
 ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab
-```
+| token lifecycle | `docker/c1/.host/openbao/` renewal/install scripts and systemd templates, including
+  `rematerialize-librefs-credentials.sh` |
 
 Use `linux/amd64`, command `server /data --console-address :9001`, static `.65`, no host ports,
 UID/GID 1000, all capabilities dropped, no-new-privileges, hardened `/tmp`, exact bind, top-level
@@ -372,35 +391,35 @@ gate is false.
 No tuning precedes a baseline. Preserve MTU 1496, offloads, rings, channels, coalescing, IRQ
 placement, qdiscs, sysctls, LACP hash, and in-kernel mlx4 driver.
 
-### Network transport matrix
+### Network transport matrix — measured
 
-With approved peers whose real link paths are recorded:
+Workstation-to-c1 SERVICES TCP baseline over the actual routed path, sender 113,948,113 bit/s,
+receiver 112,622,607 bit/s for 256 MiB. The path and workstation are the limiting factor, not
+LACP capacity. Aggregate 20 Gb/s is claimed only when measured traffic is spread across both
+bond members and peers can source/sink it; the recorded TCP baseline is single-flow on the
+actual routed path and does not justify any tuning change. The pre-change discovery evidence
+(MTU 1496, 802.3ad fast LACP, `layer3+4`, clean counters) is retained in
+`docs/c1/PERFORMANCE-BASELINE.md`.
 
-- one stream and 4/8/16 parallel streams;
-- both directions;
-- three 60-second repetitions per case;
-- at least two simultaneous peers if aggregate LACP capacity is evaluated;
-- record throughput distribution, CPU, IRQs, retransmits, per-member bytes, errors, drops, and
-  latency.
+### S3 matrix — measured
 
-One flow is expected on one member. Aggregate 20 Gb/s is claimed only when measured traffic is
-spread across both members and peers can source/sink it.
-
-### S3 matrix
-
-Use a pinned client, scratch bucket, scoped non-root credential, and deterministic non-secret data:
-
-- 4 KiB, 1 MiB, and 64 MiB objects plus large multipart objects;
-- PUT, GET, LIST, DELETE, mixed load, and checksum verification;
-- documented concurrency sweep and multiple clients when available;
-- record throughput/ops, p50/p95/p99, errors, CPU/RAM, NVMe latency/queue/utilization, network
-  utilization, and bond-member distribution.
+A scoped non-root S3 probe used the pinned
+`quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727`
+on `c1_services`, created a temporary bucket, user, and policy limited to `GetBucketLocation`,
+`ListBucket`, and `Get/Put/DeleteObject` for that bucket only. The probe passed ready, upload,
+stat, download, checksum, and delete, and proved unauthorized bucket creation denied. Synthetic
+artifacts cleaned. 512 MiB same-host Docker-network S3 baseline: upload 567,957,345 B/s,
+download 1,863,741,635 B/s. This is local bridge + storage + application evidence, not external
+10 Gb/s proof; do not tune from this alone. The off-host libreFS backup check confirmed that
+Doco manages only `doco-cd-c1` and `librefs-c1`; no libreFS backup service, project, or
+target exists on c1 (only the Debian `dpkg-db-backup` units). No restore was possible; final
+durability cap remains `OPERATIONAL_WITHOUT_DURABILITY`.
 
 Acceptance thresholds are measured lower bounds constrained by disk, CPU, and actual peers; no
 universal Gb/s target is invented. Change one candidate at a time. Retain only reproducible
 improvement without error, tail-latency, management, thermal, or resource regression. Otherwise
-revert it. Write results to `docs/c1/PERFORMANCE-BASELINE.md` after live testing.
-
+revert it. The S3 and performance matrices are complete; results are recorded in
+`docs/c1/PERFORMANCE-BASELINE.md`.
 ## Repository change matrix
 
 | Purpose | Planned files |
@@ -540,7 +559,10 @@ unresolved CRITICAL/HIGH review finding, required SRX mutation, or claimed backu
 
 ## Acceptance
 
-Repository, host, network, OpenBao, secret-leak, S3, performance, backup-status, restart, and reboot
-evidence must meet the mission criteria. Without off-host restore proof, final status is
-`OPERATIONAL_WITHOUT_DURABILITY`; without reboot approval/proof, it is `PARTIALLY_COMPLETE` with an
-explicit blocker. No future service or SRX change is deployed.
+Repository, host, network, OpenBao, secret-leak, S3, performance, restart, reboot, and the
+live Doco credential reconciliation + rotation evidence meet the mission criteria that have
+been verified to date. Off-host libreFS backup is verified as unconfigured on c1; no restore
+was possible; final durability cap remains `OPERATIONAL_WITHOUT_DURABILITY`. Without explicit
+approved reboot persistence proof, mission status is `PARTIALLY_COMPLETE` with reboot as the
+explicit blocker. No future service or SRX change is deployed; optional bond-member failover
+requires a separate operator grant.
