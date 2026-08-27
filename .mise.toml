@@ -2,7 +2,7 @@ min_version = { hard = "2026.8.11" }
 
 [env]
 JUST_UNSTABLE = "1"
-BAO_ADDR = "https://vault.monosense.io"
+BAO_ADDR = "https://vault.monosense.io:8200"
 FLATE_PATH = '{{config_root}}/kubernetes/flux/cluster'
 KUBECONFIG = '{{config_root}}/kubernetes/kubeconfig'
 MINIJINJA_CONFIG_FILE = '{{config_root}}/.minijinja.toml'

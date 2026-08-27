@@ -176,7 +176,7 @@ All steps through offline validation are locally testable on macOS, Linux, and W
    bao token lookup
    ```
 
-Root `.mise.toml` exports the public `BAO_ADDR=https://vault.monosense.io`
+Root `.mise.toml` exports the private `BAO_ADDR=https://vault.monosense.io:8200`
 endpoint. The workflow uses the OpenBao CLI's token helper. It never reads,
 exports, prints, or revokes the operator-owned token. TLS validation remains
 enabled. If the service uses a private CA, configure the standard OpenBao CA
@@ -190,7 +190,7 @@ option; never use an insecure-skip flag. See
 OpenBao runs outside this repository in Docker and is exposed at:
 
 ```text
-https://vault.monosense.io
+https://vault.monosense.io:8200
 ```
 
 The Junos project is an OpenBao consumer. An OpenBao administrator must create
