@@ -35,9 +35,20 @@ Docker container metadata, containerd, and the export; the current pair existed 
 approved `/run/secrets` files. Short-lived admin token revoked; local rotation/comparison
 material removed. The checker false-negative discovered during verification: the Doco single-run
 response wraps the run status under a top-level `.content` field; the source and test fix is
-in progress. Mission is not marked complete — remaining live gates are approved reboot
-persistence and optional separately approved bond-member failover; the off-host libreFS backup
-is a verified absent status cap (`OPERATIONAL_WITHOUT_DURABILITY`), not an unrun status check.
+in progress. Mission live gates complete: user approved controlled c1 reboot; outage and
+SSH recovery observed. Post-reboot verification passed (both XFS noatime mounts and assertion
+units, Docker, c1 SERVICES network/shim, exact management default route, bond/VLAN/LACP two 10
+Gb members with zero link-failure counts, Doco/OpenBao token/controller canaries, healthy
+pinned `librefs-c1` at `.65` with no host ports and credential files UID/GID 1000 mode 0400;
+exact-value leakage and writable-root containment scans passed again after reboot). Scoped S3
+ready/upload/stat/download/checksum/delete/denial passed again after reboot with 512 MiB
+observed at 542,280,200 B/s upload and 2,014,577,014 B/s download (post-reboot confirmation,
+not a replacement of the pre-reboot baseline of 567,957,345 B/s upload and 1,863,741,635 B/s
+download). User explicitly skipped optional bond-member failover; record intentionally not
+exercised, not a blocker. PR8 merged at `599fff0e01301d77f5a2e204bac5df9a519f1823` and
+the reviewed helper `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is
+installed `root:root` mode 0755 on c1. Final status `OPERATIONAL_WITHOUT_DURABILITY` solely
+because no off-host libreFS backup target/restore exists on c1; no durability claim.
 - the 512 GB NVMe is quarantined/unmounted/excluded (firmware VC400618 has no verified official
   updater);
 - the 1 TB NVMe is split 50:50 between `/srv/librefs` (GPT PARTLABEL `c1_librefs`, XFS label
@@ -89,9 +100,11 @@ is a verified absent status cap (`OPERATIONAL_WITHOUT_DURABILITY`), not an unrun
   not LACP capacity);
 - the off-host libreFS backup check confirmed that Doco manages only `doco-cd-c1` and
   `librefs-c1`; no libreFS backup service, project, or target exists on c1 (only the Debian
-  `dpkg-db-backup` units). No restore was possible; final durability cap remains
-  `OPERATIONAL_WITHOUT_DURABILITY`. Mission is not marked complete; remaining live gates are
-  approved reboot persistence and optional separately approved bond-member failover.
+  `dpkg-db-backup` units). No restore was possible. Final status
+  `OPERATIONAL_WITHOUT_DURABILITY` solely because no off-host libreFS backup target/restore
+  exists on c1; no durability claim. Mission live gates complete (user-approved reboot and
+  reviewed helper both passed; user explicitly skipped optional bond-member failover — record
+  intentionally not exercised, not a blocker).
 
 ## Doco credential-materialization correction
 

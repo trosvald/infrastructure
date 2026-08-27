@@ -59,5 +59,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   567,957,345 B/s upload and 1,863,741,635 B/s download. Routed workstation-to-SERVICES TCP
   baseline was about 113.95 Mbit/s sender and 112.62 Mbit/s receiver, which is path-limited and
   not indicative of 10 Gb / LACP capacity. Off-host backup status is verified unconfigured and
-  unproven, so the current cap is `OPERATIONAL_WITHOUT_DURABILITY`. Remaining live gates are
-  approved reboot persistence and optional approved bond-member failover.
+  unproven, so the current cap is `OPERATIONAL_WITHOUT_DURABILITY`. PR8 merged as
+  `599fff0e01301d77f5a2e204bac5df9a519f1823` and the reviewed rematerialization helper was
+  installed. Approved reboot outage and recovery plus full mount, network, LACP, Doco, OpenBao,
+  libreFS, and credential-leakage persistence passed; post-reboot scoped S3 512 MiB measured
+  542,280,200 B/s upload and 2,014,577,014 B/s download. Optional bond-member failover was
+  explicitly skipped and is not a blocker. Mission is complete at
+  `OPERATIONAL_WITHOUT_DURABILITY` solely because off-host backup and restore are absent.

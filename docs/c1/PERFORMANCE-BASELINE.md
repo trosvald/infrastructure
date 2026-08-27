@@ -1,17 +1,27 @@
 # c1 Performance Baseline
 
 Date: 2026-08-26
-Status: storage applied successfully on the corrected retry; S3 and performance matrices complete;
-off-host libreFS backup verified as unconfigured and unproven (final durability cap remains
-`OPERATIONAL_WITHOUT_DURABILITY`). 512 MiB same-host Docker-network S3 baseline measured on
-`c1_services` against libreFS: upload 567,957,345 B/s, download 1,863,741,635 B/s; this is local
-bridge + storage + application evidence, not external 10 Gb/s proof. Workstation-to-c1 SERVICES
-TCP baseline over the actual routed path: sender 113,948,113 bit/s, receiver 112,622,607 bit/s
-for 256 MiB; the path and workstation are the limiting factor, not LACP capacity. No tuning
-change is justified by this evidence. The off-host libreFS backup check confirmed that Doco
-manages only `doco-cd-c1` and `librefs-c1`; no libreFS backup service, project, or target
-exists (only the Debian `dpkg-db-backup` units). No restore was possible. Remaining live
-gates are approved reboot persistence and optional separately approved bond-member failover.
+Status: mission live gates complete; final status `OPERATIONAL_WITHOUT_DURABILITY` solely because
+no off-host libreFS backup target/restore exists on c1 (no durability claim). User approved
+controlled c1 reboot; outage and SSH recovery observed. Post-reboot verification passed on both
+XFS noatime mounts and assertion units, Docker, c1 SERVICES network/shim, exact management
+default route, bond/VLAN/LACP two 10 Gb members with zero link-failure counts, Doco/OpenBao
+token/controller canaries, healthy pinned `librefs-c1` at `.65` with no host ports and
+credential files UID/GID 1000 mode 0400. Exact-value leakage and writable-root containment
+scans passed again after reboot. S3 and performance matrices complete: pre-reboot 512 MiB
+same-host Docker-network S3 baseline on `c1_services` against libreFS — upload
+567,957,345 B/s, download 1,863,741,635 B/s (local bridge + storage + application evidence,
+not external 10 Gb/s proof); post-reboot confirmation 512 MiB — upload 542,280,200 B/s,
+download 2,014,577,014 B/s (not a replacement of the baseline). Workstation-to-c1 SERVICES TCP
+baseline over the actual routed path: sender 113,948,113 bit/s, receiver 112,622,607 bit/s for
+256 MiB; the path and workstation are the limiting factor, not LACP capacity. No tuning change
+is justified by this evidence. The off-host libreFS backup check confirmed that Doco manages
+only `doco-cd-c1` and `librefs-c1`; no libreFS backup service, project, or target exists
+(only the Debian `dpkg-db-backup` units). No restore was possible. User explicitly skipped
+optional bond-member failover; record intentionally not exercised, not a blocker. PR8 merged at
+`599fff0e01301d77f5a2e204bac5df9a519f1823` and the reviewed helper
+`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is installed `root:root` mode
+0755 on c1. No remaining live gates.
 
 ## Pre-change evidence retained
 
@@ -57,21 +67,10 @@ evidence, not external 10 Gb/s proof.
 Workstation-to-c1 SERVICES TCP baseline over the actual routed path: sender 113,948,113 bit/s,
 receiver 112,622,607 bit/s for 256 MiB. The path and workstation are the limiting factor, not
 LACP capacity; no tuning change is justified by this evidence. One flow is expected on one
-member; aggregate 20 Gb/s is claimed only when measured traffic is spread across both members and
-peers can source/sink it.
+member; aggregate 20 Gb/s is claimed only when measured traffic is spread across both members
+and peers can source/sink it.
 
-## Off-host libreFS backup check
-
-The off-host check confirmed that Doco manages only `doco-cd-c1` and `librefs-c1`; no libreFS
-backup service, project, or target exists on c1 (only the Debian `dpkg-db-backup` units). No
-restore was possible. Final durability cap remains `OPERATIONAL_WITHOUT_DURABILITY`.
-
-## Resume criteria
-
-1. Obtain explicit approved reboot persistence evidence (full reboot + every persistence path
-   re-verified).
-2. If a separate operator grant is given, run an optional bond-member failover drill and
-   record counter evidence; do not change `bond-min-links`.
-3. Storage, network, OpenBao, live Doco reconciliation, credential rotation leakage,
-   S3/performance matrices, and the off-host backup check are closed for the current mission
-   state. The mission is not marked complete until reboot persistence is approved and proved.
+1. Mission live gates are complete. Optional future work, on a separate operator grant only:
+   run a bond-member failover drill and record counter evidence; do not change `bond-min-links`.
+2. Configure, approve, and prove an off-host libreFS backup service, project, and target with a
+   successful restore to remove the `OPERATIONAL_WITHOUT_DURABILITY` cap.

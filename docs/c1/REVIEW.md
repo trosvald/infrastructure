@@ -21,24 +21,21 @@ metadata; exported runtime contents were observed only in the two approved `/run
 The writable-layer diff showed writes only on the `/run/secrets` paths (Compose config
 materialization) and on the `/data` bind (libreFS data). A checker false-negative was
 discovered: the Doco single-run response wraps run status under a
-top-level `.content` field; the source and test fix is in progress. Mission is not marked
-complete. Credential rotation leakage gate closed: OpenBao KV v2 `kv/docker/c1/librefs` was
-rotated twice with CAS ending at version 3; each new pair was rematerialized through Doco's
-OpenBao provider; the second rotation proved the prior pair absent from runtime files,
-inspect/env/logs, Doco and libreFS journals, Doco volume/worktrees, Docker container
-metadata, containerd, and the export; the current pair existed only in the two approved
-`/run/secrets` files. Short-lived admin token revoked; local rotation/comparison material
-removed. S3 and performance matrices complete: 512 MiB same-host Docker-network S3 baseline
-on `c1_services` against libreFS — upload 567,957,345 B/s, download 1,863,741,635 B/s (local
-bridge + storage + application evidence, not external 10 Gb/s proof); workstation-to-c1
-SERVICES TCP baseline over the actual routed path — sender 113,948,113 bit/s, receiver
-112,622,607 bit/s for 256 MiB (path and workstation limited, not LACP capacity); no tuning
-change is justified by this evidence. Off-host libreFS backup verified as unconfigured and
-unproven: Doco manages only `doco-cd-c1` and `librefs-c1`; no libreFS backup service,
-project, or target exists on c1 (only the Debian `dpkg-db-backup` units); no restore was
-possible; final durability cap remains `OPERATIONAL_WITHOUT_DURABILITY`. Mission is not
-marked complete; remaining live gates are approved reboot persistence and optional separately
-approved bond-member failover.
+top-level `.content` field; the source and test fix is in progress. Mission live gates complete
+after the user-approved controlled c1 reboot: outage and SSH recovery observed; post-reboot
+verification passed on both XFS noatime mounts and assertion units, Docker, c1 SERVICES
+network/shim, exact management default route, bond/VLAN/LACP two 10 Gb members with zero
+link-failure counts, Doco/OpenBao token/controller canaries, healthy pinned `librefs-c1` at
+`.65` with no host ports and credential files UID/GID 1000 mode 0400; exact-value leakage and
+writable-root containment scans passed again after reboot; scoped S3 ready/upload/stat/download/
+checksum/delete/denial passed again after reboot (512 MiB at 542,280,200 B/s upload and
+2,014,577,014 B/s download — post-reboot confirmation, not a replacement of the pre-reboot
+baseline). User explicitly skipped optional bond-member failover; record intentionally not
+exercised, not a blocker. PR8 (`599fff0e01301d77f5a2e204bac5df9a519f1823`) is merged; the
+reviewed helper `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is installed
+`root:root` mode 0755 on c1. Final status `OPERATIONAL_WITHOUT_DURABILITY` solely because
+no off-host libreFS backup target/restore exists on c1; no durability claim. Mission live
+gates complete.
 Scope: `DISCOVERY.md`, `DESIGN-AND-PLAN.md`, `SECRET-CONTRACT.md`, `LIBREFS.md`,
 `FUTURE-EDGE.md`, adjacent c0 conventions, OpenBao policy patterns, Docker validation, and the Junos
 adoption gate. This is a design review, not an implementation review or live authorization.
@@ -276,33 +273,21 @@ Storage, network, the OpenBao checkpoint, the corrected credential-materializati
 `/run/secrets/librefs_root_{user,password}` with mode `0400`, UID/GID `1000`), the live
 Doco reconciliation under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`), the credential
 rotation leakage gate, the S3 matrix, the network transport matrix, and the off-host libreFS
-backup check are all closed. The remaining gates that are NOT closed by this update are:
+backup check are all closed. PR8 (`599fff0e01301d77f5a2e204bac5df9a519f1823`) is merged;
+the reviewed helper `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is
+installed `root:root` mode 0755 on c1. Mission live gates complete after the user-approved
+controlled c1 reboot: outage and SSH recovery were observed, and post-reboot verification
+passed on both XFS noatime mounts and assertion units, Docker, c1 SERVICES network/shim, the
+exact management default route, bond/VLAN/LACP two 10 Gb members with zero link-failure counts,
+Doco/OpenBao token/controller canaries, the healthy pinned `librefs-c1` at `.65` with no host
+ports and credential files UID/GID 1000 mode 0400. The exact-value leakage and writable-root
+containment scans passed again after reboot. The scoped S3 matrix passed again after reboot
+with a non-replacement post-reboot observation (512 MiB at 542,280,200 B/s upload and
+2,014,577,014 B/s download). User explicitly skipped optional bond-member failover; record
+intentionally not exercised, not a blocker.
 
-1. Approved reboot persistence — explicit operator approval and full persistence evidence
-   (every persistence path re-verified after reboot).
-2. Optional separately approved bond-member failover drill — counter evidence only, with
-   `bond-min-links` left unchanged.
-
-Mission is not marked complete. The final durability cap remains `OPERATIONAL_WITHOUT_DURABILITY`;
-that cap reflects a verified absent off-host libreFS backup service, project, and target on
-c1 (only Debian `dpkg-db-backup` units exist), not an unrun status check.
-failed rematerialization can cause service unavailability but never data loss; it must be
-rerun after correcting Doco or provider health.
-
-The remaining gates that are NOT closed by this update are:
-
-1. Approved reboot persistence — explicit operator approval and full persistence evidence
-   (every persistence path re-verified after reboot).
-2. Optional separately approved bond-member failover drill — counter evidence only, with
-   `bond-min-links` left unchanged.
-
-All other gates listed previously (`.65`/`.66` collision checks; push follow-up; deploy
-verification on the next change; off-host libreFS backup/restore proof; S3, performance,
-and benchmark matrices) are closed: collision checks were not required for this deployment,
-push and deploy follow-up are deferred to the next change with operator approval, off-host
-backup is a verified absent status cap (`OPERATIONAL_WITHOUT_DURABILITY`) and not an unrun
-status check, and S3/performance/benchmark matrices are complete with the local-bridge + path-
-limited caveats recorded in `PERFORMANCE-BASELINE.md`.
+Final status `OPERATIONAL_WITHOUT_DURABILITY` solely because no off-host libreFS backup
+target/restore exists on c1; no durability claim. Mission live gates are complete.
 
 Doco credential-materialization audit: the first live Doco 0.111.0 deploy attempted to feed
 Doco-resolved `LIBREFS_ROOT_USER` / `LIBREFS_ROOT_PASSWORD` into top-level Compose
@@ -331,5 +316,8 @@ statically asserted for the `/srv/librefs/data` bind and re-asserted by the runt
 
 These are enforced stop conditions, not implied approvals. The 512 GB device remains excluded
 from any approval and is never an argument. Storage, network, OpenBao credential materialization,
-live Doco reconciliation, and the credential rotation leakage gate are closed for the current
-mission state.
+live Doco reconciliation, the credential rotation leakage gate, the post-reboot verification,
+the reviewed rematerialize helper, the S3 and performance matrices, and the off-host libreFS
+backup check are all closed. Mission live gates complete; final status
+`OPERATIONAL_WITHOUT_DURABILITY` solely because no off-host libreFS backup target/restore
+exists on c1.
