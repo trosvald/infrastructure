@@ -1,13 +1,17 @@
 # c1 Performance Baseline
 
 Date: 2026-08-26
-Status: `APPLIED — awaiting benchmarks`. Storage applied successfully on the corrected retry:
-two XFS partitions mounted and verified on the approved 1 TB NVMe (`c1_librefs` at `/srv/librefs`,
-`c1_apps` at `/srv/applications`, `defaults,noatime`). Docker and containerd `SOURCE` equals `/`
-source. The 512 GB device is quarantined/unmounted/excluded. Persistent shim `c1-svc-shim` and
-network unit `c1-services-network.service` are active; route `10.25.13.64/27 dev c1-svc-shim`
-verified with scope `link`. Benchmarking remains pending until network/S3 matrices are run.
-Mission no longer blocked on storage or network.
+Status: storage applied successfully on the corrected retry; S3 and performance matrices complete;
+off-host libreFS backup verified as unconfigured and unproven (final durability cap remains
+`OPERATIONAL_WITHOUT_DURABILITY`). 512 MiB same-host Docker-network S3 baseline measured on
+`c1_services` against libreFS: upload 567,957,345 B/s, download 1,863,741,635 B/s; this is local
+bridge + storage + application evidence, not external 10 Gb/s proof. Workstation-to-c1 SERVICES
+TCP baseline over the actual routed path: sender 113,948,113 bit/s, receiver 112,622,607 bit/s
+for 256 MiB; the path and workstation are the limiting factor, not LACP capacity. No tuning
+change is justified by this evidence. The off-host libreFS backup check confirmed that Doco
+manages only `doco-cd-c1` and `librefs-c1`; no libreFS backup service, project, or target
+exists (only the Debian `dpkg-db-backup` units). No restore was possible. Remaining live
+gates are approved reboot persistence and optional separately approved bond-member failover.
 
 ## Pre-change evidence retained
 
@@ -16,13 +20,14 @@ Mission no longer blocked on storage or network.
   aggregator during read-only discovery.
 - Bond policy remains 802.3ad, fast LACP, `layer3+4`; one flow is limited to one member.
 - `bond0` remains MTU 1500 and VLAN 2513 remains MTU 1496.
-- Observed interface and qdisc counters had no current errors or drops.
-- No MTU, offload, ring, channel, coalescing, IRQ, qdisc, sysctl, or driver tuning was applied.
 - `fio`, `iperf3`, `sysstat`, `ethtool`, `nvme-cli`, and `smartmontools` were installed for the
   reviewed future matrix.
+- Synthetic probe artifacts were cleaned; no benchmark artifacts remain on disk.
 
 ## Storage-health gate
 
+| Intended role | Sanitized result |
+|---|---|
 | 1 TB libreFS + applications tier (applied) | SMART overall passed; critical warning 0; media errors 0; 13% used; 100% spare; two XFS partitions mounted `defaults,noatime` (`c1_librefs` at `/srv/librefs`, `c1_apps` at `/srv/applications`) |
 | quarantined 512 GB | SMART overall passed; critical warning 0; **media/data-integrity errors 941**; 3% used; available spare 91%; firmware VC400618 has no verified official updater |
 
@@ -32,15 +37,41 @@ The 512 GB device stays quarantined/unmounted/excluded and is not used by this m
 ## Tuning result
 
 Retained tuning changes: none.  
-Reverted tuning changes: none.  
+Reverted tuning changes: none.
 Aggregate 20 Gb/s claim: not made.
+S3 latency/throughput claims: as measured below (local bridge + storage + application, not external 10 Gb/s proof).
+
+## S3 matrix results (libreFS via `c1_services`)
+
+A scoped non-root S3 probe used the pinned
+`quay.io/minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727`
+on `c1_services`, created a temporary bucket, user, and policy limited to `GetBucketLocation`,
+`ListBucket`, and `Get/Put/DeleteObject` for that bucket only. The probe passed ready, upload,
+stat, download, checksum, and delete, and proved unauthorized bucket creation denied.
+Synthetic artifacts cleaned. 512 MiB same-host Docker-network S3 baseline: upload
+567,957,345 B/s, download 1,863,741,635 B/s. This is local bridge + storage + application
+evidence, not external 10 Gb/s proof.
+
+## Network transport matrix results
+
+Workstation-to-c1 SERVICES TCP baseline over the actual routed path: sender 113,948,113 bit/s,
+receiver 112,622,607 bit/s for 256 MiB. The path and workstation are the limiting factor, not
+LACP capacity; no tuning change is justified by this evidence. One flow is expected on one
+member; aggregate 20 Gb/s is claimed only when measured traffic is spread across both members and
+peers can source/sink it.
+
+## Off-host libreFS backup check
+
+The off-host check confirmed that Doco manages only `doco-cd-c1` and `librefs-c1`; no libreFS
+backup service, project, or target exists on c1 (only the Debian `dpkg-db-backup` units). No
+restore was possible. Final durability cap remains `OPERATIONAL_WITHOUT_DURABILITY`.
 
 ## Resume criteria
 
-1. Run the network and S3 matrices in `DESIGN-AND-PLAN.md`, one tuning change at a time, on
-   the applied 1 TB tier and approved off-host peers. The 1 TB NVMe is provisioned and mounted;
-   no further storage mutation is required.
-2. Without an off-host backup and tested restore, final status cannot exceed
-   `OPERATIONAL_WITHOUT_DURABILITY`.
-3. Storage and network gates are closed for the current mission state; remaining gates are
-   OpenBao writes, push, merge, deploy, reboot, and off-host backup/restore.
+1. Obtain explicit approved reboot persistence evidence (full reboot + every persistence path
+   re-verified).
+2. If a separate operator grant is given, run an optional bond-member failover drill and
+   record counter evidence; do not change `bond-min-links`.
+3. Storage, network, OpenBao, live Doco reconciliation, credential rotation leakage,
+   S3/performance matrices, and the off-host backup check are closed for the current mission
+   state. The mission is not marked complete until reboot persistence is approved and proved.

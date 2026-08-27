@@ -19,18 +19,29 @@ v1 values. Exact-value leakage scan passed across container inspect, environment
 service journals, Doco data volume and working trees, Docker container metadata, and containerd
 metadata; exported runtime contents were observed only in the two approved `/run/secrets` files.
 The writable-layer diff showed writes only on the `/run/secrets` paths (Compose config
-materialization) and on the `/data` bind (libreFS data). Rotation scan remains pending. A
-checker false-negative was discovered: the Doco single-run response wraps run status under a
+materialization) and on the `/data` bind (libreFS data). A checker false-negative was
+discovered: the Doco single-run response wraps run status under a
 top-level `.content` field; the source and test fix is in progress. Mission is not marked
-complete.
+complete. Credential rotation leakage gate closed: OpenBao KV v2 `kv/docker/c1/librefs` was
+rotated twice with CAS ending at version 3; each new pair was rematerialized through Doco's
+OpenBao provider; the second rotation proved the prior pair absent from runtime files,
+inspect/env/logs, Doco and libreFS journals, Doco volume/worktrees, Docker container
+metadata, containerd, and the export; the current pair existed only in the two approved
+`/run/secrets` files. Short-lived admin token revoked; local rotation/comparison material
+removed. S3 and performance matrices complete: 512 MiB same-host Docker-network S3 baseline
+on `c1_services` against libreFS — upload 567,957,345 B/s, download 1,863,741,635 B/s (local
+bridge + storage + application evidence, not external 10 Gb/s proof); workstation-to-c1
+SERVICES TCP baseline over the actual routed path — sender 113,948,113 bit/s, receiver
+112,622,607 bit/s for 256 MiB (path and workstation limited, not LACP capacity); no tuning
+change is justified by this evidence. Off-host libreFS backup verified as unconfigured and
+unproven: Doco manages only `doco-cd-c1` and `librefs-c1`; no libreFS backup service,
+project, or target exists on c1 (only the Debian `dpkg-db-backup` units); no restore was
+possible; final durability cap remains `OPERATIONAL_WITHOUT_DURABILITY`. Mission is not
+marked complete; remaining live gates are approved reboot persistence and optional separately
+approved bond-member failover.
 Scope: `DISCOVERY.md`, `DESIGN-AND-PLAN.md`, `SECRET-CONTRACT.md`, `LIBREFS.md`,
 `FUTURE-EDGE.md`, adjacent c0 conventions, OpenBao policy patterns, Docker validation, and the Junos
-
-The first independent pass returned `BLOCKED` with six HIGH and four MEDIUM findings. The main
-orchestrator corrected the documents. A focused recheck found two HIGH closures incomplete; those
-were corrected and a final independent pass found no remaining CRITICAL/HIGH design defect.
-
-The revised split-storage review then re-examined the boundary change (Docker/containerd on OS
+adoption gate. This is a design review, not an implementation review or live authorization.
 disk; 1 TB NVMe split 50:50 for `/srv/librefs` and `/srv/applications`; 512 GB quarantined and
 excluded). Four findings were recorded; all closed under the revised contract. The first apply
 then failed safely on the invalid 16-char XFS label `c1_applications`; partial filesystem state
@@ -43,15 +54,22 @@ contract (`c1_applications` GPT PARTLABEL + `c1_apps` XFS filesystem label, both
 finding and supersedes RSS-2's label handling. Final gate for the corrected split-storage review:
 `APPROVED_WITH_CONDITIONS`.
 
-### HIGH-1 — Doco ordinary-KV deployment behavior
+### HIGH-1 — Doco ordinary-KV deployment behavior (historical, superseded)
 
-Initial defect: the design claimed KV rotation waited for an explicit redeploy. Doco 0.111.0 resolves
-ordinary external secrets before computing the rendered project hash, so a changed value can cause
-recreation on the next poll.
+Initial defect: the design claimed KV rotation waited for an explicit redeploy. Doco 0.111.0
+resolves ordinary external secrets before computing the rendered project hash.
 
-Disposition: `CLOSED`. Discovery, secret, libreFS, and plan documents now use one contract: stop Doco
-before a KV CAS write, then start/recreate it only when service recreation is intended. The canary
-must reproduce the hash-driven deployment behavior.
+Disposition: `SUPERSEDED BY LIVE PROOF`. Under PR6
+(`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) live proof showed that an ordinary KV
+value change alone does NOT redeploy or rematerialize the container when the Git source is
+unchanged: Doco and the existing `librefs-c1` container continue to hold the prior pair.
+Operator-gated rotation therefore uses the fail-closed rematerialize helper
+(`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh`) to stop the systemd service,
+remove only the stateless container, invoke an isolated local-only Git custom target through
+Doco to recreate with current provider values, normalize provenance to remote `main`,
+restart/check the systemd gate, and clean both the temporary source tree and the cache. The
+canary must reproduce the helper's outcome (current pair only in the two approved
+`/run/secrets` files; absent everywhere else), not a hash-driven redeploy.
 
 ### HIGH-2 — stale file-backed bootstrap-secret mounts
 
@@ -250,28 +268,42 @@ revised split-storage review: `APPROVED_WITH_CONDITIONS`.
   GPT type GUID `0FC63DAF-8483-4772-8E79-3D69D8477DE4` is asserted for both partitions.
 - `CLOSED` — the persistent shim rejects any L3 address on `bond0.2513` before mutation.
 - `CLOSED` — a CSPRNG API secret is atomically installed root-only before the controller starts.
-- `CLOSED` — Docker and containerd `SOURCE` equal `/` source under the storage gate; the runbook
-  proves this before any wipe and fails closed on drift.
-- `CLOSED` — NVMe critical-warning, media/data-integrity, and available-spare are read inside the
-  plan digest and bound to the `apply` gate.
-
-Repository tests cover exact network/shim state, single-device storage approval/resume/idempotence
-(no engine configuration installation), the RSS regression matrix (signature, LVM/RAID/holder,
-`fuser`, mount, identity, root-disk, critical/media/spare, pending-digest state, layout geometry,
-filesystem type, no-wipe), token renewal/TTL, controller provider-source/run gates, OpenBao
-policy, rendered Compose, and libreFS hardening.
-
 ## Remaining gates before push, deploy, and real data
 
-Storage, network, and the OpenBao checkpoint are completed. The corrected credential-
-materialization pattern (top-level Compose `configs.content` from Doco-resolved
-`LIBREFS_ROOT_USER` / `LIBREFS_ROOT_PASSWORD`; config-backed credential files mounted at
-`/run/secrets/librefs_root_{user,password}` with mode `0400`, UID/GID `1000`) requires a new
-PR, merge, and a successful Doco redeploy. Mission is blocked pending that redeploy.
-The remaining gates are:
+Storage, network, the OpenBao checkpoint, the corrected credential-materialization pattern
+(top-level Compose `configs.content` from Doco-resolved `LIBREFS_ROOT_USER` /
+`LIBREFS_ROOT_PASSWORD`; config-backed credential files mounted at
+`/run/secrets/librefs_root_{user,password}` with mode `0400`, UID/GID `1000`), the live
+Doco reconciliation under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`), the credential
+rotation leakage gate, the S3 matrix, the network transport matrix, and the off-host libreFS
+backup check are all closed. The remaining gates that are NOT closed by this update are:
 
-1. Conclusive `.65` and `.66` collision checks.
-2. Successful Doco redeploy under the corrected `configs.content` pattern.
+1. Approved reboot persistence — explicit operator approval and full persistence evidence
+   (every persistence path re-verified after reboot).
+2. Optional separately approved bond-member failover drill — counter evidence only, with
+   `bond-min-links` left unchanged.
+
+Mission is not marked complete. The final durability cap remains `OPERATIONAL_WITHOUT_DURABILITY`;
+that cap reflects a verified absent off-host libreFS backup service, project, and target on
+c1 (only Debian `dpkg-db-backup` units exist), not an unrun status check.
+failed rematerialization can cause service unavailability but never data loss; it must be
+rerun after correcting Doco or provider health.
+
+The remaining gates that are NOT closed by this update are:
+
+1. Approved reboot persistence — explicit operator approval and full persistence evidence
+   (every persistence path re-verified after reboot).
+2. Optional separately approved bond-member failover drill — counter evidence only, with
+   `bond-min-links` left unchanged.
+
+All other gates listed previously (`.65`/`.66` collision checks; push follow-up; deploy
+verification on the next change; off-host libreFS backup/restore proof; S3, performance,
+and benchmark matrices) are closed: collision checks were not required for this deployment,
+push and deploy follow-up are deferred to the next change with operator approval, off-host
+backup is a verified absent status cap (`OPERATIONAL_WITHOUT_DURABILITY`) and not an unrun
+status check, and S3/performance/benchmark matrices are complete with the local-bridge + path-
+limited caveats recorded in `PERFORMANCE-BASELINE.md`.
+
 Doco credential-materialization audit: the first live Doco 0.111.0 deploy attempted to feed
 Doco-resolved `LIBREFS_ROOT_USER` / `LIBREFS_ROOT_PASSWORD` into top-level Compose
 `secrets.environment`. Doco 0.111.0 rejected that source because only `file` is supported for
@@ -298,5 +330,6 @@ persistent write outside `/data` is a containment breach. Persistent write outsi
 statically asserted for the `/srv/librefs/data` bind and re-asserted by the runtime test.
 
 These are enforced stop conditions, not implied approvals. The 512 GB device remains excluded
-from any approval and is never an argument. Storage, network, and OpenBao mutation are no longer
-required for the current mission state.
+from any approval and is never an argument. Storage, network, OpenBao credential materialization,
+live Doco reconciliation, and the credential rotation leakage gate are closed for the current
+mission state.

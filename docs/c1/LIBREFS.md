@@ -138,11 +138,18 @@ Root credentials come from `kv/docker/c1/librefs` and are administrative only. A
 receive them. After bootstrap, routine S3 tests and future consumers use scoped non-root service
 accounts with bucket-specific policies.
 
-Doco 0.111.0 includes ordinary resolved KV values in its rendered project hash, so a changed value
-can trigger service recreation on the next poll. Credential rotation follows the stop-Doco,
-CAS-write, controlled-start/recreate sequence in `SECRET-CONTRACT.md`. The Doco mapping, Compose
-secret materialization, container environment, engine metadata, Doco persistence, and logs must
-pass that document's canary leakage gate before real values are used.
+Doco 0.111.0 includes ordinary resolved KV values in its rendered project hash, but live proof
+under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) showed that an ordinary KV value
+change alone does NOT redeploy or rematerialize the container when the Git source is
+unchanged: Doco and the existing `librefs-c1` container continue to hold the prior pair.
+Credential rotation therefore follows the fail-closed rematerialize helper
+(`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh`) to stop the systemd service,
+remove only the stateless container (never `/data` or named volumes), invoke an isolated
+local-only Git custom target through Doco to recreate with current provider values, normalize
+provenance to remote `main`, restart/check the systemd gate, and clean both the temporary
+source tree and the cache; the procedure is detailed in `SECRET-CONTRACT.md`. The Doco
+mapping, Compose config materialization, container environment, engine metadata, Doco
+persistence, and logs must pass that document's canary leakage gate before real values are used.
 
 ## Network and TLS
 

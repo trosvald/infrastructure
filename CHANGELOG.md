@@ -46,8 +46,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   justified by an actual runtime test that generated and read a unique canary through the same
   path the service uses. Docker Compose 5.5.0 is now mise-locked and activated in CI to match the
   embedded injection semantics of Doco 0.111, and the writable-root credential canary is part of
-  that CI step and is non-skippable. After correction, the fresh single-device plan plus the six-line
+  that CI step and is non-skippable. PR7 fixed the checker for `.content.status`; two CAS
+  libreFS credential rotations completed through Doco/OpenBao with the old exact values absent
+  after the second scan and the admin token/material removed. A new fail-closed operator helper
+  `rematerialize-librefs-credentials.sh` exists because Doco 0.111 does not rematerialize
+  external-secret changes on unchanged Git; it removes and recreates only the stateless container
+  and preserves `/data` and volumes. After correction, the fresh single-device plan plus the six-line
   `APPROVE C1 STORAGE` were approved, the 1 TB split retry succeeded with both partitions mounted
   and verified `noatime`, and the c1 SERVICES shim `c1-svc-shim` plus the persistent
-  `c1_services` network were applied and verified. Remaining gates are OpenBao, follow-up
-  PR/merge/live leakage scan, and the leakage canary.
+  `c1_services` network were applied and verified. Scoped non-root S3 CRUD and checksum passed
+  with unauthorized bucket creation denied; the 512 MiB same-host S3 baseline measured
+  567,957,345 B/s upload and 1,863,741,635 B/s download. Routed workstation-to-SERVICES TCP
+  baseline was about 113.95 Mbit/s sender and 112.62 Mbit/s receiver, which is path-limited and
+  not indicative of 10 Gb / LACP capacity. Off-host backup status is verified unconfigured and
+  unproven, so the current cap is `OPERATIONAL_WITHOUT_DURABILITY`. Remaining live gates are
+  approved reboot persistence and optional approved bond-member failover.
