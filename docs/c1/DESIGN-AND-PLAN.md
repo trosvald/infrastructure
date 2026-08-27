@@ -1,14 +1,22 @@
 # c1 Design and Plan
 
 Date: 2026-08-26
-Status: storage applied successfully on the corrected retry. Two XFS partitions on the approved 1 TB
-NVMe are mounted and verified (`c1_librefs` at `/srv/librefs`, `c1_apps` at `/srv/applications`,
-`defaults,noatime`). Docker and containerd `SOURCE` equals `/` source. 512 GB device is excluded
-and unmounted. Prior audit trail preserved: first apply failed safely on the overlength 16-char
-XFS label `c1_applications`, partial state rolled back to a blank GPT, prior plan digest and
-approval invalidated; corrected retry succeeded under the new six-line approval. Mission is no
-longer blocked on storage or network; remaining gates are OpenBao writes, push, merge, deploy,
-reboot, and off-host backup/restore.
+Status: storage applied successfully on the corrected retry. Live Doco reconciliation:
+PR6 merged at `3ff1aaf1facc23f6f85e5c95bc80b9e599289207`; Doco post-merge reconciled
+`librefs-c1` successfully — container healthy at `10.25.13.65` on the pinned
+`ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab`
+(linux/amd64). No host ports, no Docker socket; container env exposes only `_FILE` paths;
+the credential runtime files at `/run/secrets/librefs_root_user` and
+`/run/secrets/librefs_root_password` are UID/GID `1000` mode `0400` and match the exact OpenBao
+v1 values. Exact-value leakage scan passed across container inspect, environment, logs, Doco
+and service journals, Doco data volume and working trees, Docker container metadata, and
+containerd metadata; exported runtime contents were observed only in the two approved
+`/run/secrets` files. Writable-layer diff showed writes only on `/run/secrets` paths and on
+`/data`. Rotation scan remains pending. A checker false-negative was discovered: the Doco
+single-run response wraps run status under a top-level `.content` field; the source and test
+fix is in progress. Mission is not marked complete; remaining gates are token rotation scan,
+push follow-up, deploy verification on the next change, reboot, and off-host libreFS backup/
+restore.
 
 ## Target architecture
 

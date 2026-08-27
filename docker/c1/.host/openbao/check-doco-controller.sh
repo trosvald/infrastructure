@@ -103,7 +103,7 @@ unset job_id
 "$PYTHON_BIN" -c '
 import json,sys
 x=json.load(sys.stdin)
-data=x.get("data",x)
+data=x.get("content")
 status=data.get("status") if isinstance(data,dict) else None
 raise SystemExit(0 if status=="succeeded" else 1)
 ' <<<"$run_response" || fail 'Doco provider canary poll did not succeed'

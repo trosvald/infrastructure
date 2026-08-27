@@ -68,7 +68,7 @@ elif [[ "$*" == *'/v1/api/poll/run?wait=true'* ]]; then
     cat >/dev/null
     if [[ "${BAD_JOB:-false}" == true ]]; then printf '%s\n' '{"data":"poll jobs complete"}'; else printf '%s\n' '{"data":"poll jobs complete","job_id":"safe-job-id"}'; fi
 elif [[ "$*" == *'/v1/api/run/safe-job-id'* ]]; then
-    if [[ "${FAILED_RUN:-false}" == true ]]; then printf '%s\n' '{"data":{"status":"failed"}}'; else printf '%s\n' '{"data":{"status":"succeeded"}}'; fi
+    if [[ "${FAILED_RUN:-false}" == true ]]; then printf '%s\n' '{"content":{"status":"failed"}}'; else printf '%s\n' '{"content":{"status":"succeeded"}}'; fi
 else
     exit 24
 fi
