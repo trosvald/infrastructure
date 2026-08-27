@@ -79,7 +79,7 @@ The repository does not enable OpenBao auth methods, apply policy, write KV data
 | `intent/srx1500/` | First-class seven-domain logical intent, not Ansible auto-loaded host variables |
 | `roles/junos_intent/` | One coherent candidate renderer, identity gates, commit-check, and deployment lifecycle |
 | `playbooks/` | Live, verification, confirmation, bounded drift, and backup workflows |
-| `requirements.yml` | Exact Galaxy collection versions |
+| `../requirements.yml` | Repository-wide exact Galaxy collection versions |
 | `requirements-controller.in` and lock | Reviewed Python runtime and generated hashes |
 | `scripts/` | Dispatch, OpenBao runtime, render, backup, and safety checks |
 | `docker/c0/openbao/policies/junos-operator.hcl` | Sole deployable read-only OpenBao consumer policy |

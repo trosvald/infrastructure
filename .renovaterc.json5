@@ -1,10 +1,12 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
   extends: [
-    "github>home-operations/renovate-presets#2.1.0",
-    "github>monosense-io/infrastructure//.renovate/autoMerge.json5",
-    "github>monosense-io/infrastructure//.renovate/groups.json5",
-    "github>monosense-io/infrastructure//.renovate/labels.json5",
+    "github>trosvald/renovate-config",
+    "github>home-operations/renovate-presets//apps/grafanaDashboards.json5#8.1.0",
+    "github>home-operations/renovate-presets//apps/searxng.json5#8.1.0",
+    "github>home-operations/renovate-presets//apps/talosFactory.json5#8.1.0",
+    "local>trosvald/infrastructure//.renovate/groups.json5",
+    "local>trosvald/infrastructure//.renovate/autoMerge.json5",
     ":timezone(Asia/Jakarta)",
-  ],
+  ]
 }

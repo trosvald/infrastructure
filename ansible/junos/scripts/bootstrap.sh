@@ -18,7 +18,7 @@ ansible_version="$(ansible --version | sed -n '1s/.*core \([^]]*\).*/\1/p')"
 }
 
 mkdir -p -m 0700 .build/tmp/controller .build/tmp/remote .ansible/collections
-ansible-galaxy collection install -r requirements.yml -p .ansible/collections
+ansible-galaxy collection install -r ../requirements.yml -p .ansible/collections
 ansible-galaxy collection list
 ansible-doc -t module juniper.device.junos_config >/dev/null
 ansible-doc -t module juniper.device.junos_facts >/dev/null

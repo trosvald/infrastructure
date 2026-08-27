@@ -1,6 +1,7 @@
 min_version = { hard = "2026.8.11" }
 
 [env]
+JUST_UNSTABLE = "1"
 BAO_ADDR = "https://vault.monosense.io"
 FLATE_PATH = '{{config_root}}/kubernetes/flux/cluster'
 KUBECONFIG = '{{config_root}}/kubernetes/kubeconfig'
@@ -54,3 +55,6 @@ python = "3.13"
 "aqua:jqlang/jq" = "1"
 "aqua:mikefarah/yq" = "4"
 "aqua:gitleaks/gitleaks" = "8.30.0"
+
+[hooks]
+postinstall = "ansible-galaxy install -r {{config_root}}/ansible/requirements.yml"
