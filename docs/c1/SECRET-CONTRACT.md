@@ -21,8 +21,17 @@ the second rotation proved the prior pair absent from runtime files, inspect/env
 and libreFS journals, Doco volume/worktrees, Docker container metadata, containerd, and the
 export; the current pair existed only in the two approved `/run/secrets` files. Short-lived
 admin token revoked; local rotation/comparison material removed. No secrets, recipients, hashes,
-or token values are recorded here. Remaining live gates are approved reboot persistence and
-optional separately approved bond-member failover.
+or token values are recorded here. PR8 (`599fff0e01301d77f5a2e204bac5df9a519f1823`) is merged
+and the reviewed helper `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is
+installed `root:root` mode 0755 on c1. Mission live gates complete after the user-approved
+controlled c1 reboot (outage and SSH recovery observed; post-reboot verification passed on both
+XFS noatime mounts and assertion units, Docker, c1 SERVICES network/shim, exact management
+default route, bond/VLAN/LACP two 10 Gb members with zero link-failure counts, Doco/OpenBao
+token/controller canaries, healthy pinned `librefs-c1` at `.65` with no host ports and
+credential files UID/GID 1000 mode 0400; exact-value leakage and writable-root containment
+scans passed again after reboot). User explicitly skipped optional bond-member failover;
+record intentionally not exercised, not a blocker. Final status `OPERATIONAL_WITHOUT_DURABILITY`
+solely because no off-host libreFS backup target/restore exists on c1; no durability claim.
 
 OpenBao is authoritative for c1 application runtime secrets. Doco-CD resolves KV values only while
 it deploys a project. It is not a runtime sidecar and does not refresh an already-running
