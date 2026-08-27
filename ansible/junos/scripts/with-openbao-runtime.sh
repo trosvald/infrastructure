@@ -80,7 +80,7 @@ fi
   echo "Unreviewed OpenBao TLS server-name overrides are prohibited" >&2
   exit 1
 }
-expected_addr="https://vault.monosense.io"
+expected_addr="https://vault.monosense.io:8200"
 export BAO_ADDR="${BAO_ADDR:-$expected_addr}"
 if [[ "$mode" == "live" ]]; then
   require_mise_tools bao jq ansible-playbook python yq
