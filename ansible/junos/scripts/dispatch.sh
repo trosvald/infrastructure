@@ -29,7 +29,7 @@ case "$action" in
     ;;
   lint)
     require_mise_tools python ansible-playbook ansible-lint yamllint
-    yaml_targets=(group_vars host_vars inventory playbooks roles requirements.yml)
+    yaml_targets=(../requirements.yml group_vars host_vars inventory playbooks roles)
     yamllint "${yaml_targets[@]}"
     ansible-lint playbooks
     for playbook in playbooks/*.yml tests/controller-smoke.yml; do
