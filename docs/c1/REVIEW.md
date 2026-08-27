@@ -9,11 +9,22 @@ and unmounted. Persistent shim `c1-svc-shim` and network unit `c1-services-netwo
 active; route `10.25.13.64/27 dev c1-svc-shim` verified with scope `link`. Audit trail
 preserved: first apply failed safely on overlength XFS label and on a filtered-route query
 that hid the shim's `dev` field; corrected retry succeeded under a fresh plan/approval.
-Mission no longer blocked on storage or network; remaining gates are OpenBao writes, push,
-merge, deploy, reboot, and off-host backup/restore.
+Live Doco reconciliation: PR6 merged at `3ff1aaf1facc23f6f85e5c95bc80b9e599289207`; Doco
+post-merge reconciled `librefs-c1` successfully — container healthy at `10.25.13.65` on the pinned
+`ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab`
+(linux/amd64). No host ports, no Docker socket, container environment exposes only `_FILE`
+paths; the credential runtime files at `/run/secrets/librefs_root_user` and
+`/run/secrets/librefs_root_password` are UID/GID `1000` mode `0400` and match the exact OpenBao
+v1 values. Exact-value leakage scan passed across container inspect, environment, logs, Doco and
+service journals, Doco data volume and working trees, Docker container metadata, and containerd
+metadata; exported runtime contents were observed only in the two approved `/run/secrets` files.
+The writable-layer diff showed writes only on the `/run/secrets` paths (Compose config
+materialization) and on the `/data` bind (libreFS data). Rotation scan remains pending. A
+checker false-negative was discovered: the Doco single-run response wraps run status under a
+top-level `.content` field; the source and test fix is in progress. Mission is not marked
+complete.
 Scope: `DISCOVERY.md`, `DESIGN-AND-PLAN.md`, `SECRET-CONTRACT.md`, `LIBREFS.md`,
 `FUTURE-EDGE.md`, adjacent c0 conventions, OpenBao policy patterns, Docker validation, and the Junos
-adoption gate. This is a design review, not an implementation review or live authorization.
 
 The first independent pass returned `BLOCKED` with six HIGH and four MEDIUM findings. The main
 orchestrator corrected the documents. A focused recheck found two HIGH closures incomplete; those

@@ -11,6 +11,28 @@ Exact destructive device identities remain an operator checkpoint and are not re
 
 Discovery supports repository design, and the corrected storage retry has succeeded:
 
+## Live Doco reconciliation (post-merge PR6, commit 3ff1aaf1facc23f6f85e5c95bc80b9e599289207)
+
+PR6 is merged at `3ff1aaf1facc23f6f85e5c95bc80b9e599289207`. Doco post-merge reconciled libreFS
+successfully: the `librefs-c1` container is healthy at `10.25.13.65` on the pinned
+`ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab`
+image (linux/amd64). No host ports are published, no Docker socket is mounted, the container
+environment exposes only the `_FILE` paths, and the credential runtime files at
+`/run/secrets/librefs_root_user` and `/run/secrets/librefs_root_password` are owned by
+UID/GID `1000` with mode `0400`. The runtime file contents match the exact OpenBao v1 values
+at `kv/docker/c1/librefs` without modification. The exact-value leakage scan passed across
+container inspect, container environment, container logs, Doco and service journals, the Doco
+data volume and working trees, Docker container metadata, and containerd metadata. The exported
+runtime contents were observed only inside the two approved `/run/secrets` files; no other
+location contained the credential values. The writable-layer diff against the static
+`/srv/librefs/data` bind and the read-only mounts showed writes only on the `/run/secrets`
+paths (config file materialization by Compose) and on the `/data` bind (libreFS data
+operations); no writes were observed elsewhere. Rotation scan remains pending. The checker
+false-negative discovered during this verification: the Doco single-run response wraps the run
+status under a top-level `.content` field; the source and test are being fixed to parse that
+structure. Mission is not marked complete — remaining gates are token rotation scan, push, merge
+follow-up if any, deploy verification on the next change, reboot, and off-host libreFS backup/
+restore.
 - the 512 GB NVMe is quarantined/unmounted/excluded (firmware VC400618 has no verified official
   updater);
 - the 1 TB NVMe is split 50:50 between `/srv/librefs` (GPT PARTLABEL `c1_librefs`, XFS label

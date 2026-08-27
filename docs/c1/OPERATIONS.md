@@ -1,15 +1,23 @@
 # c1 Operations
 
 Date: 2026-08-26
-Status: storage applied successfully on the corrected retry. The 1 TB NVMe has two XFS partitions
-mounted and verified — `c1_librefs` at `/srv/librefs` and `c1_apps` at `/srv/applications`,
-`defaults,noatime`. Docker and containerd `SOURCE` equals `/` source. The 512 GB device is
-excluded and unmounted. The host shim `c1-svc-shim` is up at `10.25.13.17/32` with route
-`10.25.13.64/27 dev c1-svc-shim`; `c1-services-shim.service` and `c1-services-network.service`
-are both active. Audit trail preserved: first apply failed safely on overlength XFS label and
-filtered-route query; corrected retry succeeded. Mission no longer blocked on storage or
-network; remaining gates are OpenBao writes, push, merge, deploy, reboot, off-host backup/
+Status: storage applied successfully on the corrected retry. Live Doco reconciliation:
+PR6 merged at `3ff1aaf1facc23f6f85e5c95bc80b9e599289207`; Doco post-merge reconciled
+`librefs-c1` successfully — container healthy at `10.25.13.65` on the pinned
+`ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab`
+(linux/amd64). No host ports, no Docker socket; container env exposes only `_FILE` paths;
+the credential runtime files at `/run/secrets/librefs_root_user` and
+`/run/secrets/librefs_root_password` are UID/GID `1000` mode `0400` and match the exact OpenBao
+v1 values. Exact-value leakage scan passed across container inspect, environment, logs, Doco
+and service journals, Doco data volume and working trees, Docker container metadata, and
+containerd metadata; exported runtime contents were observed only in the two approved
+`/run/secrets` files. Writable-layer diff showed writes only on `/run/secrets` paths and on
+`/data`. Rotation scan remains pending. A checker false-negative was discovered: the Doco
+single-run response wraps run status under a top-level `.content` field; the source and test
+fix is in progress. Mission is not marked complete; remaining gates are token rotation scan,
+push follow-up, deploy verification on the next change, reboot, and off-host libreFS backup/
 restore.
+
 This runbook is subordinate to `DESIGN-AND-PLAN.md`, `REVIEW.md`, `SECRET-CONTRACT.md`, and
 `LIBREFS.md`. Repository validation is safe, offline, and pinned: `docker/c1` activates the
 exact Docker Compose 5.5.0 plugin locked in `.mise/mise.lock`. Doco 0.111.0 embeds Compose
