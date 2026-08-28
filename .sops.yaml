@@ -6,3 +6,9 @@ creation_rules:
           - age1klqk5f49ha4yyg5ehs34nkvef4pax29yvtvch4j3g5ruext0k9jqvdpdw2
           - age176gqr8lshvtzyjpn73696rm4a4jh8cevsvk3ccqtnqr5q3f8wdfqwvztpn
           - age14a89rfvvdrf62v0xe8hlp6hdvgwfnxcku9sjrxc2f47ujkqf5qqqz0c7wk
+  - path_regex: ^encrypted/.*[.]env$
+    key_groups:
+      - age:
+          - age1klqk5f49ha4yyg5ehs34nkvef4pax29yvtvch4j3g5ruext0k9jqvdpdw2
+          - age176gqr8lshvtzyjpn73696rm4a4jh8cevsvk3ccqtnqr5q3f8wdfqwvztpn
+          - age14a89rfvvdrf62v0xe8hlp6hdvgwfnxcku9sjrxc2f47ujkqf5qqqz0c7wk

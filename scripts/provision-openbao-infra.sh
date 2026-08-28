@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+[[ $# -eq 0 ]] || { echo "provision-openbao-infra accepts no arguments" >&2; exit 2; }
+
+for tool in bao jq sops; do
+    command -v "$tool" >/dev/null 2>&1 || {
+        echo "missing locked executable: $tool; run: mise install --locked" >&2
+        exit 1
+    }
+done
+[[ -z "${BAO_SKIP_VERIFY:-}" && -z "${VAULT_SKIP_VERIFY:-}" ]] || {
+    echo "TLS verification bypass variables are prohibited for OpenBao" >&2
+    exit 1
+}
+[[ -z "${BAO_TLS_SERVER_NAME:-}" && -z "${VAULT_TLS_SERVER_NAME:-}" ]] || {
+    echo "Unreviewed OpenBao TLS server-name overrides are prohibited" >&2
+    exit 1
+}
+expected_addr="https://vault.monosense.io:8200"
+export BAO_ADDR="${BAO_ADDR:-$expected_addr}"
+[[ "$BAO_ADDR" == "$expected_addr" ]] || {
+    echo "BAO_ADDR must be $expected_addr" >&2
+    exit 1
+}
+export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}"
+[[ -f "$SOPS_AGE_KEY_FILE" && ! -L "$SOPS_AGE_KEY_FILE" ]] || {
+    echo "SOPS age identity is missing or unsafe: $SOPS_AGE_KEY_FILE" >&2
+    exit 1
+}
+
+admin_lookup="$(bao token lookup -format=json)" || {
+    echo "Authenticate the Bao CLI with the monosense-admin identity first" >&2
+    exit 1
+}
+jq -e '.data.policies | any(. == "admin" or . == "root")' \
+    <<< "$admin_lookup" >/dev/null || {
+    echo "Current Bao CLI token does not carry the admin or root policy" >&2
+    exit 1
+}
+bao auth list -format=json | jq -e 'has("userpass/")' >/dev/null || {
+    echo "OpenBao userpass auth must already be enabled by monosense-admin" >&2
+    exit 1
+}
+
+credentials_source="$repo_dir/encrypted/monosense-infra.env"
+policy_source="$repo_dir/docker/c0/openbao/policies/monosense-infra.hcl"
+[[ -f "$credentials_source" && ! -L "$credentials_source" ]] || {
+    echo "Tracked encrypted monosense-infra credentials are missing or unsafe" >&2
+    exit 1
+}
+[[ -f "$policy_source" && ! -L "$policy_source" ]] || {
+    echo "Tracked monosense-infra policy is missing or unsafe" >&2
+    exit 1
+}
+
+umask 077
+runtime_dir="$(mktemp -d "${TMPDIR:-/tmp}/monosense-infra-provision.XXXXXX")"
+[[ -d "$runtime_dir" && ! -L "$runtime_dir" && "$runtime_dir" == *monosense-infra-provision.* ]] || {
+    echo "Failed to create a safe provisioning directory" >&2
+    exit 1
+}
+credentials_json="$runtime_dir/credentials.json"
+user_payload="$runtime_dir/user.json"
+infra_token=""
+cleanup() {
+    local status=$?
+    if [[ -n "$infra_token" ]]; then
+        BAO_TOKEN="$infra_token" bao token revoke -self >/dev/null 2>&1 || true
+    fi
+    unset infra_token
+    chmod -R u=rwX,go= "$runtime_dir" 2>/dev/null || true
+    rm -rf -- "$runtime_dir"
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
+
+sops decrypt --input-type dotenv --output-type json "$credentials_source" > "$credentials_json"
+chmod 0600 "$credentials_json"
+jq -e '
+    type == "object" and
+    (keys | sort) == ["BAO_PASSWORD", "BAO_USERNAME"] and
+    .BAO_USERNAME == "monosense-infra" and
+    (.BAO_PASSWORD | type == "string" and length >= 32 and test("^[A-Za-z0-9_-]+$"))
+' "$credentials_json" >/dev/null || {
+    echo "Encrypted credentials have an invalid schema" >&2
+    exit 1
+}
+
+bao policy write monosense-infra "$policy_source" >/dev/null
+jq '{
+    password: .BAO_PASSWORD,
+    token_policies: ["monosense-infra"],
+    token_ttl: "15m",
+    token_max_ttl: "30m"
+}' "$credentials_json" > "$user_payload"
+chmod 0600 "$user_payload"
+bao write auth/userpass/users/monosense-infra - < "$user_payload" >/dev/null
+
+infra_token="$(jq '{password: .BAO_PASSWORD}' "$credentials_json" |
+    bao write -field=token auth/userpass/login/monosense-infra -)"
+[[ "$infra_token" =~ ^hvs\.[A-Za-z0-9_-]+$ || "$infra_token" =~ ^s\.[A-Za-z0-9_-]+$ ]] || {
+    infra_token=""
+    echo "OpenBao did not return a valid monosense-infra token" >&2
+    exit 1
+}
+
+allowed_paths=(
+    kv/data/network/junos/srx1500/topology
+    kv/data/network/junos/srx1500/netconf
+    kv/data/network/bgp/cilium-srx1500
+    kv/data/platform/talos/bsd/topology
+    kv/data/platform/talos/bsd/secrets
+)
+for path in "${allowed_paths[@]}"; do
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "$path")" == "read" ]] || {
+        echo "monosense-infra does not have exact read-only capability on $path" >&2
+        exit 1
+    }
+done
+for path in \
+    kv/data/network/bgp/not-approved \
+    kv/metadata/network/bgp/cilium-srx1500 \
+    auth/userpass/users/monosense-infra \
+    auth/token/create \
+    sys/policies/acl/monosense-infra; do
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "$path")" == "deny" ]] || {
+        echo "monosense-infra unexpectedly has capability on $path" >&2
+        exit 1
+    }
+done
+
+BAO_TOKEN="$infra_token" bao token revoke -self >/dev/null
+infra_token=""
+echo "monosense-infra policy, userpass identity, login, TTL, and capability denials verified"

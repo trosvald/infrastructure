@@ -75,7 +75,7 @@ The repository does not enable OpenBao auth methods, apply policy, write KV data
 |---|---|
 | `ansible.cfg` | Strict SSH, project-local collections, ignored controller temp paths |
 | `inventory/` | One isolated Junos inventory; no environment hierarchy is needed for this device |
-| `group_vars/junos/`, `host_vars/srx1500/` | Standard connection and identity controls; secrets arrive from OpenBao |
+| `inventory/{group_vars/junos,host_vars/srx1500}/` | Inventory-bound connection and identity controls; secrets arrive from OpenBao |
 | `intent/srx1500/` | First-class seven-domain logical intent, not Ansible auto-loaded host variables |
 | `roles/junos_intent/` | One coherent candidate renderer, identity gates, commit-check, and deployment lifecycle |
 | `playbooks/` | Live, verification, confirmation, bounded drift, and backup workflows |
@@ -277,6 +277,20 @@ real environment value before writing OpenBao.
       "dhcp_high": "192.0.2.50"
     }
   },
+  "bgp": {
+    "router_id": "198.51.100.1",
+    "local_address": "198.51.100.1",
+    "local_as": 64512,
+    "peer_as": 64513,
+    "peers": [
+      "198.51.100.11",
+      "198.51.100.12",
+      "198.51.100.13",
+      "198.51.100.14",
+      "198.51.100.15"
+    ],
+    "lb_pool": "198.18.0.0/24"
+  },
   "reservations": {
     "mgmt": [],
     "prod": [
@@ -302,6 +316,8 @@ pool's subnet. Reservation names, MAC addresses, and IP addresses must each be
 unique across all pools. `netconf_host_key.key` is only the base64 key body;
 `type` is one of `ssh-ed25519`, `ssh-rsa`, or the supported NIST ECDSA types.
 `backup_age_recipient` is a public recipient, never an age private identity.
+The `bgp` object contains only routing topology. Its `authentication_key` is deliberately absent;
+the runtime injects that value from the separate `kv/network/bgp/cilium-srx1500` record.
 
 Topology is kept in OpenBao because it is environment-specific and sensitive,
 even though not every field is cryptographic secret material. OpenBao must not
@@ -397,21 +413,21 @@ also validates and loads the NETCONF record before opening a device session.
 
 ### Access policy and rotation
 
-The automation consumer needs only `read` on these KV v2 API paths:
+The repository automation identity has `read` only on the five exact KV v2 API
+paths in `docker/c0/openbao/policies/monosense-infra.hcl`:
 
 ```text
 kv/data/network/junos/srx1500/netconf
 kv/data/network/junos/srx1500/topology
+kv/data/network/bgp/cilium-srx1500
+kv/data/platform/talos/bsd/topology
+kv/data/platform/talos/bsd/secrets
 ```
 
-The exact consumer contract is maintained at
-`docker/c0/openbao/policies/junos-operator.hcl`, the sole deployable policy
-source. It grants only `read` on these two data paths; this repository does
-not apply it. An administrator who creates or updates data separately needs
-`create` and `update` on the two `/data/` paths and `read` on the corresponding
-`/metadata/` paths to use CAS. Do not grant write or delete capabilities to the
-Ansible consumer. KV v2 policy paths include `/data/`, although CLI logical
-paths do not.
+The policy has no wildcard, metadata, write, delete, token-creation, auth, or
+administrative capability. Provisioning and rotating the `monosense-infra`
+userpass identity remains an explicit `monosense-admin` operation. KV v2 policy
+paths include `/data/`, although CLI logical paths do not.
 
 Rotate a NETCONF key in this order: install the new public key on the SRX, write
 the new private key to OpenBao with CAS, run `check`, and only then remove the
@@ -422,18 +438,21 @@ a test artifact before updating the public recipient.
 
 ### Runtime fetch and injection
 
-After `bao login`, a real command performs these steps automatically:
+Every protected command performs these steps automatically:
 
-1. `bao token lookup` verifies the existing human session.
-2. `bao kv get -mount=kv -format=json network/junos/srx1500/topology` supplies
-   topology references, management address, pinned host key, and backup
-   recipient.
-3. Live device actions additionally read
-   `network/junos/srx1500/netconf` for the username and private key.
-4. A mode-`0700` temporary directory receives mode-`0600` runtime files. The
-   wrapper exports only file paths and connection values to Ansible.
-5. A trap removes the response documents, key, known-hosts file, SSH config,
-   and resolved topology when the process exits.
+1. Decrypt `encrypted/monosense-infra.env` only inside a mode-`0700`
+   temporary directory and require exactly `BAO_USERNAME` and `BAO_PASSWORD`.
+2. Pipe the password on standard input to the fixed
+   `auth/userpass/login/monosense-infra` action; preexisting `BAO_TOKEN` values
+   and TLS bypasses are rejected.
+3. Read Junos topology, NETCONF credentials, and the shared Cilium BGP
+   password. Talos commands additionally read their exact topology and secret
+   records.
+4. Write only mode-`0600` runtime files. The wrappers export file paths and the
+   short-lived token only to the fixed child action.
+5. Revoke and unset the token, then remove every response document, key,
+   candidate, known-hosts file, SSH config, and resolved context on every exit
+   path.
 
 The host key is authoritative. Each live invocation writes an ephemeral
 `[host]:830` known-host entry and SSH configuration with strict checking. Do not
@@ -467,35 +486,29 @@ authentication remain device-local.
 
 ## Migration and adoption boundary
 
-The reviewed running configuration currently has no `ANSIBLE_SRX1500` group or
-`apply-groups` reference. This implementation therefore has a deliberate
-no-live gate: offline render, tests, and syntax checks remain usable, while
-`deploy` and pre-adoption drift analysis fail closed. No direct cleanup,
-adoption command, or live mutation is part of this change.
+The reviewed migration is complete. The live SRX contains the
+`ANSIBLE_SRX1500` group and `apply-groups ANSIBLE_SRX1500`; equivalent direct managed statements
+were removed atomically while login, root authentication, the dedicated automation identity, and
+other recovery ownership remained device-local.
 
-The gate is the tracked `adoption.yml` record, read directly by the role,
-drift playbook, and live wrapper; it is deliberately `adopted: false`. Ansible
-extra vars cannot override this decision, and no command in this repository
-mutates the record. A separately reviewed maintenance procedure must update
-that tracked record only after all parity evidence is accepted.
+The migration followed the separately approved maintenance boundary:
 
-The migration sequence for a separately approved maintenance window is:
+1. Captured an encrypted committed-configuration backup and proved decryption with the c1-held
+   recovery identity.
+2. Compared direct configuration with the rendered group semantically.
+3. Loaded the group, removed only semantically identical direct statements, and applied the group
+   in one commit-checked, ten-minute commit-confirmed transaction.
+4. Re-verified management and NETCONF access, exact managed-group parity, zero direct managed
+   duplicates, preserved recovery identities, and fail-closed authenticated Cilium BGP state.
+5. Explicitly confirmed the pending commit, then changed the tracked adoption record separately.
 
-1. Capture an allowlisted managed-scope baseline and independently verify
-   recovery access.
-2. Compare direct configuration with the rendered group semantically, keeping
-   login, root authentication, and other recovery ownership device-local.
-3. Atomically remove only approved direct managed hierarchies, load the group
-   and `apply-groups`, run commit-check and a commit-confirmed transaction,
-   then verify effective parity and confirm explicitly.
-4. Review and commit the adoption record change separately; there is no
-   deployment or adoption mutation command here.
+The tracked `adoption.yml` record is now `adopted: true`. The role, drift playbook, and live
+wrapper still read the committed record directly, reject an uncommitted record change, and accept
+no extra-variable override. No repository command mutates the record.
 
-Until then, a normal deploy cannot be accidentally enabled by a caller. The
-drift workflow retrieves only the managed group and apply-groups reference,
-normalizes them in memory, and writes a bounded count/value-free path summary;
-it never writes a whole-device configuration or performs unsafe direct-shadow
-claims.
+The drift workflow retrieves only `ANSIBLE_SRX1500` and its `apply-groups` reference, normalizes
+them in memory, and writes a bounded count/value-free path summary under ignored `.build/`; it
+never persists effective whole-device configuration.
 
 
 ## Command safety
@@ -505,11 +518,12 @@ claims.
 | `just ansible junos bootstrap` | Offline* | No | No | No | No | No |
 | `just ansible junos test` | Offline | No | No | No | No | No |
 | `just ansible junos lint` | Offline | No | No | No | No | No |
-| `just ansible junos render` | OpenBao live | No | No | No | No | Suppressed candidate |
+| `just ansible junos render` | OpenBao live | No | No | No | No | Digest only |
 | `just ansible junos check` | Live | Yes | Temporary | No | No | Suppressed |
-| `just ansible junos diff` | Live | Yes | Temporary | No | No | Reviewed local diff |
-| `just ansible junos deploy` | Live | Yes | Yes | Confirmed | Yes | Candidate/diff |
-| `just ansible junos verify` | Live | Yes | No | Confirms pending | Yes | Suppressed |
+| `just ansible junos diff` | Live | Yes | Temporary | No | No | Value-free reviewed diff |
+| `just ansible junos deploy` | Live | Yes | Yes | Confirmed | Yes | Digest only |
+| `just ansible junos bgp-preflight` | Live | Yes | No | No | No | Suppressed |
+| `just ansible junos bgp-verify` | Live | Yes | No | No | No | Suppressed |
 | `just ansible junos drift` | Live after adoption | Yes (managed scope only) | No | No | No | Bounded path/count summary |
 | `just ansible junos backup` | Live | Yes | No | No | No | Age ciphertext |
 
@@ -529,13 +543,15 @@ just ansible junos lint
 
 ### Render real topology
 
-After `bao login`:
-
 ```console
 just ansible junos render
 ```
 
-This reads only topology, does not contact the device, and writes the candidate under ignored `.build/`. Ephemeral topology is removed when the command exits.
+The repository runtime decrypts `encrypted/monosense-infra.env` only inside an
+owner-controlled temporary directory, authenticates as `monosense-infra`, reads
+the topology and shared Cilium BGP password, and displays only the candidate
+SHA-256. The candidate, decrypted credentials, and short-lived revoked token are
+removed when the command exits.
 
 ### Commit-check and diff
 
@@ -544,24 +560,58 @@ just ansible junos check
 just ansible junos diff
 ```
 
-The runtime proves compatibility, reads both exact OpenBao paths, establishes strict host trust, verifies SRX1500 and the anchored `23.4R2` train, loads the candidate in normal Ansible mode with `check_commit: true`, and discards the uncommitted candidate after NETCONF validation. `diff` additionally requires prepared module diff evidence whenever Junos reports a change; a missing prepared diff fails closed. Review the entire ignored diff. Stop if it touches device-local authentication, anything outside `ANSIBLE_SRX1500`, or unexplained topology.
-
+The runtime establishes strict host trust, verifies SRX1500 and the anchored
+`23.4R2` train, loads the candidate in normal Ansible mode with
+`check_commit: true`, and discards the uncommitted candidate after NETCONF
+validation. `diff` must suppress authentication values and show only normalized
+value-free paths for secret-bearing commands.
 
 ```console
 just ansible junos deploy
 ```
 
-The command renders and validates the exact candidate first, displays its digest, and requires the exact hostname/digest phrase. Only after successful validation does it perform a ten-minute commit-confirmed transaction. Keep the terminal and an independent management path available.
+The command renders a mode-0600 candidate in the protected runtime, displays
+its digest, and requires the exact hostname/digest phrase. It then performs the
+ten-minute commit-confirmed transaction, verifies the newest pending commit,
+managed configuration, and operational evidence against that digest, and
+requires a second digest-specific confirmation before confirming. If
+verification fails, the command is interrupted, or confirmation is withheld,
+do not manually confirm; Junos automatically rolls back. The candidate and
+runtime credentials are deleted only after this uninterrupted transaction
+exits. See [Junos confirmed commits](https://www.juniper.net/documentation/us/en/software/junos/cli/topics/topic-map/junos-configuration-commit.html).
 
-### Verification, confirmation, and rollback
+### Cilium BGP gates
 
-Before the timer expires:
+Before Talos or Cilium BGP activation:
 
 ```console
-just ansible junos verify
+just ansible junos bgp-preflight
 ```
 
-Verification checks the newest pending commit comment, managed-group identity, and structured operational evidence against the exact candidate digest. It requires a second digest-specific confirmation immediately before the final commit. If verification fails, the command is interrupted, or confirmation is withheld, do not manually confirm; Junos automatically rolls back. See [Junos confirmed commits](https://www.juniper.net/documentation/us/en/software/junos/cli/topics/topic-map/junos-configuration-commit.html).
+This requires exactly five configured but non-established peers, zero routes in
+either direction, no LoadBalancer `/32`, and the active covering
+`10.25.20.0/24` static discard.
+
+After Cilium BGP activation:
+
+```console
+just ansible junos bgp-verify
+```
+
+This requires all five authenticated sessions Established to peer AS 64513,
+rejects every received route outside `10.25.20.0/24` `/32`s, proves the SRX
+exports no route, and rechecks the covering discard. Both actions suppress all
+command output and compare the authentication command only by its value-free
+path.
+
+### Talos security-policy observation gate
+
+The broad policies intersecting Talos now log both session start and close.
+Collect at least 24 hours of representative SRX flow logs and matching Hubble
+evidence after bootstrap. Classify every flow from or to the five Talos nodes.
+Do not add the ordered Talos-specific permits and denies, or remove any broad
+fallback path, while a destination or port remains unclassified. Approved
+administrator sources must be present in protected topology before narrowing.
 
 ### Drift
 

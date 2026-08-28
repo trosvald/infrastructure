@@ -12,7 +12,7 @@ class NetconfContractTests(unittest.TestCase):
         return (ROOT / relative).read_text(encoding="utf-8")
 
     def test_inventory_uses_netconf_connection(self):
-        vars_text = self.read("group_vars/junos/main.yml")
+        vars_text = self.read("inventory/group_vars/junos/main.yml")
         self.assertIn("ansible_connection: ansible.netcommon.netconf", vars_text)
         self.assertIn("ansible_network_os: juniper.device.junos", vars_text)
         self.assertIn("ansible_host_key_checking: true", vars_text)
@@ -29,10 +29,19 @@ class NetconfContractTests(unittest.TestCase):
         self.assertNotIn("juniper.device.facts:", role)
         self.assertNotIn("juniper.device.config:", role)
     def test_read_only_playbooks_use_native_facts_commands(self):
-        for relative in ("playbooks/verify.yml", "playbooks/drift.yml"):
+        for relative in (
+            "playbooks/verify.yml",
+            "playbooks/drift.yml",
+            "playbooks/bgp-preflight.yml",
+            "playbooks/bgp-verify.yml",
+            "playbooks/bgp-acceptance.yml",
+        ):
             text = self.read(relative)
             self.assertIn("juniper.device.junos_facts:", text)
-            self.assertIn("juniper.device.junos_command:", text)
+            if relative == "playbooks/drift.yml":
+                self.assertIn("scripts/read_managed.py", text)
+            else:
+                self.assertIn("juniper.device.junos_command:", text)
             self.assertNotIn("juniper.device.facts:", text)
             self.assertNotIn("juniper.device.command:", text)
         confirm = self.read("playbooks/confirm.yml")
@@ -41,10 +50,10 @@ class NetconfContractTests(unittest.TestCase):
     def test_deploy_commit_check_runs_in_normal_mode_and_binds_fresh_digest(self):
         role = self.read("roles/junos_intent/tasks/main.yml")
         deploy = self.read("scripts/deploy.sh")
-        self.assertIn("junos_fresh_candidate_path", role)
-        self.assertIn("junos_fresh_candidate_text | hash('sha256')", role)
+        self.assertIn("junos_intent_fresh_candidate_path", role)
+        self.assertIn("junos_intent_fresh_candidate_text | hash('sha256')", role)
         self.assertIn("checksum_algorithm: sha256", role)
-        self.assertIn("junos_fresh_candidate_stat.stat.checksum == junos_expected_digest", role)
+        self.assertIn("junos_intent_fresh_candidate_stat.stat.checksum == junos_expected_digest", role)
         self.assertNotIn("check_mode: true", role)
         self.assertIn("check_commit: true", role)
         self.assertIn("check_commit: false", role)
@@ -52,9 +61,13 @@ class NetconfContractTests(unittest.TestCase):
         self.assertIn("ansible.netcommon.netconf_rpc:", role)
         self.assertIn("rpc: discard-changes", role)
         self.assertIn("rstrip=false", role)
-        self.assertIn('lines: "{{ junos_fresh_candidate_lines }}"', role)
+        self.assertIn('lines: "{{ junos_intent_fresh_candidate_lines }}"', role)
         self.assertIn('digest="$(sha256_file "$candidate_path")"', deploy)
         self.assertIn('"$emitted_digest" == "$digest"', deploy)
+        self.assertIn("ansible-playbook playbooks/verify.yml", deploy)
+        self.assertIn("ansible-playbook playbooks/confirm.yml", deploy)
+        self.assertIn("JUNOS_CANDIDATE_FILE", deploy)
+        self.assertFalse((ROOT / "scripts/verify.sh").exists())
 
     def test_confirmation_binds_newest_record_and_complete_candidate(self):
         for relative in ("playbooks/verify.yml", "playbooks/confirm.yml"):
@@ -67,6 +80,28 @@ class NetconfContractTests(unittest.TestCase):
             self.assertIn("show configuration groups ANSIBLE_SRX1500 | display set", text)
             self.assertIn("show configuration apply-groups | display set", text)
             self.assertIn("running_ordered_lines == ", text)
+    def test_bgp_actions_are_secret_suppressed_and_structurally_bounded(self):
+        dispatch = self.read("scripts/dispatch.sh")
+        runtime = self.read("scripts/with-openbao-runtime.sh")
+        for action in ("bgp-preflight", "bgp-verify"):
+            self.assertIn(action, dispatch)
+            self.assertIn(f"playbooks/{action}.yml", runtime)
+            playbook = self.read(f"playbooks/{action}.yml")
+            self.assertIn("show bgp summary group CILIUM", playbook)
+            self.assertIn("show bgp neighbor 10.25.11.15", playbook)
+            self.assertIn("show route protocol bgp", playbook)
+            self.assertIn(
+                "show route receive-protocol bgp 10.25.11.15",
+                playbook,
+            )
+            self.assertIn("show route 10.25.20.0/24 exact", playbook)
+            self.assertIn("no_log: true", playbook)
+        self.assertIn("State:\\s+Established", self.read("playbooks/bgp-verify.yml"))
+        self.assertIn(
+            "State:[ ]+Established",
+            self.read("playbooks/bgp-preflight.yml"),
+        )
+
 
     def test_operational_evidence_is_concrete(self):
         for relative in ("roles/junos_intent/tasks/main.yml", "playbooks/verify.yml", "playbooks/confirm.yml"):
@@ -119,11 +154,11 @@ class NetconfContractTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o755)
 
-    def test_deploy_and_drift_are_fail_closed_before_adoption(self):
+    def test_deploy_and_drift_require_committed_adoption(self):
         adoption = self.read("adoption.yml")
         role = self.read("roles/junos_intent/tasks/main.yml")
         drift = self.read("playbooks/drift.yml")
-        self.assertIn("adopted: false", adoption)
+        self.assertIn("adopted: true", adoption)
         self.assertIn("HEAD:ansible/junos/adoption.yml", role)
         self.assertIn("HEAD:ansible/junos/adoption.yml", drift)
         self.assertIn("diff", role)
@@ -131,9 +166,10 @@ class NetconfContractTests(unittest.TestCase):
 
     def test_drift_does_not_persist_whole_configuration(self):
         drift = self.read("playbooks/drift.yml")
-        self.assertIn("show configuration groups ANSIBLE_SRX1500 | display set", drift)
-        self.assertIn("show configuration apply-groups | display set", drift)
-        self.assertNotIn("show configuration | display inheritance", drift)
+        reader = self.read("scripts/read_managed.py")
+        self.assertIn("show configuration groups ANSIBLE_SRX1500 | display set", reader)
+        self.assertIn("show configuration apply-groups | display set", reader)
+        self.assertNotIn("show configuration | display inheritance", drift + reader)
         self.assertNotIn(".drift.set", drift)
         self.assertIn("drift_missing[:50]", drift)
         self.assertIn("drift_extra[:50]", drift)

@@ -1,14 +1,8 @@
 ---
 customization:
-  extraKernelArgs:
-    - amd_iommu=on                                     # PCI Passthrough
-    - amd_pstate=active                                # AMD P-State Driver
-    - iommu=pt                                         # PCI Passthrough
-    - module_blacklist=igc                             # Disable onboard NIC
-    - pcie_aspm=off                                    # Disable PCIe ASPM
-    - talos.config.early={{ ENV.CONFIG_EARLY }}        # Early config
   systemExtensions:
     officialExtensions:
-      - siderolabs/amd-ucode                           # AMD CPU Microcode
-      - siderolabs/amdgpu                              # AMD GPU
-      - siderolabs/gasket-driver                       # Google Coral
+      - siderolabs/intel-ucode
+      - siderolabs/i915
+      - siderolabs/iscsi-tools
+      - siderolabs/nfsrahead

@@ -43,7 +43,7 @@ Git is the only persistent zone-content writer. Use this workflow:
 2. Update every changed SOA serial. If the execution UTC date is later than the serial's
    `YYYYMMDD`, use `YYYYMMDD01`; otherwise increment its two-digit `NN`. Never decrease or reuse a
    serial.
-3. Run `just docker validate-c0`, `scripts/gitleaks-scan.sh`, and
+3. Run `just docker validate-c0`, `just scan-secrets`, and
    `actionlint .github/workflows/docker.yaml`.
 4. Commit and push the reviewed change to `main`.
 5. Wait for Doco-CD to report a successful PowerDNS deployment.

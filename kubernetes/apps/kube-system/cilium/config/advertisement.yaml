@@ -1,0 +1,17 @@
+---
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/cilium.io/ciliumbgpadvertisement_v2.json
+apiVersion: cilium.io/v2
+kind: CiliumBGPAdvertisement
+metadata:
+  name: cilium-loadbalancer-hosts
+  labels:
+    bgp.monosense.io/advertisement: loadbalancer-hosts
+spec:
+  advertisements:
+    - advertisementType: Service
+      selector:
+        matchLabels:
+          bgp.monosense.io/advertise: "true"
+      service:
+        addresses:
+          - LoadBalancerIP

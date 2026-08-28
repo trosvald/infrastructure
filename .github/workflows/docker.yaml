@@ -59,7 +59,7 @@ jobs:
             python
           cache: true
       - name: Verify scanner canary and scan repository
-        run: scripts/gitleaks-scan.sh
+        run: just scan-secrets
       - name: Validate workflow syntax
         run: actionlint
       - name: Activate locked Docker Compose

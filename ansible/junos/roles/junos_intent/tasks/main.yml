@@ -2,8 +2,8 @@
 - name: Require an approved operation and commit comment
   ansible.builtin.assert:
     that:
-      - junos_operation in ['check', 'diff', 'deploy']
-      - junos_operation != 'deploy' or junos_commit_comment | length >= 12
+      - junos_intent_operation in ['check', 'diff', 'deploy']
+      - junos_intent_operation != 'deploy' or junos_intent_commit_comment | length >= 12
 
 - name: Reject uncommitted adoption authorization
   ansible.builtin.command:
@@ -18,7 +18,7 @@
       - ansible/junos/adoption.yml
   changed_when: false
   delegate_to: localhost
-  when: junos_operation == 'deploy'
+  when: junos_intent_operation == 'deploy'
 
 - name: Read the committed adoption authorization
   ansible.builtin.command:
@@ -28,34 +28,34 @@
       - "{{ role_path }}/../../../.."
       - show
       - HEAD:ansible/junos/adoption.yml
-  register: junos_committed_adoption
+  register: junos_intent_committed_adoption
   changed_when: false
   delegate_to: localhost
-  when: junos_operation == 'deploy'
+  when: junos_intent_operation == 'deploy'
 
 - name: Require the committed adoption authorization for deployment
   ansible.builtin.assert:
     that:
-      - (junos_committed_adoption.stdout | from_yaml).adopted | default(false) | bool
+      - (junos_intent_committed_adoption.stdout | from_yaml).adopted | default(false) | bool
     fail_msg: >-
       Routine deployment is disabled until the committed adoption record is true and the
       working copy matches HEAD. Complete the reviewed parity adoption procedure first.
-  when: junos_operation == 'deploy'
+  when: junos_intent_operation == 'deploy'
 
 - name: Refuse unsafe or overrideable build directory
   ansible.builtin.stat:
     path: "{{ playbook_dir }}/../.build"
     follow: false
-  register: junos_build_stat
+  register: junos_intent_build_stat
   delegate_to: localhost
 
 - name: Enforce protected build directory
   ansible.builtin.assert:
     that:
-      - not junos_build_stat.stat.exists or
-        (junos_build_stat.stat.isdir and not junos_build_stat.stat.islnk and
-        junos_build_stat.stat.uid | string == lookup('ansible.builtin.pipe', 'id -u') and
-        junos_build_stat.stat.mode == '0700')
+      - not junos_intent_build_stat.stat.exists or
+        (junos_intent_build_stat.stat.isdir and not junos_intent_build_stat.stat.islnk and
+        junos_intent_build_stat.stat.uid | string == lookup('ansible.builtin.pipe', 'id -u') and
+        junos_intent_build_stat.stat.mode == '0700')
     fail_msg: "Junos artifact directory must be an owner-controlled real 0700 directory."
   delegate_to: localhost
 
@@ -65,12 +65,12 @@
     state: directory
     mode: "0700"
     follow: false
-  when: not junos_build_stat.stat.exists
+  when: not junos_intent_build_stat.stat.exists
   delegate_to: localhost
 
 - name: Select a private fresh candidate artifact
   ansible.builtin.set_fact:
-    junos_fresh_candidate_path: "{{ junos_candidate_path }}.fresh"
+    junos_intent_fresh_candidate_path: "{{ junos_intent_candidate_path }}.fresh"
 
 - name: Render and validate deterministic candidate
   ansible.builtin.command:
@@ -82,40 +82,40 @@
       - --topology
       - "{{ lookup('ansible.builtin.env', 'JUNOS_TOPOLOGY_FILE') }}"
       - --output
-      - "{{ junos_fresh_candidate_path }}"
+      - "{{ junos_intent_fresh_candidate_path }}"
       - --check
-  register: render_result
+  register: junos_intent_render_result
   changed_when: false
   no_log: true
   delegate_to: localhost
 
 - name: Read and hash the fresh candidate immediately after rendering
   ansible.builtin.set_fact:
-    junos_fresh_candidate_text: "{{ lookup('ansible.builtin.file', junos_fresh_candidate_path, rstrip=false) }}"
-    junos_fresh_candidate_lines: "{{ lookup('ansible.builtin.file', junos_fresh_candidate_path).splitlines() }}"
+    junos_intent_fresh_candidate_text: "{{ lookup('ansible.builtin.file', junos_intent_fresh_candidate_path, rstrip=false) }}"
+    junos_intent_fresh_candidate_lines: "{{ lookup('ansible.builtin.file', junos_intent_fresh_candidate_path).splitlines() }}"
   no_log: true
 
 - name: Hash the fresh candidate artifact
   ansible.builtin.stat:
-    path: "{{ junos_fresh_candidate_path }}"
+    path: "{{ junos_intent_fresh_candidate_path }}"
     checksum_algorithm: sha256
     follow: false
-  register: junos_fresh_candidate_stat
+  register: junos_intent_fresh_candidate_stat
   delegate_to: localhost
   no_log: true
 
 - name: Bind deployment to the freshly rendered candidate
   ansible.builtin.assert:
     that:
-      - junos_fresh_candidate_stat.stat.exists
-      - junos_fresh_candidate_stat.stat.isreg
-      - not junos_fresh_candidate_stat.stat.islnk
+      - junos_intent_fresh_candidate_stat.stat.exists
+      - junos_intent_fresh_candidate_stat.stat.isreg
+      - not junos_intent_fresh_candidate_stat.stat.islnk
       - >-
-        (render_result.stderr | regex_search('(?m)^sha256:' ~ junos_expected_digest ~ '$')) is not none
-      - junos_fresh_candidate_stat.stat.checksum == junos_expected_digest
-      - junos_fresh_candidate_text | hash('sha256') == junos_expected_digest
+        (junos_intent_render_result.stderr | regex_search('(?m)^sha256:' ~ junos_expected_digest ~ '$')) is not none
+      - junos_intent_fresh_candidate_stat.stat.checksum == junos_expected_digest
+      - junos_intent_fresh_candidate_text | hash('sha256') == junos_expected_digest
     fail_msg: "Fresh candidate digest differs from the approved deployment digest."
-  when: junos_operation == 'deploy'
+  when: junos_intent_operation == 'deploy'
   no_log: true
 
 - name: Verify device identity before candidate modification
@@ -123,57 +123,67 @@
     gather_subset:
       - default
       - hardware
-  register: device_facts
+  register: junos_intent_device_facts
   no_log: true
 
 - name: Enforce device identity and release
   ansible.builtin.assert:
     that:
-      - device_facts.ansible_facts.ansible_net_model | upper == junos_expected_model
-      - device_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
-      - device_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
+      - junos_intent_device_facts.ansible_facts.ansible_net_model | upper == junos_expected_model
+      - junos_intent_device_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
+      - junos_intent_device_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
     fail_msg: Connected device identity or Junos release does not match the approved target.
 
 - name: Require a digest-bound deployment request
   ansible.builtin.assert:
     that:
       - junos_expected_digest | default('') is match('^[0-9a-f]{64}$')
-      - junos_commit_comment == 'Ansible candidate ' ~ junos_expected_digest
+      - junos_intent_commit_comment == 'Ansible candidate ' ~ junos_expected_digest
     fail_msg: "Deployment requires the exact rendered candidate digest in its commit comment."
-  when: junos_operation == 'deploy'
+  when: junos_intent_operation == 'deploy'
 - name: Validate and review the candidate without activation
   block:
     - name: Load candidate and run commit-check without activation
       juniper.device.junos_config:
-        lines: "{{ junos_fresh_candidate_lines }}"
+        lines: "{{ junos_intent_fresh_candidate_lines }}"
         src_format: set
         update: merge
         check_commit: true
         confirm: 0
-        comment: "{{ junos_commit_comment }}"
-      register: candidate_result
+        comment: "{{ junos_intent_commit_comment }}"
+      register: junos_intent_candidate_result
       diff: true
       no_log: true
 
     - name: Require candidate diff evidence when Junos reports a change
       ansible.builtin.assert:
         that:
-          - not (candidate_result.changed | default(false) | bool) or
-            (candidate_result.diff is defined and candidate_result.diff.prepared is defined and
-            candidate_result.diff.prepared | string | trim | length > 0)
+          - not (junos_intent_candidate_result.changed | default(false) | bool) or
+            (junos_intent_candidate_result.diff is defined and junos_intent_candidate_result.diff.prepared is defined and
+            junos_intent_candidate_result.diff.prepared | string | trim | length > 0)
         fail_msg: "Junos reported a changed candidate without prepared diff evidence."
-      when: junos_operation == 'diff'
+      when: junos_intent_operation == 'diff'
+    - name: Normalize authentication changes to a value-free path
+      ansible.builtin.set_fact:
+        junos_intent_safe_prepared_diff: >-
+          {{ junos_intent_candidate_result.diff.prepared | string
+             | regex_replace('(?m)^.*authentication-key.*$',
+                             'protocols/bgp/group/CILIUM/authentication-key') }}
+      when: junos_intent_operation == 'diff' and junos_intent_candidate_result.changed | default(false) | bool
+      no_log: true
+
 
     - name: Persist only the bounded candidate diff for review
       ansible.builtin.copy:
         content: >-
-          {{ candidate_result.diff.prepared | string
-             if (candidate_result.changed | default(false) | bool)
+          {{ junos_intent_safe_prepared_diff
+             if (junos_intent_candidate_result.changed | default(false) | bool)
              else 'No candidate difference reported\n' }}
-        dest: "{{ junos_diff_path }}"
+        dest: "{{ junos_intent_diff_path }}"
         mode: "0600"
       delegate_to: localhost
       no_log: true
+      when: junos_intent_operation == 'diff'
   always:
     - name: Discard the validated NETCONF candidate
       ansible.netcommon.netconf_rpc:
@@ -183,21 +193,21 @@
 
 - name: Commit the validated candidate with a ten-minute rollback timer
   juniper.device.junos_config:
-    lines: "{{ junos_fresh_candidate_lines }}"
+    lines: "{{ junos_intent_fresh_candidate_lines }}"
     src_format: set
     update: merge
     check_commit: false
     # The pinned juniper.device NETCONF plugin serializes confirm-timeout in seconds.
     confirm: 600
-    comment: "{{ junos_commit_comment }}"
-  register: deployment_result
+    comment: "{{ junos_intent_commit_comment }}"
+  register: junos_intent_deployment_result
   check_mode: false
-  when: junos_operation == 'deploy'
+  when: junos_intent_operation == 'deploy'
   no_log: true
 
 - name: Reset the NETCONF session after a confirmed commit
-  ansible.builtin.meta: reset_connection
-  when: junos_operation == 'deploy'
+  ansible.builtin.include_tasks: reset_connection.yml
+  when: junos_intent_operation == 'deploy'
 
 - name: Verify post-commit operational state
   juniper.device.junos_command:
@@ -211,73 +221,99 @@
       - show route table VR-XLSATU.inet.0 0.0.0.0/0 exact
       - show security nat source rule all
       - show configuration security policies | display set
-  register: postcheck_result
-  when: junos_operation == 'deploy'
+      - show bgp summary group CILIUM
+      - show route 10.25.20.0/24 exact
+  register: junos_intent_postcheck_result
+  when: junos_intent_operation == 'deploy'
   no_log: true
 
 - name: Normalize the reviewed and running managed configuration
   ansible.builtin.set_fact:
-    junos_reviewed_group_lines: >-
-      {{ junos_fresh_candidate_lines
-         | select('match', '^set groups ANSIBLE_SRX1500 ') | list | sort }}
-    junos_reviewed_apply_lines: >-
-      {{ junos_fresh_candidate_lines
+    junos_intent_reviewed_group_lines: >-
+      {{ junos_intent_fresh_candidate_lines
+         | select('match', '^set groups ANSIBLE_SRX1500 ')
+         | reject('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+         | list | sort }}
+    junos_intent_reviewed_authentication_paths: >-
+      {{ junos_intent_fresh_candidate_lines
+         | select('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+         | map('regex_replace', '^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\\s+.+$', '\\1')
+         | list }}
+    junos_intent_reviewed_apply_lines: >-
+      {{ junos_intent_fresh_candidate_lines
          | select('match', '^set apply-groups ANSIBLE_SRX1500$') | list | sort }}
-    junos_running_group_lines: >-
-      {{ postcheck_result.stdout[1].splitlines() | map('trim')
+    junos_intent_running_group_lines: >-
+      {{ junos_intent_postcheck_result.stdout[1].splitlines() | map('trim')
+         | reject('equalto', '')
+         | reject('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+         | list | sort }}
+    junos_intent_running_authentication_paths: >-
+      {{ junos_intent_postcheck_result.stdout[1].splitlines() | map('trim')
+         | select('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+         | map('regex_replace', '^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\\s+.+$', '\\1')
+         | list }}
+    junos_intent_running_apply_lines: >-
+      {{ junos_intent_postcheck_result.stdout[2].splitlines() | map('trim')
          | reject('equalto', '') | list | sort }}
-    junos_running_apply_lines: >-
-      {{ postcheck_result.stdout[2].splitlines() | map('trim')
-         | reject('equalto', '') | list | sort }}
-    junos_reviewed_ordered_lines: >-
-      {{ junos_fresh_candidate_lines
+    junos_intent_reviewed_ordered_lines: >-
+      {{ junos_intent_fresh_candidate_lines
          | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
          | list }}
-    junos_running_ordered_lines: >-
-      {{ postcheck_result.stdout[1].splitlines() | map('trim')
+    junos_intent_running_ordered_lines: >-
+      {{ junos_intent_postcheck_result.stdout[1].splitlines() | map('trim')
          | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
          | list }}
-  when: junos_operation == 'deploy'
+  when: junos_intent_operation == 'deploy'
   no_log: true
 
 - name: Require the newest pending commit record and exact managed candidate
   ansible.builtin.assert:
     that:
-      - postcheck_result.stdout is defined
-      - postcheck_result.stdout | length == 9
+      - junos_intent_postcheck_result.stdout is defined
+      - junos_intent_postcheck_result.stdout | length == 11
       - >-
-        (postcheck_result.stdout[0] | default('')
+        (junos_intent_postcheck_result.stdout[0] | default('')
          | regex_search('(?ms)^\\s*0\\s+.*?(?=\\n\\s*[0-9]+\\s+|\\Z)')
          | default('')) is search('(?i)commit confirmed|pending|rollback in')
       - >-
-        (postcheck_result.stdout[0] | default('')
+        (junos_intent_postcheck_result.stdout[0] | default('')
          | regex_search('(?ms)^\\s*0\\s+.*?(?=\\n\\s*[0-9]+\\s+|\\Z)')
          | default('')
          | regex_search('(?m)^\\s*Ansible candidate ' ~ junos_expected_digest ~ '\\s*$')) is not none
-      - junos_reviewed_group_lines | length > 0
-      - junos_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
-      - junos_running_group_lines == junos_reviewed_group_lines
-      - junos_running_apply_lines == junos_reviewed_apply_lines
-      - junos_running_ordered_lines == junos_reviewed_ordered_lines
-      - postcheck_result.stdout[3] is search('(?m)^\\s*irb[.]2510\\s+up\\s+up(?:\\s|$)')
-      - postcheck_result.stdout[3] is search('(?m)^\\s*irb[.]2512\\s+up\\s+up(?:\\s|$)')
-      - postcheck_result.stdout[4] is search('(?m)^\\s*\\S+\\s+VLAN-MGMT\\s+2510\\b')
-      - postcheck_result.stdout[5] is search('0[.]0[.]0[.]0/0')
-      - postcheck_result.stdout[5] is search('[*>]')
-      - postcheck_result.stdout[6] is search('0[.]0[.]0[.]0/0')
-      - postcheck_result.stdout[6] is search('[*>]')
-      - postcheck_result.stdout[7] is search('HOME-TO-XLSATU')
-      - postcheck_result.stdout[7] is search('MGMT-TO-MYREP')
-      - postcheck_result.stdout[7] is search('PROD-TO-MYREP')
-      - postcheck_result.stdout[7] is search('DEV-TO-MYREP')
+      - junos_intent_reviewed_group_lines | length > 0
+      - junos_intent_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
+      - junos_intent_running_group_lines == junos_intent_reviewed_group_lines
+      - junos_intent_reviewed_authentication_paths == ['set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key']
+      - junos_intent_running_authentication_paths == junos_intent_reviewed_authentication_paths
+      - junos_intent_running_apply_lines == junos_intent_reviewed_apply_lines
+      - junos_intent_running_ordered_lines == junos_intent_reviewed_ordered_lines
+      - junos_intent_postcheck_result.stdout[3] is search('(?m)^\\s*irb[.]2510\\s+up\\s+up(?:\\s|$)')
+      - junos_intent_postcheck_result.stdout[3] is search('(?m)^\\s*irb[.]2512\\s+up\\s+up(?:\\s|$)')
+      - junos_intent_postcheck_result.stdout[4] is search('(?m)^\\s*\\S+\\s+VLAN-MGMT\\s+2510\\b')
+      - junos_intent_postcheck_result.stdout[5] is search('0[.]0[.]0[.]0/0')
+      - junos_intent_postcheck_result.stdout[5] is search('[*>]')
+      - junos_intent_postcheck_result.stdout[6] is search('0[.]0[.]0[.]0/0')
+      - junos_intent_postcheck_result.stdout[6] is search('[*>]')
+      - junos_intent_postcheck_result.stdout[7] is search('HOME-TO-XLSATU')
+      - junos_intent_postcheck_result.stdout[7] is search('MGMT-TO-MYREP')
+      - junos_intent_postcheck_result.stdout[7] is search('PROD-TO-MYREP')
+      - junos_intent_postcheck_result.stdout[7] is search('DEV-TO-MYREP')
+      - >-
+        (junos_intent_postcheck_result.stdout[9]
+         | regex_findall('10[.]25[.]11[.](?:11|12|13|14|15)')
+         | unique | sort)
+        == ['10.25.11.11', '10.25.11.12', '10.25.11.13', '10.25.11.14', '10.25.11.15']
+      - junos_intent_postcheck_result.stdout[10] is search('10[.]25[.]20[.]0/24')
+      - junos_intent_postcheck_result.stdout[10] is search('Discard')
+      - junos_intent_postcheck_result.stdout[10] is search('[*>]')
     fail_msg: "Post-commit evidence is missing, stale, or does not match the reviewed candidate."
-  when: junos_operation == 'deploy'
+  when: junos_intent_operation == 'deploy'
   no_log: true
 
 - name: Require every reviewed security policy and action
   ansible.builtin.assert:
     that:
-      - item in postcheck_result.stdout[8]
+      - item in junos_intent_postcheck_result.stdout[8]
     fail_msg: "Required security policy evidence is missing or has the wrong action: {{ item }}"
   loop:
     - set security policies from-zone HOME to-zone WAN-XLSATU policy HOME-INTERNET then permit
@@ -298,12 +334,12 @@
     - set security policies from-zone PROD to-zone HOME policy PROD-BLOCK-HOME then deny
     - set security policies from-zone DEV to-zone HOME policy DEV-BLOCK-HOME then deny
     - set security policies default-policy deny-all
-  when: junos_operation == 'deploy'
+  when: junos_intent_operation == 'deploy'
   no_log: true
 
 
 - name: Report safe candidate identity
   ansible.builtin.debug:
     msg: >-
-      Candidate validated ({{ render_result.stderr | trim }}); transient diff is at
-      {{ junos_diff_path }}
+      Candidate validated ({{ junos_intent_render_result.stderr | trim }}); transient diff is at
+      {{ junos_intent_diff_path }}

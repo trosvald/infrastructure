@@ -1,5 +1,9 @@
 ---
 routing:
+  router_id: { topology: bgp.router_id }
+  autonomous_system: { topology: bgp.local_as }
+  static_routes:
+    - { route: { topology: bgp.lb_pool }, action: discard }
   instances:
     - name: VR-XLSATU
       type: virtual-router
@@ -15,9 +19,36 @@ routing:
         - { name: PROD, from_instance: master, route_filter: { topology: networks.prod.subnet }, action: accept }
         - { name: DEV, from_instance: master, route_filter: { topology: networks.dev.subnet }, action: accept }
         - { name: REJECT-REST, action: reject }
+    - name: IMPORT-CILIUM-LB
+      terms:
+        - name: CILIUM-LB-HOSTS
+          from_protocol: bgp
+          route_filter:
+            prefix: { topology: bgp.lb_pool }
+            prefix_length_range: /32-/32
+          action: accept
+        - { name: REJECT-REST, action: reject }
+    - name: EXPORT-CILIUM-NONE
+      terms:
+        - { name: REJECT-ALL, action: reject }
   instance_imports:
     - { routing_instance: master, policy: IMPORT-HOME-INTO-MASTER }
     - { routing_instance: VR-XLSATU, policy: IMPORT-MASTER-INTERNAL-INTO-HOME }
+  bgp:
+    name: CILIUM
+    type: external
+    local_address: { topology: bgp.local_address }
+    local_as: { topology: bgp.local_as }
+    peer_as: { topology: bgp.peer_as }
+    authentication_key: { topology: bgp.authentication_key }
+    hold_time: 9
+    multipath: true
+    import_policy: IMPORT-CILIUM-LB
+    export_policy: EXPORT-CILIUM-NONE
+    family: inet
+    unicast:
+      prefix_limit: { maximum: 128, teardown: 100, idle_timeout: 5 }
+    neighbors: { topology: bgp.peers }
   protocols:
     - [l2-learning, global-mode, switching]
   rstp:

@@ -1,0 +1,104 @@
+---
+- name: Prove fail-closed SRX Cilium BGP preflight state
+  hosts: junos
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars:
+    cilium_peers:
+      - 10.25.11.11
+      - 10.25.11.12
+      - 10.25.11.13
+      - 10.25.11.14
+      - 10.25.11.15
+  tasks:
+    - name: Read device identity before BGP preflight
+      juniper.device.junos_facts:
+        gather_subset:
+          - default
+          - hardware
+      register: bgp_preflight_facts
+      no_log: true
+
+    - name: Enforce approved device identity and release train
+      ansible.builtin.assert:
+        that:
+          - bgp_preflight_facts.ansible_facts.ansible_net_model | upper == junos_expected_model
+          - bgp_preflight_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
+          - bgp_preflight_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
+      no_log: true
+
+    - name: Read exact configured and operational Cilium BGP state
+      juniper.device.junos_command:
+        commands:
+          - show configuration groups ANSIBLE_SRX1500 protocols bgp group CILIUM
+          - show bgp summary group CILIUM
+          - show bgp neighbor 10.25.11.11
+          - show bgp neighbor 10.25.11.12
+          - show bgp neighbor 10.25.11.13
+          - show bgp neighbor 10.25.11.14
+          - show bgp neighbor 10.25.11.15
+          - show route protocol bgp
+          - show route receive-protocol bgp 10.25.11.11
+          - show route receive-protocol bgp 10.25.11.12
+          - show route receive-protocol bgp 10.25.11.13
+          - show route receive-protocol bgp 10.25.11.14
+          - show route receive-protocol bgp 10.25.11.15
+          - show route 10.25.20.0/24 exact
+          - show route advertising-protocol bgp 10.25.11.11
+          - show route advertising-protocol bgp 10.25.11.12
+          - show route advertising-protocol bgp 10.25.11.13
+          - show route advertising-protocol bgp 10.25.11.14
+          - show route advertising-protocol bgp 10.25.11.15
+      register: bgp_preflight
+      no_log: true
+
+    - name: Require exact configured peer and value-free authentication paths
+      ansible.builtin.assert:
+        that:
+          - bgp_preflight.stdout | length == 19
+          - >-
+            (bgp_preflight.stdout[0]
+             | regex_findall('(?m)^\\s*neighbor (10[.]25[.]11[.](?:11|12|13|14|15));$')
+             | unique | sort) == cilium_peers
+          - >-
+            (bgp_preflight.stdout[0]
+             | regex_findall('(?m)^\\s*authentication-key\\s+.+;(?:\\s+## [A-Z-]+)?$')
+             | length) == 1
+          - bgp_preflight.stdout[0] is search('(?m)^\\s*peer-as 64513;$')
+          - bgp_preflight.stdout[0] is search('(?m)^\\s*hold-time 9;$')
+          - bgp_preflight.stdout[0] is search('(?m)^\\s*multipath;$')
+        fail_msg: "Configured CILIUM group, peers, or value-free authentication path is not exact."
+      no_log: true
+
+    - name: Require all five peers configured but not established
+      ansible.builtin.assert:
+        that:
+          - item.1 is search('Peer:[ ]+' ~ item.0 ~ '[+]179 AS 64513')
+          - item.1 is search('Type:[ ]+External[ ]+State:[ ]+(?:Active|Connect|Idle)')
+          - item.1 is not search('State:[ ]+Established')
+      loop: "{{ cilium_peers | zip(bgp_preflight.stdout[2:7]) }}"
+      loop_control:
+        label: "{{ item.0 }}"
+      no_log: true
+
+    - name: Require zero BGP routes in either direction
+      ansible.builtin.assert:
+        that:
+          - >-
+            (bgp_preflight.stdout[7:13] | join('\n'))
+            is not search('10[.]25[.]20[.][0-9]+/32')
+          - >-
+            (bgp_preflight.stdout[14:19] | join('\n'))
+            is not search('(?m)^\s*[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+/[0-9]+')
+        fail_msg: "A Cilium /32 or SRX advertisement exists before Cilium activation."
+      no_log: true
+
+    - name: Require the active static discard fallback
+      ansible.builtin.assert:
+        that:
+          - bgp_preflight.stdout[13] is search('10[.]25[.]20[.]0/24')
+          - bgp_preflight.stdout[13] is search('Discard')
+          - bgp_preflight.stdout[13] is search('[*>]')
+        fail_msg: "The active 10.25.20.0/24 static discard fallback is missing."
+      no_log: true

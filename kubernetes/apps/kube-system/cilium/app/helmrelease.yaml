@@ -32,14 +32,29 @@ spec:
       exclusive: false
     dashboards:
       enabled: true
-    devices: bond+
+    devices: bond0
     enableIPv4BIGTCP: true
     endpointRoutes:
       enabled: true
     envoy:
       enabled: false
     hubble:
-      enabled: false
+      enabled: true
+      metrics:
+        enabled:
+          - dns
+          - drop
+          - flow
+          - httpV2
+          - icmp
+          - port-distribution
+          - tcp
+      relay:
+        enabled: true
+        service:
+          type: ClusterIP
+      ui:
+        enabled: false
     ipam:
       mode: kubernetes
     ipv4NativeRoutingCIDR: 10.244.0.0/16
@@ -51,6 +66,8 @@ spec:
       acceleration: best-effort
       algorithm: maglev
       mode: dsr
+    loadBalancerIPAM:
+      enabled: true
     localRedirectPolicies:
       enabled: true
     operator:
@@ -62,6 +79,7 @@ spec:
           enabled: true
       replicas: 2
       rollOutPods: true
+    mtu: 1496
     pmtuDiscovery:
       enabled: true
     prometheus:

@@ -4,10 +4,10 @@ min_version = { hard = "2026.8.11" }
 JUST_UNSTABLE = "1"
 BAO_ADDR = "https://vault.monosense.io:8200"
 FLATE_PATH = '{{config_root}}/kubernetes/flux/cluster'
-KUBECONFIG = '{{config_root}}/kubernetes/kubeconfig'
+KUBECONFIG = '{{config_root}}/kubeconfig'
 MINIJINJA_CONFIG_FILE = '{{config_root}}/.minijinja.toml'
 SOPS_AGE_KEY_FILE = '{{env.HOME}}/.config/sops/age/keys.txt'
-TALOSCONFIG = '{{config_root}}/talos/talosconfig'
+TALOSCONFIG = '{{config_root}}/talosconfig'
 
 [settings]
 lockfile = true
@@ -46,7 +46,7 @@ python = "3.13"
 "aqua:mitsuhiko/minijinja" = "2"
 "aqua:rhysd/actionlint" = "1"
 "aqua:google/yamlfmt" = "0.21"
-"aqua:siderolabs/talos" = "1.13.9"
+"aqua:siderolabs/talos" = "1.14.0-rc.2"
 
 # Junos security and secret-management CLIs.
 "aqua:FiloSottile/age" = "1"

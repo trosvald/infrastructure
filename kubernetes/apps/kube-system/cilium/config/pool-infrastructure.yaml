@@ -1,0 +1,13 @@
+---
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/cilium.io/ciliumloadbalancerippool_v2.json
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: infrastructure
+spec:
+  allowFirstLastIPs: "No"
+  blocks:
+    - cidr: 10.25.20.0/27
+  serviceSelector:
+    matchLabels:
+      lbipam.monosense.io/class: infrastructure

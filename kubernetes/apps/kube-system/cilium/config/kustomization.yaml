@@ -3,6 +3,10 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ./l3.yaml
-  - ./pool.yaml
+  - ./pool-infrastructure.yaml
+  - ./pool-internal.yaml
+  - ./pool-edge-backend.yaml
+  - ./advertisement.yaml
+  - ./peer.yaml
+  - ./cluster.yaml
   - ./vip.yaml

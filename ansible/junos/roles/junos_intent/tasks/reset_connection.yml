@@ -1,0 +1,3 @@
+---
+- name: Reset the persistent NETCONF connection
+  ansible.builtin.meta: reset_connection

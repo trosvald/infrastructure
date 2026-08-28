@@ -13,7 +13,7 @@
 
     - name: Read the exact reviewed candidate without following links
       ansible.builtin.stat:
-        path: "{{ playbook_dir }}/../.build/srx1500.set"
+        path: "{{ lookup('ansible.builtin.env', 'JUNOS_CANDIDATE_FILE') }}"
         checksum_algorithm: sha256
         follow: false
       register: verify_candidate_stat
@@ -22,7 +22,7 @@
 
     - name: Read the exact reviewed candidate into memory
       ansible.builtin.set_fact:
-        verify_candidate_text: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../.build/srx1500.set', rstrip=false) }}"
+        verify_candidate_text: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'JUNOS_CANDIDATE_FILE'), rstrip=false) }}"
       no_log: true
     - name: Bind verification to the reviewed candidate artifact
       ansible.builtin.assert:
@@ -41,7 +41,14 @@
       ansible.builtin.set_fact:
         verify_reviewed_group_lines: >-
           {{ verify_candidate_text.splitlines() | map('trim')
-             | select('match', '^set groups ANSIBLE_SRX1500 ') | list | sort }}
+             | select('match', '^set groups ANSIBLE_SRX1500 ')
+             | reject('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+             | list | sort }}
+        verify_reviewed_authentication_paths: >-
+          {{ verify_candidate_text.splitlines() | map('trim')
+             | select('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+             | map('regex_replace', '^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\\s+.+$', '\\1')
+             | list }}
         verify_reviewed_apply_lines: >-
           {{ verify_candidate_text.splitlines() | map('trim')
              | select('match', '^set apply-groups ANSIBLE_SRX1500$') | list | sort }}
@@ -78,6 +85,8 @@
           - show route table VR-XLSATU.inet.0 0.0.0.0/0 exact
           - show security nat source rule all
           - show configuration security policies | display set
+          - show bgp summary group CILIUM
+          - show route 10.25.20.0/24 exact
       register: verify_operational
       no_log: true
 
@@ -89,7 +98,14 @@
              | default('') }}
         verify_running_group_lines: >-
           {{ verify_operational.stdout[1].splitlines() | map('trim')
-             | reject('equalto', '') | list | sort }}
+             | reject('equalto', '')
+             | reject('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+             | list | sort }}
+        verify_running_authentication_paths: >-
+          {{ verify_operational.stdout[1].splitlines() | map('trim')
+             | select('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+             | map('regex_replace', '^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\\s+.+$', '\\1')
+             | list }}
         verify_running_apply_lines: >-
           {{ verify_operational.stdout[2].splitlines() | map('trim')
              | reject('equalto', '') | list | sort }}
@@ -103,7 +119,7 @@
       ansible.builtin.assert:
         that:
           - verify_operational.stdout is defined
-          - verify_operational.stdout | length == 9
+          - verify_operational.stdout | length == 11
           - verify_newest_commit_record | length > 0
           - verify_newest_commit_record | lower is search('commit confirmed|pending|rollback in')
           - >-
@@ -112,6 +128,8 @@
           - verify_reviewed_group_lines | length > 0
           - verify_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
           - verify_running_group_lines == verify_reviewed_group_lines
+          - verify_reviewed_authentication_paths == ['set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key']
+          - verify_running_authentication_paths == verify_reviewed_authentication_paths
           - verify_running_apply_lines == verify_reviewed_apply_lines
           - verify_running_ordered_lines == verify_reviewed_ordered_lines
         fail_msg: "Newest pending commit or complete managed configuration is not bound to this digest."
@@ -133,6 +151,20 @@
           - verify_operational.stdout[6] is search('[*>]')
         fail_msg: "Required IRB, VLAN, or master/VR-XLSATU default-route evidence is missing."
       no_log: true
+    - name: Require exact idle-or-active Cilium peers and static discard fallback
+      ansible.builtin.assert:
+        that:
+          - >-
+            (verify_operational.stdout[9]
+             | regex_findall('10[.]25[.]11[.](?:11|12|13|14|15)')
+             | unique | sort)
+            == ['10.25.11.11', '10.25.11.12', '10.25.11.13', '10.25.11.14', '10.25.11.15']
+          - verify_operational.stdout[10] is search('10[.]25[.]20[.]0/24')
+          - verify_operational.stdout[10] is search('Discard')
+          - verify_operational.stdout[10] is search('[*>]')
+        fail_msg: "Cilium peer configuration or active static discard fallback is incomplete."
+      no_log: true
+
 
     - name: Require all four source NAT rule-set names
       ansible.builtin.assert:

@@ -1,45 +1,54 @@
 ---
 apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: tor1-link
+selector:
+  match: mac(link.permanent_addr) == "{{ node.links.tor1.permanent_mac }}"
+---
+apiVersion: v1alpha1
+kind: LinkAliasConfig
+name: tor2-link
+selector:
+  match: mac(link.permanent_addr) == "{{ node.links.tor2.permanent_mac }}"
+---
+apiVersion: v1alpha1
 kind: BondConfig
 name: bond0
 links:
-  - enp1s0f0np0
-  - enp1s0f1np1
-bondMode: 802.3ad
-miimon: 100
-updelay: 200
-downdelay: 200
-xmitHashPolicy: layer3+4
-lacpRate: fast
+  - tor1-link
+  - tor2-link
+bondMode: active-backup
+arpInterval: 1000
+arpIpTargets:
+  - {{ topology.network.gateway }}
+arpValidate: all
+arpAllTargets: all
+primaryReselect: failure
+numPeerNotif: 3
 addresses:
-  - address: 10.25.11.11/24
+  - address: {{ node.address }}/24
 routes:
-  - destination: 0.0.0.0/0
-    gateway: 10.25.11.1
-mtu: 9000
+  - gateway: {{ topology.network.gateway }}
+mtu: 1496
 ---
 apiVersion: v1alpha1
-kind: DHCPv4Config
-name: bond0
-clientIdentifier: mac
+kind: ResolverConfig
+hostDNS:
+  enabled: true
+  forwardKubeDNSToHost: true
+  resolveMemberNames: true
+nameservers:
+{% for nameserver in topology.private_dns %}
+  - address: {{ nameserver }}
+{% endfor %}
+searchDomains:
+  domains:
+    - monosense.io
 ---
 apiVersion: v1alpha1
-kind: EthernetConfig
-name: enp1s0f0np0
-rings:
-  rx: 8160
-  tx: 8160
----
-apiVersion: v1alpha1
-kind: EthernetConfig
-name: enp1s0f1np1
-rings:
-  rx: 8160
-  tx: 8160
----
-apiVersion: v1alpha1
-kind: VLANConfig
-name: bond0.30
-vlanID: 30
-parent: bond0
-mtu: 9000
+kind: TimeSyncConfig
+ntp:
+  servers:
+{% for server in topology.ntp_servers %}
+    - {{ server }}
+{% endfor %}

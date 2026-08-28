@@ -26,6 +26,39 @@ mod ansible "ansible"
 [group: 'Docker']
 mod docker "docker"
 
+[group: 'Toolchain']
+[confirm('Regenerate the reviewed multi-platform Mise lockfile? [y|N]')]
+[doc('Regenerate exact tool versions and checksums from .mise.toml')]
+toolchain-lock:
+    mise lock
+
+[group: 'Toolchain']
+[doc('Install the exact locked repository toolchain')]
+toolchain-install:
+    mise install --locked
+
+[group: 'OpenBao']
+[doc('Authenticate the local Bao CLI for an explicit administrator operation')]
+openbao-admin-login:
+    BAO_ADDR=https://vault.monosense.io:8200 bao login -method=userpass -no-print username=monosense-admin
+
+[group: 'OpenBao']
+[confirm('Provision or rotate the live monosense-infra OpenBao identity? [y|N]')]
+[doc('Install and verify the least-privilege monosense-infra identity')]
+provision-openbao-infra:
+    scripts/provision-openbao-infra.sh
+
+[group: 'OpenBao']
+[confirm('Create the reviewed BGP and Talos OpenBao records with CAS=0? [y|N]')]
+[doc('Create or validate protected BGP and Talos records without overwriting')]
+provision-talos-records:
+    scripts/provision-talos-records.sh
+
+[group: 'Security']
+[doc('Prove secret detection and scan Git history plus the working tree')]
+scan-secrets:
+    scripts/gitleaks-scan.sh
+
 [private]
 default:
     just -l

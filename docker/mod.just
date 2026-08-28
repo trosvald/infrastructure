@@ -36,6 +36,11 @@ validate-openbao:
     yamllint .sops.yaml docker/c0/openbao/.doco-cd.yaml docker/c0/openbao/compose.yml
     test "$(sops filestatus docker/c0/openbao/encrypted/acme.env | jq -r '.encrypted')" = true
     test "$(sops filestatus docker/c0/openbao/encrypted/cloudflare.ini | jq -r '.encrypted')" = true
+    test "$(sops filestatus encrypted/monosense-infra.env | jq -r '.encrypted')" = true
+    python3 docker/c0/openbao/policies/tests/test_monosense_infra_policy.py
+    bash -n scripts/with-openbao-runtime.sh scripts/provision-openbao-infra.sh scripts/provision-talos-records.sh talos/scripts/validate_inventory.sh
+    python3 scripts/tests/test_openbao_provision.py
+    python3 scripts/tests/test_talos_record_provision.py
     python3 - <<'PY'
     from pathlib import Path
 

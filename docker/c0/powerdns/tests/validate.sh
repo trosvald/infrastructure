@@ -20,6 +20,11 @@ done
 [[ "${#managed_zones[@]}" == 5 && -n "$forward_zone" ]]
 host_uid="$(id -u)"
 host_gid="$(id -g)"
+case "$(uname -s)" in
+    Darwin) expected_bind_owner="0:0" ;;
+    Linux) expected_bind_owner="953:953" ;;
+    *) echo "unsupported controller platform" >&2; exit 1 ;;
+esac
 
 cleanup() {
     local data_dir
@@ -51,13 +56,14 @@ initialize_data_volume() {
     fi
     "${docker_run[@]}" \
         --user 0:0 --network none --cap-drop ALL --cap-add CHOWN \
+        --env "EXPECTED_BIND_OWNER=$expected_bind_owner" \
         --mount "type=bind,src=$data_dir,dst=/var/lib/powerdns" \
         --entrypoint /bin/sh "$image" -ec '
             pdns_uid="$(id -u pdns)"
             pdns_gid="$(id -g pdns)"
             test "$pdns_uid" = 953
             chown "$pdns_uid:$pdns_gid" /var/lib/powerdns
-            test "$(stat -c "%u:%g" /var/lib/powerdns)" = "$pdns_uid:$pdns_gid"
+            test "$(stat -c "%u:%g" /var/lib/powerdns)" = "$EXPECTED_BIND_OWNER"
             test "$(stat -c "%a" /var/lib/powerdns)" = 750
         '
 }
