@@ -22,6 +22,7 @@ selector:
 apiVersion: v1alpha1
 kind: BondConfig
 name: bond0
+hardwareAddr: "{{ node.links.tor1.permanent_mac }}"
 links:
   - tor1-link
   - tor2-link

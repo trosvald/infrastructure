@@ -105,6 +105,7 @@ def main() -> int:
         assert f"- 198.51.100.{index + 10}/32" in text
         assert "kind: LinkConfig" in text
         assert "bondMode: active-backup" in text
+        assert f"hardwareAddr: '02:00:00:00:01:{index + 10}'" in text
         assert "arpInterval: 1000" in text
         assert "arpValidate: all" in text
         assert "arpAllTargets: all" in text
