@@ -151,14 +151,14 @@ stage_preflight() {
     python -c 'import socket; assert socket.gethostbyname("k8s.monosense.io") == "10.25.20.10"'
     junos_playbook playbooks/bgp-preflight.yml
 
-    local hostname bootstrap inventory disks links install_model install_wwid install_bus install_size
+    local hostname bootstrap inventory disks links install_model install_wwid install_bus_prefix install_size
     local localpv_match localpv_serial osd_serial tor1 tor2
     for index in 01 02 03 04 05; do
         hostname="bsd-k8s-$index"
         bootstrap="$(node_field "$hostname" '.bootstrap_address')"
         install_model="$(node_field "$hostname" '.install_disk.model')"
         install_wwid="$(node_field "$hostname" '.install_disk.wwid')"
-        install_bus="$(node_field "$hostname" '.install_disk.bus_path')"
+        install_bus_prefix="$(node_field "$hostname" '.install_disk.bus_path_prefix')"
         install_size="$(node_field "$hostname" '.install_disk.size_bytes')"
         localpv_match="$(node_field "$hostname" '.localpv_disk.match')"
         localpv_serial="${localpv_match##*disk.serial == \"}"
@@ -169,7 +169,7 @@ stage_preflight() {
         disks="$(talosctl --nodes "$bootstrap" get disks --insecure --output yaml)"
         links="$(talosctl --nodes "$bootstrap" get linkstatus --insecure --output yaml)"
         [[ "$disks" == *"$install_model"* && "$disks" == *"$install_wwid"* &&
-            "$disks" == *"$install_bus"* && "$disks" == *"$install_size"* &&
+            "$disks" == *"$install_bus_prefix"* && "$disks" == *"$install_size"* &&
             "$disks" == *"$localpv_serial"* && "$disks" == *"$osd_serial"* ]] || {
             echo "$hostname: protected install, LocalPV, or future OSD identity is absent" >&2
             return 1

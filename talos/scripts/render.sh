@@ -67,7 +67,7 @@ metadata="$(python "$talos_dir/scripts/render.py" \
 printf '%s\n' "$metadata"
 
 verify_maintenance_target() {
-    local bootstrap disks links time_status install_model install_wwid install_bus install_size
+    local bootstrap disks links time_status install_model install_wwid install_bus_prefix install_size
     local localpv_match localpv_serial osd_serial tor1 tor2
     bootstrap="$(jq -er --arg hostname "$hostname" \
         '.topology.nodes[] | select(.hostname == $hostname) | .bootstrap_address' "$context_file")"
@@ -75,8 +75,8 @@ verify_maintenance_target() {
         '.topology.nodes[] | select(.hostname == $hostname) | .install_disk.model' "$context_file")"
     install_wwid="$(jq -er --arg hostname "$hostname" \
         '.topology.nodes[] | select(.hostname == $hostname) | .install_disk.wwid' "$context_file")"
-    install_bus="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .install_disk.bus_path' "$context_file")"
+    install_bus_prefix="$(jq -er --arg hostname "$hostname" \
+        '.topology.nodes[] | select(.hostname == $hostname) | .install_disk.bus_path_prefix' "$context_file")"
     install_size="$(jq -er --arg hostname "$hostname" \
         '.topology.nodes[] | select(.hostname == $hostname) | .install_disk.size_bytes' "$context_file")"
     localpv_match="$(jq -er --arg hostname "$hostname" \
@@ -93,7 +93,7 @@ verify_maintenance_target() {
     links="$(talosctl --nodes "$bootstrap" get linkstatus --insecure --output yaml)"
     time_status="$(talosctl --nodes "$bootstrap" get timestatus --insecure --output yaml)"
     [[ "$disks" == *"$install_model"* && "$disks" == *"$install_wwid"* &&
-        "$disks" == *"$install_bus"* && "$disks" == *"$install_size"* &&
+        "$disks" == *"$install_bus_prefix"* && "$disks" == *"$install_size"* &&
         "$disks" == *"$localpv_serial"* && "$disks" == *"$osd_serial"* ]] || {
         echo "$hostname: live protected disk identities changed before apply" >&2
         return 1

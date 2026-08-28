@@ -52,6 +52,15 @@ def cel_string(value: Any) -> str:
     return json.dumps(str(value), ensure_ascii=True)
 
 
+def stable_sata_bus_prefix(value: Any, label: str) -> str:
+    bus_path = str(value)
+    prefix, marker, _ = bus_path.partition("/host")
+    if marker != "/host" or "/ata" not in prefix or not prefix.startswith("/pci"):
+        raise TopologyError(f"{label} lacks a stable PCI/ATA bus prefix")
+    return prefix + "/"
+
+
+
 def build_node(inventory_dir: Path, index: int) -> dict[str, Any]:
     suffix = 10 + index
     disks = [document.get("spec", {}) for document in load_documents(inventory_dir / f"disks-{suffix}.yaml")]
@@ -124,7 +133,9 @@ def build_node(inventory_dir: Path, index: int) -> dict[str, Any]:
             "model": install.get("model"),
             "size_bytes": install.get("size"),
             "wwid": install.get("wwid"),
-            "bus_path": install.get("bus_path"),
+            "bus_path_prefix": stable_sata_bus_prefix(
+                install.get("bus_path"), f"node {index} Talos system disk"
+            ),
         },
         "localpv_disk": {"match": local_match},
         "future_osd": {

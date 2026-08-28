@@ -204,7 +204,7 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
         install_disk = node["install_disk"]
         require_exact_keys(
             install_disk,
-            {"model", "size_bytes", "wwid", "bus_path"},
+            {"model", "size_bytes", "wwid", "bus_path_prefix"},
             f"{node['hostname']} install disk",
         )
         require_exact_keys(node["localpv_disk"], {"match"}, f"{node['hostname']} LocalPV disk")
@@ -218,9 +218,19 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
         if (
             not isinstance(install_size, int)
             or not 450_000_000_000 <= install_size <= 550_000_000_000
-            or any(not str(install_disk[field]) for field in ("model", "wwid", "bus_path"))
+            or any(not str(install_disk[field]) for field in ("model", "wwid", "bus_path_prefix"))
         ):
             raise RenderError(f"{node['hostname']}: system disk selector must bind exact 500GB identity")
+        install_bus_prefix = str(install_disk["bus_path_prefix"])
+        if (
+            not install_bus_prefix.startswith("/pci")
+            or "/ata" not in install_bus_prefix
+            or not install_bus_prefix.endswith("/")
+            or "/host" in install_bus_prefix
+        ):
+            raise RenderError(f"{node['hostname']}: system disk bus prefix is not stable")
+        if not synthetic and install_bus_prefix != "/pci0000:00/0000:00:17.0/ata1/":
+            raise RenderError(f"{node['hostname']}: live Talos disk must remain on SATA port 1")
         local_match = str(node["localpv_disk"]["match"])
         for required in (
             "disk.size ==",

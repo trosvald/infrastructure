@@ -54,7 +54,7 @@ assert "edge_review_not_before" in script
 assert "timedelta(days=7)" in script
 assert "authorizes_deployment: false" in script
 assert "protected install, LocalPV, or future OSD identity is absent" in script
-assert ".install_disk.wwid" in script and ".install_disk.bus_path" in script
+assert ".install_disk.wwid" in script and ".install_disk.bus_path_prefix" in script
 assert ".localpv_disk.match" in script and ".future_osd.serial" in script
 assert ".bootstrap_address" in render
 assert 'apply-config --insecure' in render
