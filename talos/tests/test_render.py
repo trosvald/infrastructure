@@ -112,7 +112,9 @@ def main() -> int:
         assert "primaryReselect: failure" in text
         assert "numPeerNotif: 3" in text
         assert "mtu: 1496" in text
-        assert "name: tor1-link" in text and "name: tor2-link" in text
+        assert "enp1s0f0np0" in text and "enp1s0f1np1" in text
+        assert "kind: LinkAliasConfig" not in text
+        assert "metric: 1024" in text and "metric: 2048" in text
         assert f"naa.fake-system-{index:02d}" in text
         assert 'disk.bus_path.startsWith("/pci0000:00/ata1/")' in text
         assert "filesystem:" in text and "type: xfs" in text
