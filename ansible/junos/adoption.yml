@@ -1,3 +1,3 @@
 ---
-# Deliberately false until the separately reviewed direct-configuration adoption is complete.
-adopted: false
+# True only after the reviewed direct-configuration adoption and recovery proof completed.
+adopted: true
