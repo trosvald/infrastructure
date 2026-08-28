@@ -16,7 +16,7 @@ network:
 private_dns: [192.0.2.53, 198.51.100.53]
 ntp_servers: [time-a.example.invalid, time-b.example.invalid, time-c.example.invalid]
 versions:
-  schematic: 0b085a927da9e267ec30305786b2802f4fec76bf86f02dffe043120f07ad6011
+  schematic: bd0e9976660939539a20d0c88516154f1cd97d95c2bed48b26314e830023f1b3
   talos: v1.14.0-rc.2
   kubernetes: v1.36.2
 approved_admin_sources:
