@@ -20,7 +20,7 @@ security:
     tcp_mss: { scope: all-tcp, value: 1456 }
   zones:
     - { name: MGMT, interfaces: [irb.2510], services: [dhcp, ping, ssh, https, netconf] }
-    - { name: PROD, interfaces: [irb.2511], services: [dhcp, ping] }
+    - { name: PROD, interfaces: [irb.2511], services: [dhcp, ping], protocols: [bgp] }
     - { name: HOME, interfaces: [irb.2512], services: [dhcp, ping] }
     - { name: DEV, interfaces: [irb.2513], services: [dhcp, ping] }
     - { name: WAN-XLSATU, interfaces: [ge-0/0/0.0], screen: WAN-SCREEN, services: [dhcp] }
@@ -28,15 +28,15 @@ security:
   policies:
     - { from: HOME, to: WAN-XLSATU, name: HOME-INTERNET, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
     - { from: MGMT, to: WAN-MYREP, name: MGMT-INTERNET, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
-    - { from: PROD, to: WAN-MYREP, name: PROD-INTERNET, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
+    - { from: PROD, to: WAN-MYREP, name: PROD-INTERNET, source: [any], destination: [any], applications: [any], action: permit, log: [session-init, session-close] }
     - { from: DEV, to: WAN-MYREP, name: DEV-INTERNET, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
-    - { from: MGMT, to: PROD, name: MGMT-ADMIN-PROD, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
+    - { from: MGMT, to: PROD, name: MGMT-ADMIN-PROD, source: [any], destination: [any], applications: [any], action: permit, log: [session-init, session-close] }
     - { from: MGMT, to: DEV, name: MGMT-ADMIN-DEV, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
     - { from: MGMT, to: HOME, name: MGMT-ADMIN-HOME, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
-    - { from: PROD, to: MGMT, name: PROD-INFRA-MGMT, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
+    - { from: PROD, to: MGMT, name: PROD-INFRA-MGMT, source: [any], destination: [any], applications: [any], action: permit, log: [session-init, session-close] }
     - { from: DEV, to: MGMT, name: DEV-INFRA-MGMT, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
-    - { from: PROD, to: DEV, name: PROD-INFRA-DEV, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
-    - { from: DEV, to: PROD, name: DEV-INFRA-PROD, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
+    - { from: PROD, to: DEV, name: PROD-INFRA-DEV, source: [any], destination: [any], applications: [any], action: permit, log: [session-init, session-close] }
+    - { from: DEV, to: PROD, name: DEV-INFRA-PROD, source: [any], destination: [any], applications: [any], action: permit, log: [session-init, session-close] }
     - { from: HOME, to: MGMT, name: HOME-TO-DNS, source: [any], destination: [MGMT-DNS], applications: [junos-dns-udp, junos-dns-tcp], action: permit, log: [session-close] }
     - { from: HOME, to: MGMT, name: HOME-BLOCK-MGMT, source: [any], destination: [any], applications: [any], action: deny, log: [session-init] }
     - { from: HOME, to: PROD, name: HOME-BLOCK-PROD, source: [any], destination: [any], applications: [any], action: deny, log: [session-init] }

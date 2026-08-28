@@ -91,6 +91,7 @@ provenance = "cosign"
 [tools."aqua:docker/compose"."platforms.macos-arm64"]
 checksum = "sha256:6777710e5a5db5709e5f4b5985844e74b73cc1a6123e3a6690b6ababf2deaf51"
 url = "https://github.com/docker/compose/releases/download/v5.5.0/docker-compose-darwin-aarch64"
+url_api = "https://api.github.com/repos/docker/compose/releases/assets/517869368"
 provenance = "cosign"
 
 [[tools."aqua:getsops/sops"]]
@@ -299,20 +300,20 @@ url_api = "https://api.github.com/repos/rhysd/actionlint/releases/assets/3849248
 provenance = "github-attestations"
 
 [[tools."aqua:siderolabs/talos"]]
-version = "1.13.9"
+version = "1.14.0-rc.2"
 backend = "aqua:siderolabs/talos"
-specifiers = ["1.13.9"]
+specifiers = ["1.14.0-rc.2"]
 
 [tools."aqua:siderolabs/talos"."platforms.linux-x64"]
-checksum = "sha256:7e1d4b7d5846964bdcf63a794e3c8161bb6ef2983d5ace58ea5322f3bf32a27e"
-url = "https://github.com/siderolabs/talos/releases/download/v1.13.9/talosctl-linux-amd64"
-url_api = "https://api.github.com/repos/siderolabs/talos/releases/assets/520547641"
+checksum = "sha256:ca70202fbb852775f70ffcb885e2866472b9a7e08865a23fd2cb9bc379bd7a88"
+url = "https://github.com/siderolabs/talos/releases/download/v1.14.0-rc.2/talosctl-linux-amd64"
+url_api = "https://api.github.com/repos/siderolabs/talos/releases/assets/528864640"
 provenance = "cosign"
 
 [tools."aqua:siderolabs/talos"."platforms.macos-arm64"]
-checksum = "sha256:ab4c27a959ff6c52f62c6cc2af07b22ca86ed27f1a138ed57582fa67f7b50f98"
-url = "https://github.com/siderolabs/talos/releases/download/v1.13.9/talosctl-darwin-arm64"
-url_api = "https://api.github.com/repos/siderolabs/talos/releases/assets/520547612"
+checksum = "sha256:f6c9cc4c00270c64812944301ef6a166951d5b9633b0ca0c2976a631bfca8d32"
+url = "https://github.com/siderolabs/talos/releases/download/v1.14.0-rc.2/talosctl-darwin-arm64"
+url_api = "https://api.github.com/repos/siderolabs/talos/releases/assets/528864619"
 provenance = "cosign"
 
 [[tools."github:home-operations/flate"]]

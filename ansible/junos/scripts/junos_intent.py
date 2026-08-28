@@ -70,9 +70,15 @@ def collect_refs(value: Any, refs: set[str]) -> None:
 def reject_unsafe_keys(value: Any, path: str = "intent") -> None:
     if isinstance(value, dict):
         for key, child in value.items():
-            if _FORBIDDEN_KEY_RE.search(str(key)):
+            bgp_auth_ref = (
+                path == "intent.routing.routing.bgp"
+                and key == "authentication_key"
+                and child == {"topology": "bgp.authentication_key"}
+            )
+            if _FORBIDDEN_KEY_RE.search(str(key)) and not bgp_auth_ref:
                 raise IntentError(f"{path}: authentication and credential ownership is device-local")
-            reject_unsafe_keys(child, f"{path}.{key}")
+            if not bgp_auth_ref:
+                reject_unsafe_keys(child, f"{path}.{key}")
     elif isinstance(value, list):
         for index, child in enumerate(value):
             reject_unsafe_keys(child, f"{path}[{index}]")
@@ -125,6 +131,7 @@ _PATH_LEAVES = frozenset(
         "application",
         "archive",
         "attack-threshold",
+        "authentication-key",
         "autoupdate",
         "bridge-priority",
         "client-alive-count-max",
@@ -279,6 +286,33 @@ def value_free_path(line: str) -> str:
 def value_free_paths(lines: list[str]) -> list[str]:
     return [value_free_path(line) for line in lines]
 
+def ordered_policy_paths(lines: list[str]) -> dict[str, list[str]]:
+    """Return policy/term order grouped by the hierarchy where order is meaningful."""
+    result: dict[str, list[str]] = {}
+    for line in lines:
+        try:
+            tokens = shlex.split(line)
+        except ValueError as error:
+            raise ValueError("unparseable ordered policy line") from error
+        if len(tokens) < 8 or tokens[:3] != ["set", "groups", GROUP]:
+            raise ValueError("ordered policy line is outside the managed group")
+        body = tokens[3:]
+        if body[:2] == ["policy-options", "policy-statement"] and "term" in body:
+            term_index = body.index("term")
+            parent = "/".join(body[:2] + [body[2]])
+            child = body[term_index + 1]
+        elif body[:2] == ["security", "policies"] and body[2] == "from-zone":
+            if len(body) < 8 or body[4] != "to-zone" or body[6] != "policy":
+                raise ValueError("managed security policy hierarchy is invalid")
+            parent = f"security/policies/{body[3]}/{body[5]}"
+            child = body[7]
+        else:
+            raise ValueError("line is not an ordered managed policy")
+        children = result.setdefault(parent, [])
+        if child not in children:
+            children.append(child)
+    return result
+
 def unique(items: list[Any], key: str, label: str) -> None:
     values = [item[key] for item in items]
     repeated = sorted({v for v in values if values.count(v) > 1}, key=str)
@@ -381,26 +415,91 @@ def render_dhcp(data: dict[str, Any]) -> list[str]:
 
 def render_routing(data: dict[str, Any]) -> list[str]:
     routing = data["routing"]
-    out: list[str] = []
+    out: list[str] = [
+        cmd("routing-options", "router-id", routing["router_id"]),
+        cmd("routing-options", "autonomous-system", routing["autonomous_system"]),
+    ]
+    for route in routing.get("static_routes", []):
+        out.append(cmd("routing-options", "static", "route", route["route"], route["action"]))
     for instance in sorted(routing.get("instances", []), key=lambda x: x["name"]):
         base = ("routing-instances", instance["name"])
         out.append(cmd(*base, "instance-type", instance["type"]))
-        out += [cmd(*base, "interface", interface) for interface in sorted(instance.get("interfaces", []))]
+        out += [
+            cmd(*base, "interface", interface)
+            for interface in sorted(instance.get("interfaces", []))
+        ]
     for policy in routing.get("policies", []):
         for term in policy["terms"]:
-            base = ("policy-options", "policy-statement", policy["name"], "term", term["name"])
+            base = (
+                "policy-options",
+                "policy-statement",
+                policy["name"],
+                "term",
+                term["name"],
+            )
             if term.get("from_instance"):
                 out.append(cmd(*base, "from", "instance", term["from_instance"]))
             if term.get("from_protocol"):
                 out.append(cmd(*base, "from", "protocol", term["from_protocol"]))
-            if term.get("route_filter"):
-                out.append(cmd(*base, "from", "route-filter", term["route_filter"], "exact"))
+            route_filter = term.get("route_filter")
+            if isinstance(route_filter, dict):
+                out.append(
+                    cmd(
+                        *base,
+                        "from",
+                        "route-filter",
+                        route_filter["prefix"],
+                        "prefix-length-range",
+                        route_filter["prefix_length_range"],
+                    )
+                )
+            elif route_filter:
+                out.append(cmd(*base, "from", "route-filter", route_filter, "exact"))
             out.append(cmd(*base, "then", term["action"]))
     for binding in routing.get("instance_imports", []):
-        instance = binding.get("routing_instance", "master") if isinstance(binding, dict) else "master"
+        instance = (
+            binding.get("routing_instance", "master")
+            if isinstance(binding, dict)
+            else "master"
+        )
         policy = binding["policy"] if isinstance(binding, dict) else binding
-        base = ("routing-options",) if instance == "master" else ("routing-instances", instance, "routing-options")
+        base = (
+            ("routing-options",)
+            if instance == "master"
+            else ("routing-instances", instance, "routing-options")
+        )
         out.append(cmd(*base, "instance-import", policy))
+    bgp = routing["bgp"]
+    bgp_base = ("protocols", "bgp", "group", bgp["name"])
+    out.extend(
+        [
+            cmd(*bgp_base, "type", bgp["type"]),
+            cmd(*bgp_base, "local-address", bgp["local_address"]),
+            cmd(*bgp_base, "peer-as", bgp["peer_as"]),
+            cmd(*bgp_base, "authentication-key", bgp["authentication_key"]),
+            cmd(*bgp_base, "hold-time", bgp["hold_time"]),
+            cmd(*bgp_base, "multipath"),
+            cmd(*bgp_base, "import", bgp["import_policy"]),
+            cmd(*bgp_base, "export", bgp["export_policy"]),
+        ]
+    )
+    prefix_limit = bgp["unicast"]["prefix_limit"]
+    out.append(
+        cmd(
+            *bgp_base,
+            "family",
+            bgp["family"],
+            "unicast",
+            "prefix-limit",
+            "maximum",
+            prefix_limit["maximum"],
+            "teardown",
+            prefix_limit["teardown"],
+            "idle-timeout",
+            prefix_limit["idle_timeout"],
+        )
+    )
+    out += [cmd(*bgp_base, "neighbor", peer) for peer in bgp["neighbors"]]
     rstp = routing.get("rstp", {})
     if rstp.get("bridge_priority") is not None:
         out.append(cmd("protocols", "rstp", "bridge-priority", rstp["bridge_priority"]))
@@ -450,6 +549,10 @@ def render_security(data: dict[str, Any]) -> list[str]:
             out += [
                 cmd(*interface_base, "host-inbound-traffic", "system-services", service)
                 for service in zone.get("services", [])
+            ]
+            out += [
+                cmd(*interface_base, "host-inbound-traffic", "protocols", protocol)
+                for protocol in zone.get("protocols", [])
             ]
     for policy in security["policies"]:
         base = ("security", "policies", "from-zone", policy["from"], "to-zone", policy["to"], "policy", policy["name"])
@@ -595,6 +698,14 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
         missing = set(zone["interfaces"]) - interface_units
         if missing:
             raise IntentError(f"zone {zone['name']}: undefined interfaces: {sorted(missing)}")
+    bgp_host_zones = {
+        zone["name"] for zone in zones if "bgp" in zone.get("protocols", [])
+    }
+    if bgp_host_zones != {"PROD"}:
+        raise IntentError("BGP host-inbound protocol must be present only on PROD")
+    prod_zone = next(zone for zone in zones if zone["name"] == "PROD")
+    if prod_zone["interfaces"] != ["irb.2511"]:
+        raise IntentError("PROD BGP host-inbound must terminate only on irb.2511")
     screens = intent["security"]["security"].get("screens", [])
     unique(screens, "name", "screen")
     screen_names = {screen["name"] for screen in screens}
@@ -651,6 +762,105 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
                 raise IntentError(f"policy {policy['name']} term {term['name']}: terminal action required")
             if term["action"] == "reject" and index != len(policy["terms"]) - 1:
                 raise IntentError(f"policy {policy['name']}: reject term must remain last")
+    routing = intent["routing"]["routing"]
+    policy_by_name = {policy["name"]: policy for policy in routing_policies}
+    bgp = routing.get("bgp", {})
+    expected_bgp_keys = {
+        "name",
+        "type",
+        "local_address",
+        "local_as",
+        "peer_as",
+        "authentication_key",
+        "hold_time",
+        "multipath",
+        "import_policy",
+        "export_policy",
+        "family",
+        "unicast",
+        "neighbors",
+    }
+    if set(bgp) != expected_bgp_keys:
+        raise IntentError("CILIUM BGP group has missing or unsupported fields")
+    management_address = parse_address(topology["management_address"], "management_address")
+    synthetic = management_address in ipaddress.ip_network("203.0.113.0/24")
+    expected_prod = ipaddress.ip_network(
+        "198.51.100.0/24" if synthetic else "10.25.11.0/24"
+    )
+    expected_gateway = parse_address(
+        "198.51.100.1" if synthetic else "10.25.11.1",
+        "approved PROD gateway",
+    )
+    expected_peers = [
+        parse_address(
+            f"{'198.51.100' if synthetic else '10.25.11'}.{suffix}",
+            "approved Cilium peer",
+        )
+        for suffix in range(11, 16)
+    ]
+    expected_pool = ipaddress.ip_network("198.18.0.0/24" if synthetic else "10.25.20.0/24")
+    prod_network = parse_network(topology["networks"]["prod"]["subnet"], "PROD subnet")
+    peers = [parse_address(peer, "CILIUM peer") for peer in bgp["neighbors"]]
+    if prod_network != expected_prod or peers != expected_peers:
+        raise IntentError("CILIUM peers must be the five approved PROD node addresses")
+    if len(peers) != 5 or len(set(peers)) != 5:
+        raise IntentError("CILIUM requires exactly five unique peers")
+    if any(
+        peer not in prod_network
+        or peer in {prod_network.network_address, prod_network.broadcast_address, expected_gateway}
+        for peer in peers
+    ):
+        raise IntentError("CILIUM peer is outside PROD or uses its gateway/network/broadcast")
+    if (
+        routing.get("router_id") != str(expected_gateway)
+        or bgp["local_address"] != str(expected_gateway)
+        or topology["networks"]["prod"]["gateway"] != str(expected_gateway)
+    ):
+        raise IntentError("BGP router ID and local address must equal the approved PROD gateway")
+    if (
+        routing.get("autonomous_system") != 64512
+        or bgp["local_as"] != 64512
+        or bgp["peer_as"] != 64513
+        or bgp["local_as"] == bgp["peer_as"]
+    ):
+        raise IntentError("CILIUM BGP ASNs must be unique and exactly 64512/64513")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{43}", str(bgp["authentication_key"])):
+        raise IntentError("CILIUM BGP authentication key must be 43-character base64url")
+    if routing.get("static_routes") != [
+        {"route": str(expected_pool), "action": "discard"}
+    ]:
+        raise IntentError("CILIUM LB pool requires one exact static discard fallback")
+    expected_import_terms = [
+        {
+            "name": "CILIUM-LB-HOSTS",
+            "from_protocol": "bgp",
+            "route_filter": {
+                "prefix": str(expected_pool),
+                "prefix_length_range": "/32-/32",
+            },
+            "action": "accept",
+        },
+        {"name": "REJECT-REST", "action": "reject"},
+    ]
+    if policy_by_name.get("IMPORT-CILIUM-LB", {}).get("terms") != expected_import_terms:
+        raise IntentError("CILIUM import must permit only LB-pool /32 BGP routes then reject")
+    if policy_by_name.get("EXPORT-CILIUM-NONE", {}).get("terms") != [
+        {"name": "REJECT-ALL", "action": "reject"}
+    ]:
+        raise IntentError("CILIUM export policy must contain only terminal reject")
+    if (
+        bgp["name"] != "CILIUM"
+        or bgp["type"] != "external"
+        or bgp["hold_time"] != 9
+        or bgp["multipath"] is not True
+        or bgp["import_policy"] != "IMPORT-CILIUM-LB"
+        or bgp["export_policy"] != "EXPORT-CILIUM-NONE"
+        or bgp["family"] != "inet"
+        or bgp["unicast"] != {
+            "prefix_limit": {"maximum": 128, "teardown": 100, "idle_timeout": 5}
+        }
+    ):
+        raise IntentError("CILIUM BGP group safety settings differ from the approved contract")
     for binding in intent["routing"]["routing"].get("instance_imports", []):
         instance = binding.get("routing_instance", "master") if isinstance(binding, dict) else "master"
         policy = binding["policy"] if isinstance(binding, dict) else binding
@@ -731,19 +941,21 @@ def main() -> int:
     parser.add_argument("--group", default=GROUP)
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--path-ids", action="store_true")
+    parser.add_argument("--order-ids", action="store_true")
     args = parser.parse_args()
-    if args.path_ids:
+    if args.path_ids or args.order_ids:
         try:
             lines = json.load(sys.stdin)
             if not isinstance(lines, list) or not all(isinstance(line, str) for line in lines):
                 raise ValueError("expected a JSON list of command lines")
-            print(json.dumps(value_free_paths(lines), separators=(",", ":")))
+            value = ordered_policy_paths(lines) if args.order_ids else value_free_paths(lines)
+            print(json.dumps(value, separators=(",", ":")))
             return 0
         except (json.JSONDecodeError, ValueError) as error:
-            print(f"path identifier input failed: {error}", file=sys.stderr)
+            print(f"identifier input failed: {error}", file=sys.stderr)
             return 2
     if args.intent_dir is None or args.topology is None:
-        parser.error("--intent-dir and --topology are required unless --path-ids is used")
+        parser.error("--intent-dir and --topology are required unless an identifier mode is used")
     try:
         candidate, _ = build(args.intent_dir, args.topology, args.group)
     except (IntentError, KeyError, TypeError, ipaddress.AddressValueError) as error:

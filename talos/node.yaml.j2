@@ -1,0 +1,39 @@
+---
+machine:
+  type: {{ node.role }}
+---
+apiVersion: v1alpha1
+kind: UnattendedInstallConfig
+provisioning:
+  diskSelector:
+    match: {{ ('disk.size == ' ~ node.install_disk.size_bytes ~ 'u && disk.model == ' ~ (node.install_disk.model | tojson) ~ ' && disk.wwid == ' ~ (node.install_disk.wwid | tojson) ~ ' && disk.bus_path == ' ~ (node.install_disk.bus_path | tojson)) | tojson }}
+---
+apiVersion: v1alpha1
+kind: KubeNodeConfig
+nodeIP:
+  validSubnets:
+    - {{ topology.network.subnet }}
+labels:
+{% if node.role == "controlplane" %}
+  node-role.kubernetes.io/control-plane: ""
+{% else %}
+  node-role.kubernetes.io/worker: ""
+{% endif %}
+  topology.kubernetes.io/region: {{ node.labels.region | tojson }}
+  topology.kubernetes.io/zone: {{ node.labels.zone | tojson }}
+  topology.monosense.io/site: {{ node.labels.site | tojson }}
+  topology.monosense.io/power-domain: {{ node.labels.power_domain | tojson }}
+  topology.monosense.io/network-domain: {{ node.labels.network_domain | tojson }}
+  bgp.monosense.io/enabled: "true"
+---
+apiVersion: v1alpha1
+kind: HostnameConfig
+hostname: {{ node.hostname }}
+---
+apiVersion: v1alpha1
+kind: UserVolumeConfig
+name: local-hostpath
+volumeType: disk
+provisioning:
+  diskSelector:
+    match: {{ node.localpv_disk.match | tojson }}

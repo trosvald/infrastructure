@@ -33,6 +33,7 @@ spec:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
+  suspend: true
   patches:
     - # Add Kustomization defaults for all child Kustomizations
       patch: |-

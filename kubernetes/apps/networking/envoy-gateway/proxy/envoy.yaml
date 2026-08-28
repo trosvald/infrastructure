@@ -55,9 +55,12 @@ metadata:
 spec:
   gatewayClassName: envoy
   infrastructure:
+    labels:
+      bgp.monosense.io/advertise: "true"
+      lbipam.monosense.io/class: edge-backend
     annotations:
       external-dns.alpha.kubernetes.io/hostname: *hostname
-      lbipam.cilium.io/ips: 192.168.20.80
+      lbipam.cilium.io/ips: 10.25.20.80
   listeners:
     - name: http
       protocol: HTTP
@@ -86,9 +89,12 @@ metadata:
 spec:
   gatewayClassName: envoy
   infrastructure:
+    labels:
+      bgp.monosense.io/advertise: "true"
+      lbipam.monosense.io/class: internal
     annotations:
       external-dns.alpha.kubernetes.io/hostname: *hostname
-      lbipam.cilium.io/ips: 192.168.20.81
+      lbipam.cilium.io/ips: 10.25.20.40
   listeners:
     - name: http
       protocol: HTTP

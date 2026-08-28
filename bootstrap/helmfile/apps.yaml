@@ -22,18 +22,6 @@ helmDefaults:
 releases:
   - name: cilium
     namespace: kube-system
-    hooks:
-      - # Advertise Kubernetes VIP
-        command: kubectl
-        args:
-          - apply
-          - --field-manager=kustomize-controller
-          - --namespace={{ .Release.Namespace }}
-          - --kustomize=../../kubernetes/apps/{{ .Release.Namespace }}/{{ .Release.Name }}/config
-          - --server-side
-        events:
-          - postsync
-        showlogs: true
 
   - name: coredns
     namespace: kube-system

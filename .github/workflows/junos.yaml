@@ -27,7 +27,7 @@ jobs:
           version: 2026.8.11
           cache: true
       - name: Verify scanner canary and scan repository
-        run: scripts/gitleaks-scan.sh
+        run: just scan-secrets
       - name: Bootstrap pinned Junos dependencies
         run: just ansible junos bootstrap
       - name: Test synthetic intent

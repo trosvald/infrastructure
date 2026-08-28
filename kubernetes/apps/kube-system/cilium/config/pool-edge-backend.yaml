@@ -1,0 +1,13 @@
+---
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/cilium.io/ciliumloadbalancerippool_v2.json
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: edge-backend
+spec:
+  allowFirstLastIPs: "No"
+  blocks:
+    - cidr: 10.25.20.64/27
+  serviceSelector:
+    matchLabels:
+      lbipam.monosense.io/class: edge-backend

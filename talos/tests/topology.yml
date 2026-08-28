@@ -1,0 +1,84 @@
+---
+synthetic: true
+cluster:
+  name: synthetic-bsd
+  endpoint: https://k8s.example.invalid:6443
+  snapshot_age_recipient: age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+  api_sans:
+    - k8s.example.invalid
+    - 198.18.0.10
+    - 198.51.100.11
+    - 198.51.100.12
+    - 198.51.100.13
+network:
+  subnet: 198.51.100.0/24
+  gateway: 198.51.100.1
+private_dns: [192.0.2.53, 198.51.100.53]
+ntp_servers: [time-a.example.invalid, time-b.example.invalid, time-c.example.invalid]
+versions:
+  schematic: 0b085a927da9e267ec30305786b2802f4fec76bf86f02dffe043120f07ad6011
+  talos: v1.14.0-rc.2
+  kubernetes: v1.36.2
+approved_admin_sources:
+  - 192.0.2.10/32
+nodes:
+  - hostname: bsd-k8s-01
+    role: controlplane
+    address: 198.51.100.11
+    bootstrap_address: 198.51.100.101
+    bootstrap_link: eno1
+    links:
+      tor1: { permanent_mac: "02:00:00:00:01:11", switch: synthetic-tor1, port: xe-0/0/11, native_vlan: 2511 }
+      tor2: { permanent_mac: "02:00:00:00:02:11", switch: synthetic-tor2, port: xe-0/0/11, native_vlan: 2511 }
+    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-01", bus_path: "/pci0000:00/ata1" }
+    localpv_disk: { match: 'disk.size == 512110190592u && disk.model == "Synthetic LocalPV NVMe" && disk.serial == "FAKE-LOCALPV-01" && disk.wwid == "eui.fake-localpv-01" && disk.bus_path == "/pci0000:00/0000:02:00.0/nvme"' }
+    future_osd: { model: "Synthetic OSD NVMe", serial: "FAKE-OSD-01", wwid: "eui.fake-osd-01", bus_path: "/pci0000:00/0000:03:00.0/nvme", size_bytes: 1000204886016 }
+    labels: { region: synthetic, zone: synthetic-zone, site: lab, power_domain: power-a, network_domain: network-a }
+  - hostname: bsd-k8s-02
+    role: controlplane
+    address: 198.51.100.12
+    bootstrap_address: 198.51.100.102
+    bootstrap_link: eno1
+    links:
+      tor1: { permanent_mac: "02:00:00:00:01:12", switch: synthetic-tor1, port: xe-0/0/12, native_vlan: 2511 }
+      tor2: { permanent_mac: "02:00:00:00:02:12", switch: synthetic-tor2, port: xe-0/0/12, native_vlan: 2511 }
+    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-02", bus_path: "/pci0000:00/ata1" }
+    localpv_disk: { match: 'disk.size == 512110190592u && disk.model == "Synthetic LocalPV NVMe" && disk.serial == "FAKE-LOCALPV-02" && disk.wwid == "eui.fake-localpv-02" && disk.bus_path == "/pci0000:00/0000:02:00.0/nvme"' }
+    future_osd: { model: "Synthetic OSD NVMe", serial: "FAKE-OSD-02", wwid: "eui.fake-osd-02", bus_path: "/pci0000:00/0000:03:00.0/nvme", size_bytes: 1000204886016 }
+    labels: { region: synthetic, zone: synthetic-zone, site: lab, power_domain: power-a, network_domain: network-a }
+  - hostname: bsd-k8s-03
+    role: controlplane
+    address: 198.51.100.13
+    bootstrap_address: 198.51.100.103
+    bootstrap_link: eno1
+    links:
+      tor1: { permanent_mac: "02:00:00:00:01:13", switch: synthetic-tor1, port: xe-0/0/13, native_vlan: 2511 }
+      tor2: { permanent_mac: "02:00:00:00:02:13", switch: synthetic-tor2, port: xe-0/0/13, native_vlan: 2511 }
+    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-03", bus_path: "/pci0000:00/ata1" }
+    localpv_disk: { match: 'disk.size == 512110190592u && disk.model == "Synthetic LocalPV NVMe" && disk.serial == "FAKE-LOCALPV-03" && disk.wwid == "eui.fake-localpv-03" && disk.bus_path == "/pci0000:00/0000:02:00.0/nvme"' }
+    future_osd: { model: "Synthetic OSD NVMe", serial: "FAKE-OSD-03", wwid: "eui.fake-osd-03", bus_path: "/pci0000:00/0000:03:00.0/nvme", size_bytes: 1000204886016 }
+    labels: { region: synthetic, zone: synthetic-zone, site: lab, power_domain: power-a, network_domain: network-a }
+  - hostname: bsd-k8s-04
+    role: worker
+    address: 198.51.100.14
+    bootstrap_address: 198.51.100.104
+    bootstrap_link: eno1
+    links:
+      tor1: { permanent_mac: "02:00:00:00:01:14", switch: synthetic-tor1, port: xe-0/0/14, native_vlan: 2511 }
+      tor2: { permanent_mac: "02:00:00:00:02:14", switch: synthetic-tor2, port: xe-0/0/14, native_vlan: 2511 }
+    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-04", bus_path: "/pci0000:00/ata1" }
+    localpv_disk: { match: 'disk.size == 512110190592u && disk.model == "Synthetic LocalPV NVMe" && disk.serial == "FAKE-LOCALPV-04" && disk.wwid == "eui.fake-localpv-04" && disk.bus_path == "/pci0000:00/0000:02:00.0/nvme"' }
+    future_osd: { model: "Synthetic OSD NVMe", serial: "FAKE-OSD-04", wwid: "eui.fake-osd-04", bus_path: "/pci0000:00/0000:03:00.0/nvme", size_bytes: 1000204886016 }
+    labels: { region: synthetic, zone: synthetic-zone, site: lab, power_domain: power-a, network_domain: network-a }
+  - hostname: bsd-k8s-05
+    role: worker
+    address: 198.51.100.15
+    bootstrap_address: 198.51.100.105
+    bootstrap_link: eno1
+    links:
+      tor1: { permanent_mac: "02:00:00:00:01:15", switch: synthetic-tor1, port: xe-0/0/15, native_vlan: 2511 }
+      tor2: { permanent_mac: "02:00:00:00:02:15", switch: synthetic-tor2, port: xe-0/0/15, native_vlan: 2511 }
+    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-05", bus_path: "/pci0000:00/ata1" }
+    localpv_disk: { match: 'disk.size == 512110190592u && disk.model == "Synthetic LocalPV NVMe" && disk.serial == "FAKE-LOCALPV-05" && disk.wwid == "eui.fake-localpv-05" && disk.bus_path == "/pci0000:00/0000:02:00.0/nvme"' }
+    future_osd: { model: "Synthetic OSD NVMe", serial: "FAKE-OSD-05", wwid: "eui.fake-osd-05", bus_path: "/pci0000:00/0000:03:00.0/nvme", size_bytes: 1000204886016 }
+    labels: { region: synthetic, zone: synthetic-zone, site: lab, power_domain: power-a, network_domain: network-a }

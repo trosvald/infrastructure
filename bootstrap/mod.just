@@ -1,80 +1,61 @@
+set default-list
 set default-script
 set no-exit-message
 set quiet
 set script-interpreter := ['bash', '-euo', 'pipefail']
 set shell := ['bash', '-euo', 'pipefail', '-c']
 
-controller := `talosctl config info -o yaml | yq -r -e '.endpoints[0]'`
-nodes := `talosctl config info -o yaml | yq -r -e '.nodes | join (" ")'`
-
 [private]
 default:
     just -l bootstrap
 
-[confirm('Bootstrap cluster? [y|N]')]
-[doc('Bootstrap a Talos & Kubernetes cluster end-to-end')]
-cluster: nodes k8s (kubeconfig "node") base apps kubeconfig
+[confirm('Bootstrap the protected five-node Talos/Cilium cluster? [y|N]')]
+[doc('Run the bounded resumable Talos and Cilium bootstrap state machine')]
+cluster:
+    "{{ source_directory() }}/scripts/cluster.sh" all
+[doc('Validate bounded bootstrap state-machine contracts offline')]
+test:
+    "{{ source_directory() }}/tests/test.sh"
+[doc('Validate bootstrap state, Cilium resources, and Helmfile rendering')]
+validate: test
+    just kube validate-cilium-bgp
+    helmfile -f "{{ source_directory() }}/helmfile/crds.yaml" template -q >/dev/null
+    helmfile -f "{{ source_directory() }}/helmfile/apps.yaml" template -q >/dev/null
+
+
+
+[private]
+preflight:
+    "{{ source_directory() }}/scripts/cluster.sh" preflight
 
 [private]
 nodes:
-    just log info "Running stage..." "stage" "{{ recipe_name() }}"
-    for n in {{ nodes }}; do
-        if ! op=$(just --yes talos apply-node "$n" --insecure 2>&1); then
-            if [[ "$op" == *"certificate required"* ]]; then
-                just log info "Talos already configured, skipping apply of config" "stage" "{{ recipe_name() }}" "node" "$n"
-                continue
-            fi
-            just log fatal "Failed to apply Talos configuration" "stage" "{{ recipe_name() }}" "node" "$n" "output" "$op"
-        fi
-    done
+    "{{ source_directory() }}/scripts/cluster.sh" nodes
 
 [private]
-k8s:
-    just log info "Running stage..." "stage" "{{ recipe_name() }}"
-    until op=$(talosctl -n "{{ controller }}" bootstrap 2>&1 || true) && [[ "$op" == *"AlreadyExists"* ]]; do
-        just log info "Kubernetes bootstrap in progress. Retrying in 5 seconds..." "stage" "{{ recipe_name() }}"
-        sleep 5
-    done
+kubernetes:
+    "{{ source_directory() }}/scripts/cluster.sh" kubernetes
 
 [private]
-kubeconfig lb="cilium":
-    just log info "Running stage..." "stage" "{{ recipe_name() }}"
-    if ! talosctl kubeconfig -n "{{ controller }}" -f --force-context-name main {{ justfile_dir() }}; then
-        just log fatal "Failed to fetch kubeconfig" "stage" "{{ recipe_name() }}"
-    fi
-    if [[ "{{ lb }}" != "cilium" ]]; then
-        if ! kubectl config set-cluster main --server "https://{{ controller }}:6443"; then
-            just log fatal "Failed to set kubectl cluster server address" "stage" "{{ recipe_name() }}"
-        fi
-    fi
+kubeconfig-node:
+    "{{ source_directory() }}/scripts/cluster.sh" kubeconfig-node
 
 [private]
-base: ready
-    just log info "Running stage..." "stage" "{{ recipe_name() }}"
-    if ! kustomize build {{ source_directory() }}/kustomize/home-operations | OP_ACCOUNT="home-operations.1password.com" just template - | kubectl apply --server-side --force-conflicts -f -; then
-        just log fatal "Failed to apply home-operations manifests" "stage" "{{ recipe_name() }}"
-    fi
-    if ! kustomize build {{ source_directory() }}/kustomize/personal | just template - | kubectl apply --server-side --force-conflicts -f -; then
-        just log fatal "Failed to apply personal manifests" "stage" "{{ recipe_name() }}"
-    fi
-    if ! helmfile -f "{{ source_directory() }}/helmfile/crds.yaml" template -q | yq ea -r -e 'select(.kind == "CustomResourceDefinition")' | kubectl apply --server-side --force-conflicts -f -; then
-        just log fatal "Failed to apply base crds" "stage" "{{ recipe_name() }}"
-    fi
+cilium:
+    "{{ source_directory() }}/scripts/cluster.sh" cilium
 
 [private]
-apps:
-    just log info "Running stage..." "stage" "{{ recipe_name() }}"
-    if ! helmfile -f "{{ source_directory() }}/helmfile/apps.yaml" sync --hide-notes; then
-        just log fatal "Failed to sync helmfile" "stage" "{{ recipe_name() }}"
-    fi
+bgp:
+    "{{ source_directory() }}/scripts/cluster.sh" bgp
 
-# Wait until nodes register as Ready=False. They only become Ready=True once the CNI is healthy.
 [private]
-ready:
-    just log info "Running stage..." "stage" "{{ recipe_name() }}"
-    if ! kubectl wait nodes --for=condition=Ready=True --all --timeout=10s &>/dev/null; then
-        until kubectl wait nodes --for=condition=Ready=False --all --timeout=10s &>/dev/null; do
-            just log info "Nodes not available, waiting for nodes to be available. Retrying in 5 seconds..." "stage" "{{ recipe_name() }}"
-            sleep 5
-        done
-    fi
+api-vip:
+    "{{ source_directory() }}/scripts/cluster.sh" api-vip
+
+[private]
+kubeconfig-cilium:
+    "{{ source_directory() }}/scripts/cluster.sh" kubeconfig-cilium
+
+[private]
+verify:
+    "{{ source_directory() }}/scripts/cluster.sh" verify

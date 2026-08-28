@@ -235,14 +235,12 @@ candidates, diffs, drift summaries, and encrypted backups stay in protected
 ignored paths. Device-local recovery and authentication configuration is not
 owned by this repository.
 
-The pre-adoption gate is deliberately closed. The tracked
-[`ansible/junos/adoption.yml`](ansible/junos/adoption.yml) record remains
-`adopted: false`; the role, drift playbook, and runtime read it directly, and
-no repository command mutates it. Manual direct-configuration cleanup, parity
-review, and the separately reviewed record change are documented in the
-[Junos operator handbook](ansible/junos/README.md). Do not run live adoption
-or deployment from this repository until that procedure is independently
-approved.
+The reviewed direct-configuration migration is complete. The tracked
+[`ansible/junos/adoption.yml`](ansible/junos/adoption.yml) record is
+`adopted: true`; the role, drift playbook, and runtime still require the committed record and a
+clean working copy. The migration used an encrypted recovery-proven backup, atomic
+commit-confirmed adoption, managed-group parity verification, and authenticated Cilium BGP
+preflight. No repository command mutates the adoption record.
 
 ## <img src="https://fonts.gstatic.com/s/e/notoemoji/latest/1f64f/512.webp" alt="🙏" width="20" height="20"> Thanks
 

@@ -19,13 +19,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   changed by this repository addition.
 - Added the isolated Junos SRX1500 intent refactor: deterministic seven-domain rendering, exact
   NETCONF identity/release gates, protected transient artifacts, and digest-bound
-  commit-check/commit-confirmed lifecycle. The tracked adoption record remains false, so live
-  deployment and drift are intentionally fail-closed pending manual parity review.
+  commit-check/commit-confirmed lifecycle and a non-overrideable tracked adoption gate.
+- Added confirmation-gated, CAS-zero OpenBao provisioning for the authenticated Cilium BGP
+  password and protected five-node Talos topology/secrets. Real hardware inventory is validated
+  without printing identifiers, and Talos secrets are generated once with the locked client.
 
 ### Changed
 
 - Refactored c0 into a host-scoped Doco-CD layout under `docker/c0/`, separating controller source,
   host prerequisites, and direct-child managed applications.
+- Completed the reviewed SRX1500 direct-configuration adoption into `ANSIBLE_SRX1500`: encrypted
+  recovery was proven on c1, the atomic commit-confirmed migration retained device-local
+  authentication, managed parity and fail-closed authenticated Cilium BGP preflight passed, and
+  the separately reviewed adoption record is now true.
 - Revised the c1 repository foundation: Docker engine state, containerd, and named volumes stay
   on the c1 OS disk; the healthy 1 TB NVMe is split approximately 50:50 as XFS partitions mounted
   at `/srv/librefs` (label `c1_librefs`) and `/srv/applications` (XFS label `c1_apps`, GPT

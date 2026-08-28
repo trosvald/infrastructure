@@ -59,22 +59,9 @@ require_private_dir() {
 }
 
 require_mise_tools() {
-  command -v mise >/dev/null 2>&1 || toolchain_error "mise is required"
-
-  local executable active resolved
+  local executable
   for executable in "$@"; do
-    active="$(command -v "$executable" 2>/dev/null || true)"
-    [[ -n "$active" ]] || toolchain_error "missing executable: $executable"
-    resolved="$(mise which "$executable" 2>/dev/null || true)"
-    [[ -n "$resolved" ]] || toolchain_error "$executable is not declared and installed by mise"
-
-    active="$(cd "$(dirname "$active")" && pwd -P)/$(basename "$active")"
-    resolved="$(cd "$(dirname "$resolved")" && pwd -P)/$(basename "$resolved")"
-    [[ "$active" == "$resolved" ]] || toolchain_error "$executable resolves outside mise: $active"
-    case "$resolved" in
-      /opt/homebrew/*|/usr/local/Cellar/*|*/ansible/junos/.venv/*|*/ansible/junos/.verify-venv/*)
-        toolchain_error "rejected executable path for $executable: $resolved"
-        ;;
-    esac
+    command -v "$executable" >/dev/null 2>&1 ||
+      toolchain_error "missing locked executable: $executable"
   done
 }

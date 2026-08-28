@@ -83,6 +83,171 @@ class IntentTests(unittest.TestCase):
             self.assertIn(f"security nat source rule-set {ruleset}", text)
         self.assertNotIn("destination-nat", text)
         self.assertNotIn("proxy-arp", text)
+    def test_cilium_bgp_contract_is_rendered_once_and_in_order(self):
+        first, second = self.build(), self.build()
+        self.assertEqual(first, second)
+        text = "\n".join(first)
+        for peer in (
+            "198.51.100.11",
+            "198.51.100.12",
+            "198.51.100.13",
+            "198.51.100.14",
+            "198.51.100.15",
+        ):
+            self.assertIn(f"protocols bgp group CILIUM neighbor {peer}", text)
+        self.assertEqual(text.count("protocols bgp group CILIUM authentication-key "), 1)
+        self.assertIn(
+            "IMPORT-CILIUM-LB term CILIUM-LB-HOSTS from route-filter "
+            "198.18.0.0/24 prefix-length-range /32-/32",
+            text,
+        )
+        self.assertIn("EXPORT-CILIUM-NONE term REJECT-ALL then reject", text)
+        self.assertIn("routing-options static route 198.18.0.0/24 discard", text)
+        self.assertIn("prefix-limit maximum 128 teardown 100 idle-timeout 5", text)
+        self.assertIn("protocols bgp group CILIUM multipath", text)
+        self.assertIn("routing-options autonomous-system 64512", text)
+        self.assertIn("routing-options router-id 198.51.100.1", text)
+        self.assertIn(
+            "security-zone PROD interfaces irb.2511 "
+            "host-inbound-traffic protocols bgp",
+            text,
+        )
+        self.assertNotIn("keepalive", text)
+        self.assertNotIn("graceful-restart", text)
+
+    def test_cilium_peer_count_and_address_failures_are_independent(self):
+        mutations = {
+            "four": lambda topology: topology["bgp"].update(
+                peers=topology["bgp"]["peers"][:4]
+            ),
+            "six": lambda topology: topology["bgp"].update(
+                peers=[*topology["bgp"]["peers"], "198.51.100.16"]
+            ),
+            "duplicate": lambda topology: topology["bgp"]["peers"].__setitem__(
+                4, topology["bgp"]["peers"][0]
+            ),
+            "outside": lambda topology: topology["bgp"]["peers"].__setitem__(
+                4, "192.0.2.254"
+            ),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(module.IntentError, "five approved|five unique"):
+                    self.build(topology=self.with_topology(mutate))
+
+    def test_cilium_asn_and_authentication_failures_are_independent(self):
+        changed_asn = self.with_topology(
+            lambda topology: topology["bgp"].update(peer_as=64514)
+        )
+        with self.assertRaisesRegex(module.IntentError, "64512/64513"):
+            self.build(topology=changed_asn)
+        raw_auth = self.with_intent(
+            "routing",
+            lambda value: value["routing"]["bgp"].update(authentication_key="plaintext"),
+        )
+        with self.assertRaisesRegex(module.IntentError, "device-local"):
+            self.build(intent_dir=raw_auth)
+        missing_auth = self.with_topology(
+            lambda topology: topology["bgp"].pop("authentication_key")
+        )
+        with self.assertRaisesRegex(module.IntentError, "undefined topology key"):
+            self.build(topology=missing_auth)
+        malformed_auth = self.with_topology(
+            lambda topology: topology["bgp"].update(authentication_key="invalid")
+        )
+        with self.assertRaisesRegex(module.IntentError, "43-character base64url"):
+            self.build(topology=malformed_auth)
+
+    def test_cilium_import_and_export_policy_failures_are_independent(self):
+        def import_term(value):
+            return value["routing"]["policies"][2]["terms"][0]
+
+        for prefix_range in ("/24-/32", "/33-/33"):
+            bad_range = self.with_intent(
+                "routing",
+                lambda value, prefix_range=prefix_range: import_term(value)[
+                    "route_filter"
+                ].update(prefix_length_range=prefix_range),
+            )
+            with self.subTest(prefix_range=prefix_range):
+                with self.assertRaisesRegex(module.IntentError, "only LB-pool /32"):
+                    self.build(intent_dir=bad_range)
+        aggregate = self.with_intent(
+            "routing",
+            lambda value: value["routing"]["policies"][2]["terms"].insert(
+                1,
+                {
+                    "name": "AGGREGATE",
+                    "from_protocol": "bgp",
+                    "route_filter": {"topology": "bgp.lb_pool"},
+                    "action": "accept",
+                },
+            ),
+        )
+        with self.assertRaisesRegex(module.IntentError, "only LB-pool /32"):
+            self.build(intent_dir=aggregate)
+        export_permit = self.with_intent(
+            "routing",
+            lambda value: value["routing"]["policies"][3]["terms"][0].update(
+                action="accept"
+            ),
+        )
+        with self.assertRaisesRegex(module.IntentError, "export policy"):
+            self.build(intent_dir=export_permit)
+        missing_reject = self.with_intent(
+            "routing",
+            lambda value: value["routing"]["policies"][2]["terms"].pop(),
+        )
+        with self.assertRaisesRegex(module.IntentError, "only LB-pool /32"):
+            self.build(intent_dir=missing_reject)
+
+    def test_cilium_fallback_and_group_safety_failures_are_independent(self):
+        mutations = {
+            "non-discard": lambda value: value["routing"]["static_routes"][0].update(
+                action="reject"
+            ),
+            "multipath": lambda value: value["routing"]["bgp"].update(multipath=False),
+            "hold": lambda value: value["routing"]["bgp"].update(hold_time=10),
+            "prefix-maximum": lambda value: value["routing"]["bgp"]["unicast"][
+                "prefix_limit"
+            ].update(maximum=129),
+            "prefix-teardown": lambda value: value["routing"]["bgp"]["unicast"][
+                "prefix_limit"
+            ].pop("teardown"),
+            "graceful-restart": lambda value: value["routing"]["bgp"].update(
+                graceful_restart=True
+            ),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name):
+                with self.assertRaises(module.IntentError):
+                    self.build(intent_dir=self.with_intent("routing", mutate))
+        mismatched_pool = self.with_topology(
+            lambda topology: topology["bgp"].update(lb_pool="198.19.0.0/24")
+        )
+        with self.assertRaisesRegex(module.IntentError, "static discard"):
+            self.build(topology=mismatched_pool)
+
+    def test_bgp_host_inbound_is_rejected_outside_prod(self):
+        non_prod = self.with_intent(
+            "security",
+            lambda value: value["security"]["zones"][0].update(protocols=["bgp"]),
+        )
+        with self.assertRaisesRegex(module.IntentError, "only on PROD"):
+            self.build(intent_dir=non_prod)
+
+    def test_authentication_value_free_path_never_contains_material(self):
+        secret = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq"
+        line = (
+            "set groups ANSIBLE_SRX1500 protocols bgp group CILIUM "
+            f"authentication-key {secret}"
+        )
+        normalized = module.value_free_path(line)
+        self.assertEqual(
+            normalized,
+            "protocols/bgp/group/CILIUM/authentication-key",
+        )
+        self.assertNotIn(secret, normalized)
 
     def test_no_duplicates_and_live_security_controls(self):
         commands = self.build()
@@ -101,6 +266,15 @@ class IntentTests(unittest.TestCase):
         self.assertIn("system syslog file security-log any any", text)
         self.assertIn('system syslog file security-log match "RT_FLOW|RT_SCREEN"', text)
         self.assertIn("security policies pre-id-default-policy then log session-close", text)
+        for policy in (
+            "PROD-INTERNET",
+            "MGMT-ADMIN-PROD",
+            "PROD-INFRA-MGMT",
+            "PROD-INFRA-DEV",
+            "DEV-INFRA-PROD",
+        ):
+            self.assertIn(f"policy {policy} then log session-init", text)
+            self.assertIn(f"policy {policy} then log session-close", text)
 
     def test_dhcp_option_lease_home_pool_and_ssh_macs(self):
         text = "\n".join(self.build())

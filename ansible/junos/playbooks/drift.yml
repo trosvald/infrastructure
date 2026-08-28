@@ -68,24 +68,47 @@
           - drift_device_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
 
     - name: Retrieve only the managed group and apply-groups reference
-      juniper.device.junos_command:
-        commands:
-          - show configuration groups ANSIBLE_SRX1500 | display set
-          - show configuration apply-groups | display set
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/read_managed.py"
       register: drift_configuration
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Parse scoped managed configuration in memory
+      ansible.builtin.set_fact:
+        drift_managed_configuration: "{{ drift_configuration.stdout | from_json }}"
       no_log: true
 
     - name: Normalize managed lines in memory
       ansible.builtin.set_fact:
-        drift_expected_lines: "{{ drift_candidate.stdout_lines | select('match', '^set groups ANSIBLE_SRX1500 ') | list | sort }}"
-        drift_actual_lines: "{{ drift_configuration.stdout[0].splitlines() | select('match', '^set groups ANSIBLE_SRX1500 ') | list | sort }}"
-        drift_apply_groups: "{{ drift_configuration.stdout[1].splitlines() | select('search', 'ANSIBLE_SRX1500') | list }}"
+        drift_expected_lines: >-
+          {{ drift_candidate.stdout_lines
+             | select('match', '^set groups ANSIBLE_SRX1500 ')
+             | reject('search', ' protocols bgp group CILIUM authentication-key ')
+             | list | sort }}
+        drift_actual_lines: >-
+          {{ drift_managed_configuration.group.splitlines()
+             | select('match', '^set groups ANSIBLE_SRX1500 ')
+             | reject('search', ' protocols bgp group CILIUM authentication-key ')
+             | list | sort }}
+        drift_expected_authentication_lines: >-
+          {{ drift_candidate.stdout_lines
+             | select('search', ' protocols bgp group CILIUM authentication-key ')
+             | list }}
+        drift_actual_authentication_lines: >-
+          {{ drift_managed_configuration.group.splitlines()
+             | select('search', ' protocols bgp group CILIUM authentication-key ')
+             | list }}
+        drift_apply_groups: "{{ drift_managed_configuration.apply_groups.splitlines() | select('search', 'ANSIBLE_SRX1500') | list }}"
         drift_expected_ordered_lines: >-
           {{ drift_candidate.stdout_lines
              | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
              | list }}
         drift_actual_ordered_lines: >-
-          {{ drift_configuration.stdout[0].splitlines()
+          {{ drift_managed_configuration.group.splitlines()
              | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
              | list }}
       no_log: true
@@ -101,15 +124,47 @@
         that:
           - drift_actual_lines | length > 0
           - drift_apply_groups | length > 0
+          - drift_expected_authentication_lines | length == 1
+          - drift_actual_authentication_lines | length == 1
         fail_msg: >-
           Managed group evidence is absent. Stop and complete the direct-configuration cleanup and
           apply-groups adoption migration before attempting drift comparison.
+
+    - name: Extract expected policy order by managed parent
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/junos_intent.py"
+          - --order-ids
+        stdin: "{{ drift_expected_ordered_lines | to_json }}"
+      register: drift_expected_order_result
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Extract actual policy order by managed parent
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/junos_intent.py"
+          - --order-ids
+        stdin: "{{ drift_actual_ordered_lines | to_json }}"
+      register: drift_actual_order_result
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Compare scoped policy order
+      ansible.builtin.set_fact:
+        drift_order_mismatch: >-
+          {{ (drift_expected_order_result.stdout | from_json) !=
+             (drift_actual_order_result.stdout | from_json) }}
+      no_log: true
 
     - name: Compute bounded actionable path differences in memory
       ansible.builtin.set_fact:
         drift_missing: "{{ drift_expected_lines | difference(drift_actual_lines) | list }}"
         drift_extra: "{{ drift_actual_lines | difference(drift_expected_lines) | list }}"
-        drift_order_mismatch: "{{ drift_expected_ordered_lines != drift_actual_ordered_lines }}"
       no_log: true
     - name: Convert differences to value-free schema path identifiers
       ansible.builtin.command:

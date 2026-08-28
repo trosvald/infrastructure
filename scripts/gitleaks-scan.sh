@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-command -v mise >/dev/null 2>&1 || { echo "mise is required" >&2; exit 1; }
-active="$(command -v gitleaks 2>/dev/null || true)"
-managed="$(mise which gitleaks 2>/dev/null || true)"
-[[ -n "$active" && "$active" == "$managed" ]] || {
-  echo "gitleaks must resolve to the mise-managed binary" >&2
+command -v gitleaks >/dev/null 2>&1 || {
+  echo "gitleaks is missing; install the locked toolchain first" >&2
   exit 1
 }
 

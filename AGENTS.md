@@ -65,11 +65,12 @@ deterministically emits `ANSIBLE_SRX1500` Junos `set` commands plus a SHA-256 di
 train, runs a separate commit-check/discard preflight, and only then performs a ten-minute
 commit-confirmed deployment.
 
-The tracked `ansible/junos/adoption.yml` record is the non-overrideable adoption gate and remains
-false. The role, drift playbook, and runtime read it directly; no repository command mutates it.
-Manual direct-configuration cleanup, parity review, and the separately reviewed record change are
-the only adoption path. Verification and confirmation are bound to the exact candidate digest and
-must re-check pending commit identity and operational evidence immediately before confirmation.
+The tracked `ansible/junos/adoption.yml` record is the non-overrideable adoption gate and is true
+only after the reviewed direct-configuration migration, c1 recovery proof, commit-confirmed
+transaction, managed parity verification, and authenticated Cilium BGP preflight completed. The
+role, drift playbook, and runtime read it directly; no repository command mutates it. Verification
+and confirmation remain bound to the exact candidate digest and must re-check pending commit
+identity and operational evidence immediately before confirmation.
 
 ## Key Directories
 
@@ -83,7 +84,7 @@ must re-check pending commit identity and operational evidence immediately befor
 - `docker/c0/`: host Doco configuration and direct-child OpenBao, PowerDNS, Blocky, and Omada
   Controller applications.
 - `ansible/junos/`: isolated inventory, intent, roles, scripts, fixtures, tests, and the fixed
-  pre-adoption record.
+  adoption record.
 - `docs/`: operational, backup/restore, secret-custody, and migration runbooks.
 - `scripts/`: repository-wide utilities, including the fail-closed Gitleaks wrapper.
 
@@ -104,17 +105,18 @@ just docker validate-c0
 just ansible junos bootstrap
 just ansible junos test
 just ansible junos lint
-scripts/gitleaks-scan.sh
+just scan-secrets
 ```
 
-Junos operator flow, after `bao login` and live-access preflight:
+Junos operator flow, using the protected repository OpenBao runtime:
 
 ```sh
 just ansible junos render
 just ansible junos check
 just ansible junos diff
 just ansible junos deploy
-just ansible junos verify
+just ansible junos bgp-preflight
+just ansible junos bgp-verify
 just ansible junos drift
 just ansible junos backup
 ```

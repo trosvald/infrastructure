@@ -3,8 +3,11 @@
 apiVersion: cilium.io/v2
 kind: CiliumLoadBalancerIPPool
 metadata:
-  name: services
+  name: internal
 spec:
   allowFirstLastIPs: "No"
   blocks:
-    - cidr: 192.168.20.0/24
+    - cidr: 10.25.20.32/27
+  serviceSelector:
+    matchLabels:
+      lbipam.monosense.io/class: internal

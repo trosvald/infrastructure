@@ -29,7 +29,7 @@ case "$action" in
     ;;
   lint)
     require_mise_tools python ansible-playbook ansible-lint yamllint
-    yaml_targets=(../requirements.yml group_vars host_vars inventory playbooks roles)
+    yaml_targets=(../requirements.yml inventory playbooks roles)
     yamllint "${yaml_targets[@]}"
     ansible-lint playbooks
     for playbook in playbooks/*.yml tests/controller-smoke.yml; do
@@ -62,9 +62,13 @@ case "$action" in
     require_mise_tools ansible-playbook
     exec scripts/with-openbao-runtime.sh live scripts/deploy.sh
     ;;
-  verify)
+  bgp-preflight)
     require_mise_tools ansible-playbook
-    exec scripts/with-openbao-runtime.sh live scripts/verify.sh
+    exec scripts/with-openbao-runtime.sh live ansible-playbook playbooks/bgp-preflight.yml
+    ;;
+  bgp-verify)
+    require_mise_tools ansible-playbook
+    exec scripts/with-openbao-runtime.sh live ansible-playbook playbooks/bgp-verify.yml
     ;;
   drift)
     require_mise_tools ansible-playbook
@@ -76,7 +80,7 @@ case "$action" in
     ;;
   *)
     echo "Unknown Junos action: ${action:-<missing>}" >&2
-    echo "Supported actions: bootstrap lint test render check diff deploy verify drift backup" >&2
+    echo "Supported actions: bootstrap lint test render check diff deploy bgp-preflight bgp-verify drift backup" >&2
     exit 2
     ;;
 esac

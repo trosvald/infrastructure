@@ -44,6 +44,10 @@ sync resource:
 view-secret ns secret:
     kubectl view-secret -n {{ ns }} {{ secret }}
 
+[doc('Validate staged authenticated Cilium BGP resources')]
+validate-cilium-bgp:
+    "{{ source_directory() }}/tests/cilium-bgp/validate.sh"
+
 [private]
 render-local-ks ns ks:
     flate build ks -n "{{ ns }}" -o yaml "{{ ks }}"

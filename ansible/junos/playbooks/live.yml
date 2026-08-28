@@ -5,7 +5,7 @@
   serial: 1
   any_errors_fatal: true
   vars:
-    junos_operation: "{{ operation | default('check') }}"
+    junos_intent_operation: "{{ operation | default('check') }}"
   tasks:
     - name: Apply structured Junos intent workflow
       ansible.builtin.include_role:
