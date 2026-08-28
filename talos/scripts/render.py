@@ -60,7 +60,7 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
     require_exact_keys(versions, {"schematic", "talos", "kubernetes"}, "versions")
     if (
         versions["schematic"]
-        != "0b085a927da9e267ec30305786b2802f4fec76bf86f02dffe043120f07ad6011"
+        != "bd0e9976660939539a20d0c88516154f1cd97d95c2bed48b26314e830023f1b3"
     ):
         raise RenderError("schematic must be the reviewed Talos 1.14 factory ID")
     if versions["talos"] != "v1.14.0-rc.2":

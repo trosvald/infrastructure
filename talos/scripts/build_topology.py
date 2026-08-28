@@ -208,7 +208,7 @@ def main() -> int:
         },
         "network": {"subnet": "10.25.11.0/24", "gateway": "10.25.11.1"},
         "versions": {
-            "schematic": "0b085a927da9e267ec30305786b2802f4fec76bf86f02dffe043120f07ad6011",
+            "schematic": "bd0e9976660939539a20d0c88516154f1cd97d95c2bed48b26314e830023f1b3",
             "talos": "v1.14.0-rc.2",
             "kubernetes": "v1.36.2",
         },

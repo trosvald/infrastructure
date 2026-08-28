@@ -126,7 +126,6 @@ def main() -> int:
             "FilesystemTrimConfig",
             "FilesystemScrubConfig",
             "WatchdogTimerConfig",
-            "KernelModuleConfig",
             "SysctlConfig",
             "EtcFileConfig",
             "CRICustomizationConfig",
@@ -140,6 +139,7 @@ def main() -> int:
             "fs.inotify.max_user_instances: 8192",
             "fs.inotify.max_user_watches: 1048576",
             "net.core.default_qdisc: fq",
+            "user.max_user_namespaces: 11255",
             "net.core.rmem_max: 67108864",
             "net.core.wmem_max: 67108864",
             "net.ipv4.ping_group_range: 0 2147483647",
@@ -165,6 +165,8 @@ def main() -> int:
             "net.ipv4.tcp_tw_reuse",
         ):
             assert f"    {removed}:" not in normalized_machine_template
+        assert "kind: KernelModuleConfig" not in text
+        assert "vm.nr_hugepages" not in text
         assert "nconnect=8" in text
         assert "rsize=1048576" in text
         assert "wsize=1048576" in text
