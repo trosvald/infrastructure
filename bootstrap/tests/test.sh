@@ -63,7 +63,8 @@ assert "live protected disk identities changed before apply" in render
 assert "live X710 or NTP gate failed before apply" in render
 assert "verify_node" in render
 assert "confirm-bond $hostname" in script
-assert "bootstrap NIC remains enabled" in script
+assert "management NIC remains enabled" in script
+assert "permanent or MGMT address did not persist" in script
 junos_intent = "\n".join(
     path.read_text()
     for path in Path("ansible/junos/intent/srx1500").glob("*.yml")

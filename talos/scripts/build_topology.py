@@ -113,7 +113,7 @@ def build_node(inventory_dir: Path, index: int) -> dict[str, Any]:
         "hostname": f"bsd-k8s-{index:02d}",
         "role": "controlplane" if index <= 3 else "worker",
         "address": f"10.25.11.{10 + index}",
-        "bootstrap_address": f"10.25.11.{100 + index}",
+        "bootstrap_address": f"10.25.10.{110 + index}",
         "bootstrap_link": bootstrap_name,
         "links": {
             "tor1": {
@@ -218,6 +218,7 @@ def main() -> int:
             "snapshot_age_recipient": decisions["snapshot_age_recipient"],
         },
         "network": {"subnet": "10.25.11.0/24", "gateway": "10.25.11.1"},
+        "management_network": {"subnet": "10.25.10.0/24", "gateway": "10.25.10.1"},
         "versions": {
             "schematic": "bd0e9976660939539a20d0c88516154f1cd97d95c2bed48b26314e830023f1b3",
             "talos": "v1.14.0-rc.2",

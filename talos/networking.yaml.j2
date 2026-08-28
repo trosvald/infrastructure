@@ -7,7 +7,7 @@ mtu: 1496
 addresses:
   - address: {{ node.bootstrap_address }}/24
 routes:
-  - gateway: {{ topology.network.gateway }}
+  - gateway: {{ topology.management_network.gateway }}
     metric: 2048
 ---
 apiVersion: v1alpha1

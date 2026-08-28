@@ -193,8 +193,8 @@ wait_talos_api() {
 
 apply_node() {
     local hostname="$1" bootstrap address config link_status route_status address_status
-    local extension_status module_status volume_status param_status disable_patch disabled_config
-    local disabled_links disabled_addresses bond_confirmation
+    local extension_status module_status volume_status param_status bond_confirmation
+    local persistent_addresses
     bootstrap="$(node_field "$hostname" '.bootstrap_address')"
     address="$(node_field "$hostname" '.address')"
     config="$runtime_dir/nodes/$hostname/$hostname.yaml"
@@ -235,31 +235,16 @@ apply_node() {
     read -r -p "Type 'confirm-bond $hostname' only after both member-path tests pass: " \
         bond_confirmation
     [[ "$bond_confirmation" == "confirm-bond $hostname" ]] || {
-        echo "$hostname: bootstrap NIC remains enabled because bond acceptance was not confirmed" >&2
+        echo "$hostname: management NIC remains enabled; bond acceptance was not confirmed" >&2
         return 1
     }
-    disable_patch="$runtime_dir/nodes/$hostname/disable-bootstrap.yaml"
-    disabled_config="$runtime_dir/nodes/$hostname/$hostname-disabled.yaml"
-    cat > "$disable_patch" <<EOF
----
-apiVersion: v1alpha1
-kind: LinkConfig
-name: $(node_field "$hostname" '.bootstrap_link')
-up: false
-EOF
-    chmod 0600 "$disable_patch"
-    talosctl machineconfig patch "$config" -p "@$disable_patch" > "$disabled_config"
-    chmod 0600 "$disabled_config"
-    talosctl validate --config "$disabled_config" --mode metal
-    talosctl --talosconfig "$talosconfig" --nodes "$address" apply-config --file "$disabled_config"
     talosctl --talosconfig "$talosconfig" --nodes "$address" reboot
     wait_talos_api "$address"
-    disabled_links="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get linkstatus --output yaml)"
-    disabled_addresses="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get addressstatus --output yaml)"
-    [[ "$disabled_links" == *"id: $(node_field "$hostname" '.bootstrap_link')"* &&
-        "$disabled_links" == *"operationalState: down"* &&
-        "$disabled_addresses" != *"address: $bootstrap/24"* ]] || {
-        echo "$hostname: bootstrap link disablement did not persist through reboot" >&2
+    retry 60 5 talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" version >/dev/null
+    persistent_addresses="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get addressstatus --output yaml)"
+    [[ "$persistent_addresses" == *"address: $address/24"* &&
+        "$persistent_addresses" == *"address: $bootstrap/24"* ]] || {
+        echo "$hostname: permanent or MGMT address did not persist through reboot" >&2
         return 1
     }
 }

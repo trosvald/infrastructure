@@ -46,20 +46,6 @@ for output in first second; do
             --skip-talosconfig >/dev/null
     done
 done
-cat > "$runtime_dir/disable-bootstrap.yaml" <<'EOF'
----
-apiVersion: v1alpha1
-kind: LinkConfig
-name: eno1
-up: false
-EOF
-chmod 0600 "$runtime_dir/disable-bootstrap.yaml"
-talosctl machineconfig patch "$runtime_dir/first/bsd-k8s-01.yaml" \
-    -p "@$runtime_dir/disable-bootstrap.yaml" > "$runtime_dir/bsd-k8s-01-disabled.yaml"
-chmod 0600 "$runtime_dir/bsd-k8s-01-disabled.yaml"
-talosctl validate --config "$runtime_dir/bsd-k8s-01-disabled.yaml" --mode metal
-yq -e 'select(.kind == "LinkConfig" and .name == "eno1" and .up == false)' \
-    "$runtime_dir/bsd-k8s-01-disabled.yaml" >/dev/null
 python "$talos_dir/tests/test_render.py" \
     --first "$runtime_dir/first" \
     --second "$runtime_dir/second" \

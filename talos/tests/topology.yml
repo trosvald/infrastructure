@@ -13,6 +13,9 @@ cluster:
 network:
   subnet: 198.51.100.0/24
   gateway: 198.51.100.1
+management_network:
+  subnet: 192.0.2.0/24
+  gateway: 192.0.2.1
 private_dns: [192.0.2.53, 198.51.100.53]
 ntp_servers: [time-a.example.invalid, time-b.example.invalid, time-c.example.invalid]
 versions:
@@ -25,7 +28,7 @@ nodes:
   - hostname: bsd-k8s-01
     role: controlplane
     address: 198.51.100.11
-    bootstrap_address: 198.51.100.101
+    bootstrap_address: 192.0.2.101
     bootstrap_link: eno1
     links:
       tor1: { permanent_mac: "02:00:00:00:01:11", switch: synthetic-tor1, port: xe-0/0/11, native_vlan: 2511 }
@@ -37,7 +40,7 @@ nodes:
   - hostname: bsd-k8s-02
     role: controlplane
     address: 198.51.100.12
-    bootstrap_address: 198.51.100.102
+    bootstrap_address: 192.0.2.102
     bootstrap_link: eno1
     links:
       tor1: { permanent_mac: "02:00:00:00:01:12", switch: synthetic-tor1, port: xe-0/0/12, native_vlan: 2511 }
@@ -49,7 +52,7 @@ nodes:
   - hostname: bsd-k8s-03
     role: controlplane
     address: 198.51.100.13
-    bootstrap_address: 198.51.100.103
+    bootstrap_address: 192.0.2.103
     bootstrap_link: eno1
     links:
       tor1: { permanent_mac: "02:00:00:00:01:13", switch: synthetic-tor1, port: xe-0/0/13, native_vlan: 2511 }
@@ -61,7 +64,7 @@ nodes:
   - hostname: bsd-k8s-04
     role: worker
     address: 198.51.100.14
-    bootstrap_address: 198.51.100.104
+    bootstrap_address: 192.0.2.104
     bootstrap_link: eno1
     links:
       tor1: { permanent_mac: "02:00:00:00:01:14", switch: synthetic-tor1, port: xe-0/0/14, native_vlan: 2511 }
@@ -73,7 +76,7 @@ nodes:
   - hostname: bsd-k8s-05
     role: worker
     address: 198.51.100.15
-    bootstrap_address: 198.51.100.105
+    bootstrap_address: 192.0.2.105
     bootstrap_link: eno1
     links:
       tor1: { permanent_mac: "02:00:00:00:01:15", switch: synthetic-tor1, port: xe-0/0/15, native_vlan: 2511 }

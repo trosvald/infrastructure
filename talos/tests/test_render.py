@@ -87,7 +87,7 @@ def main() -> int:
         assert re.search(rf"(?m)^{re.escape(legacy_field)}", machine_template) is None, legacy_field
     assert all(mac.startswith("02:") for mac in macs)
     for index in range(1, 6):
-        assert f"bootstrap_address: 198.51.100.{100 + index}" in fixture
+        assert f"bootstrap_address: 192.0.2.{100 + index}" in fixture
 
     for index in range(1, 6):
         hostname = f"bsd-k8s-{index:02d}"
@@ -97,7 +97,7 @@ def main() -> int:
         text = first_path.read_text(encoding="utf-8")
         role = "controlplane" if index <= 3 else "worker"
         address = f"198.51.100.{index + 10}/24"
-        bootstrap_address = f"198.51.100.{index + 100}/24"
+        bootstrap_address = f"192.0.2.{index + 100}/24"
         assert f"hostname: {hostname}" in text
         assert f"type: {role}" in text
         assert address in text
