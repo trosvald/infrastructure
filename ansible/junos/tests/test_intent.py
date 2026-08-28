@@ -53,6 +53,22 @@ class IntentTests(unittest.TestCase):
         self.assertIn("interfaces ge-0/0/2 native-vlan-id 2510", text)
         self.assertIn("interfaces ge-0/0/2 unit 0 family ethernet-switching vlan members VLAN-DEV", text)
         self.assertNotIn("interfaces ge-0/0/2 unit 0 family ethernet-switching vlan members VLAN-PROD", text)
+        for interface, hostname in (
+            ("ge-0/0/3", "BSD-K8S-01"),
+            ("ge-0/0/4", "BSD-K8S-02"),
+            ("ge-0/0/5", "BSD-K8S-03"),
+            ("ge-0/0/9", "BSD-K8S-04"),
+            ("ge-0/0/10", "BSD-K8S-05"),
+        ):
+            self.assertIn(f"interfaces {interface} description TO-{hostname}-MGMT", text)
+            self.assertIn(
+                f"interfaces {interface} unit 0 family ethernet-switching vlan members VLAN-MGMT",
+                text,
+            )
+            self.assertNotIn(
+                f"interfaces {interface} unit 0 family ethernet-switching vlan members VLAN-PROD",
+                text,
+            )
         self.assertIn("routing-instances VR-XLSATU access address-assignment pool HOME", text)
         self.assertIn(
             "routing-instances VR-XLSATU system services dhcp-local-server group HOME interface irb.2512",

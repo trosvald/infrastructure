@@ -13,14 +13,14 @@ interfaces:
     native_vlan: 2510
     units: [{ unit: 0, family: ethernet-switching, mode: trunk, vlans: [VLAN-MGMT, VLAN-DEV] }]
   - name: ge-0/0/3
-    description: TO-P0
-    units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-PROD] }]
+    description: TO-BSD-K8S-01-MGMT
+    units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-MGMT] }]
   - name: ge-0/0/4
-    description: TO-P1
-    units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-PROD] }]
+    description: TO-BSD-K8S-02-MGMT
+    units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-MGMT] }]
   - name: ge-0/0/5
-    description: TO-P2
-    units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-PROD] }]
+    description: TO-BSD-K8S-03-MGMT
+    units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-MGMT] }]
   - name: ge-0/0/6
     description: TO-HP-SW
     native_vlan: 2510
@@ -29,11 +29,11 @@ interfaces:
     description: TO-HERMES
     units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-MGMT] }]
   - name: ge-0/0/9
-    description: TO-P3
-    units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-PROD] }]
+    description: TO-BSD-K8S-04-MGMT
+    units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-MGMT] }]
   - name: ge-0/0/10
-    description: TO-P4
-    units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-PROD] }]
+    description: TO-BSD-K8S-05-MGMT
+    units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-MGMT] }]
   - name: ge-0/0/11
     description: TO-S0
     units: [{ unit: 0, family: ethernet-switching, mode: access, vlans: [VLAN-MGMT] }]

@@ -33,6 +33,7 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
     expected_topology_keys = {
         "cluster",
         "network",
+        "management_network",
         "versions",
         "approved_admin_sources",
         "nodes",
@@ -50,6 +51,7 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
 
     cluster = topology["cluster"]
     network = topology["network"]
+    management_network = topology["management_network"]
     versions = topology["versions"]
     require_exact_keys(
         cluster,
@@ -57,6 +59,7 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
         "cluster",
     )
     require_exact_keys(network, {"subnet", "gateway"}, "network")
+    require_exact_keys(management_network, {"subnet", "gateway"}, "management_network")
     require_exact_keys(versions, {"schematic", "talos", "kubernetes"}, "versions")
     if (
         versions["schematic"]
@@ -106,6 +109,8 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
             raise RenderError("live API SANs differ from the approved hostname, VIP, and nodes")
         if network != {"subnet": "10.25.11.0/24", "gateway": "10.25.11.1"}:
             raise RenderError("live Talos network must be VLAN 2511 at 10.25.11.0/24")
+        if management_network != {"subnet": "10.25.10.0/24", "gateway": "10.25.10.1"}:
+            raise RenderError("live Talos management network must be VLAN 2510 at 10.25.10.0/24")
         if topology["private_dns"] != ["10.25.13.35", "10.25.10.100"]:
             raise RenderError("live private DNS must be Blocky then AdGuard")
         if topology["ntp_servers"] != [
@@ -118,6 +123,10 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
     gateway = ipaddress.ip_address(str(network["gateway"]))
     if gateway not in subnet:
         raise RenderError("network gateway is outside the node subnet")
+    management_subnet = ipaddress.ip_network(str(management_network["subnet"]), strict=True)
+    management_gateway = ipaddress.ip_address(str(management_network["gateway"]))
+    if management_gateway not in management_subnet:
+        raise RenderError("management gateway is outside the MGMT subnet")
 
     expected_hosts = [f"bsd-k8s-{index:02d}" for index in range(1, 6)]
     nodes = topology["nodes"]
@@ -126,9 +135,9 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
     expected_roles = ["controlplane", "controlplane", "controlplane", "worker", "worker"]
     expected_live_addresses = [f"10.25.11.{index}" for index in range(11, 16)]
     expected_bootstrap_addresses = [
-        str(ipaddress.ip_address(int(subnet.network_address) + 101 + index))
+        str(ipaddress.ip_address(int(management_subnet.network_address) + 101 + index))
         if synthetic
-        else f"10.25.11.{101 + index}"
+        else f"10.25.10.{111 + index}"
         for index in range(5)
     ]
     seen_macs: set[str] = set()
@@ -160,13 +169,12 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
             raise RenderError(f"{node['hostname']}: live address is not approved")
         bootstrap_address = ipaddress.ip_address(str(node["bootstrap_address"]))
         if (
-            bootstrap_address not in subnet
+            bootstrap_address not in management_subnet
             or str(bootstrap_address) != expected_bootstrap_addresses[index]
             or bootstrap_address in {
-                address,
-                gateway,
-                subnet.network_address,
-                subnet.broadcast_address,
+                management_gateway,
+                management_subnet.network_address,
+                management_subnet.broadcast_address,
             }
             or bootstrap_address in seen_bootstrap_addresses
             or not str(node["bootstrap_link"])
