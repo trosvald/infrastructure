@@ -65,8 +65,8 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
         raise RenderError("schematic must be the reviewed Talos 1.14 factory ID")
     if versions["talos"] != "v1.14.0-rc.2":
         raise RenderError("Talos version must be exactly v1.14.0-rc.2")
-    if not re.fullmatch(r"v1[.]36[.][0-9]+", str(versions["kubernetes"])):
-        raise RenderError("Kubernetes must remain on the reviewed v1.36 release train")
+    if versions["kubernetes"] != "v1.36.2":
+        raise RenderError("Kubernetes version must be exactly v1.36.2")
     if not re.fullmatch(r"age1[0-9a-z]{20,}", str(cluster["snapshot_age_recipient"])):
         raise RenderError("snapshot age recipient is invalid")
     private_dns = topology["private_dns"]
@@ -93,6 +93,13 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
         "10.25.11.13",
     ]
     if not synthetic:
+        if cluster["name"] != "bsd-k8s":
+            raise RenderError("live cluster name must be bsd-k8s")
+        if (
+            cluster["snapshot_age_recipient"]
+            != "age14a89rfvvdrf62v0xe8hlp6hdvgwfnxcku9sjrxc2f47ujkqf5qqqz0c7wk"
+        ):
+            raise RenderError("live snapshot recipient differs from reviewed recovery custody")
         if cluster["endpoint"] != "https://k8s.monosense.io:6443":
             raise RenderError("live control-plane endpoint must be https://k8s.monosense.io:6443")
         if cluster["api_sans"] != live_sans:
@@ -184,6 +191,14 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
                 or link["native_vlan"] != 2511
             ):
                 raise RenderError(f"{node['hostname']}: ToR link must declare native VLAN 2511")
+        if not synthetic and (
+            node["bootstrap_link"] != "eno1"
+            or node["links"]["tor1"]["switch"] != "tor1"
+            or node["links"]["tor2"]["switch"] != "tor2"
+            or node["links"]["tor1"]["port"] != str(index + 1)
+            or node["links"]["tor2"]["port"] != str(index + 1)
+        ):
+            raise RenderError(f"{node['hostname']}: live bootstrap or ToR port mapping differs")
         if node["links"]["tor1"]["switch"] == node["links"]["tor2"]["switch"]:
             raise RenderError(f"{node['hostname']}: bond members must terminate on different ToRs")
         install_disk = node["install_disk"]
@@ -261,6 +276,8 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
         raise RenderError("approved Talos administrator source list must be nonempty")
     for source in admin_sources:
         ipaddress.ip_network(str(source), strict=True)
+    if not synthetic and admin_sources != ["10.25.10.0/24"]:
+        raise RenderError("live Talos administrator sources differ from the reviewed MGMT subnet")
 
     require_exact_keys(secrets, {"cluster", "secrets", "trustdinfo", "certs"}, "secrets")
     require_exact_keys(secrets["cluster"], {"id", "secret"}, "secrets.cluster")

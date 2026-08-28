@@ -12,7 +12,7 @@ apiVersion: v1alpha1
 kind: KubeNodeConfig
 nodeIP:
   validSubnets:
-    - {{ topology.network.subnet }}
+    - {{ node.address }}/32
 labels:
 {% if node.role == "controlplane" %}
   node-role.kubernetes.io/control-plane: ""
@@ -37,3 +37,5 @@ volumeType: disk
 provisioning:
   diskSelector:
     match: {{ node.localpv_disk.match | tojson }}
+filesystem:
+  type: xfs

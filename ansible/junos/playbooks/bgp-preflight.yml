@@ -74,9 +74,11 @@
     - name: Require all five peers configured but not established
       ansible.builtin.assert:
         that:
-          - item.1 is search('Peer:[ ]+' ~ item.0 ~ '[+]179 AS 64513')
-          - item.1 is search('Type:[ ]+External[ ]+State:[ ]+(?:Active|Connect|Idle)')
-          - item.1 is not search('State:[ ]+Established')
+          - "item.1 is search('Peer: ' ~ item.0)"
+          - "item.1 is search('AS 64513')"
+          - "item.1 is search('Type: External')"
+          - "item.1 is not search('State: Established')"
+          - "item.1 is search('Authentication key is configured')"
       loop: "{{ cilium_peers | zip(bgp_preflight.stdout[2:7]) }}"
       loop_control:
         label: "{{ item.0 }}"
