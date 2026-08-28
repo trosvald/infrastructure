@@ -97,9 +97,13 @@ def main() -> int:
         text = first_path.read_text(encoding="utf-8")
         role = "controlplane" if index <= 3 else "worker"
         address = f"198.51.100.{index + 10}/24"
+        bootstrap_address = f"198.51.100.{index + 100}/24"
         assert f"hostname: {hostname}" in text
         assert f"type: {role}" in text
         assert address in text
+        assert bootstrap_address in text
+        assert f"- 198.51.100.{index + 10}/32" in text
+        assert "kind: LinkConfig" in text
         assert "bondMode: active-backup" in text
         assert "arpInterval: 1000" in text
         assert "arpValidate: all" in text
@@ -109,6 +113,7 @@ def main() -> int:
         assert "mtu: 1496" in text
         assert "name: tor1-link" in text and "name: tor2-link" in text
         assert f"naa.fake-system-{index:02d}" in text
+        assert "filesystem:" in text and "type: xfs" in text
         assert f"FAKE-LOCALPV-{index:02d}" in text
         assert f"FAKE-OSD-{index:02d}" not in text
         assert 'bgp.monosense.io/enabled: "true"' in text
@@ -182,12 +187,12 @@ def main() -> int:
         assert "time-b.example.invalid" in text
         assert "time-c.example.invalid" in text
         assert "10.244.0.0/16" in text and "10.245.0.0/16" in text
-        assert "198.51.100.0/24" in text
         assert "192.168.10.0/24" not in text
         assert "192.168.20.0/24" not in text
         assert "k8s.internal" not in text
         assert "VLANConfig" not in text and "9000" not in text
         if role == "controlplane":
+            assert "198.51.100.0/24" in text
             for kind in (
                 "KubeAPIServerConfig",
                 "KubeControllerManagerConfig",

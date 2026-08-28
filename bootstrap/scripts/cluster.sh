@@ -151,17 +151,27 @@ stage_preflight() {
     python -c 'import socket; assert socket.gethostbyname("k8s.monosense.io") == "10.25.20.10"'
     junos_playbook playbooks/bgp-preflight.yml
 
-    local hostname bootstrap inventory disks links serial tor1 tor2
+    local hostname bootstrap inventory disks links install_model install_wwid install_bus install_size
+    local localpv_match localpv_serial osd_serial tor1 tor2
     for index in 01 02 03 04 05; do
         hostname="bsd-k8s-$index"
         bootstrap="$(node_field "$hostname" '.bootstrap_address')"
-        serial="$(node_field "$hostname" '.install_disk.serial')"
+        install_model="$(node_field "$hostname" '.install_disk.model')"
+        install_wwid="$(node_field "$hostname" '.install_disk.wwid')"
+        install_bus="$(node_field "$hostname" '.install_disk.bus_path')"
+        install_size="$(node_field "$hostname" '.install_disk.size_bytes')"
+        localpv_match="$(node_field "$hostname" '.localpv_disk.match')"
+        localpv_serial="${localpv_match##*disk.serial == \"}"
+        localpv_serial="${localpv_serial%%\"*}"
+        osd_serial="$(node_field "$hostname" '.future_osd.serial')"
         tor1="$(node_field "$hostname" '.links.tor1.permanent_mac')"
         tor2="$(node_field "$hostname" '.links.tor2.permanent_mac')"
         disks="$(talosctl --nodes "$bootstrap" get disks --insecure --output yaml)"
         links="$(talosctl --nodes "$bootstrap" get linkstatus --insecure --output yaml)"
-        [[ "$disks" == *"$serial"* ]] || {
-            echo "$hostname: exact protected install disk is absent" >&2
+        [[ "$disks" == *"$install_model"* && "$disks" == *"$install_wwid"* &&
+            "$disks" == *"$install_bus"* && "$disks" == *"$install_size"* &&
+            "$disks" == *"$localpv_serial"* && "$disks" == *"$osd_serial"* ]] || {
+            echo "$hostname: protected install, LocalPV, or future OSD identity is absent" >&2
             return 1
         }
         [[ "$links" == *"$tor1"* && "$links" == *"$tor2"* ]] || {
@@ -182,7 +192,9 @@ wait_talos_api() {
 }
 
 apply_node() {
-    local hostname="$1" bootstrap address config link_status route_status disable_patch disabled_config
+    local hostname="$1" bootstrap address config link_status route_status address_status
+    local extension_status module_status volume_status param_status disable_patch disabled_config
+    local disabled_links disabled_addresses bond_confirmation
     bootstrap="$(node_field "$hostname" '.bootstrap_address')"
     address="$(node_field "$hostname" '.address')"
     config="$runtime_dir/nodes/$hostname/$hostname.yaml"
@@ -190,6 +202,25 @@ apply_node() {
     wait_talos_api "$address"
     link_status="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get linkstatus --output yaml)"
     route_status="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get routestatus --output yaml)"
+    address_status="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get addressstatus --output yaml)"
+    extension_status="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get extensionstatus --output yaml)"
+    module_status="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get loadedkernelmodules --output yaml)"
+    volume_status="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get volumestatus --output yaml)"
+    param_status="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get kernelparams --output yaml)"
+    [[ "$address_status" == *"address: $address/24"* &&
+        "$address_status" == *"address: $bootstrap/24"* &&
+        ! "$address_status" =~ address:\ 10[.]25[.]11[.]2[0-5][0-9]/24 ]] || {
+        echo "$hostname: static permanent/bootstrap addresses or DHCP exclusion failed" >&2
+        return 1
+    }
+    [[ "$extension_status" == *"intel-ucode"* && "$extension_status" == *"i915"* &&
+        "$extension_status" == *"nfsrahead"* && "$extension_status" != *"iscsi"* &&
+        "$module_status" == *"id: i915"* && "$volume_status" == *"id: local-hostpath"* &&
+        "$param_status" == *"id: proc.sys.user.max_user_namespaces"* &&
+        "$param_status" == *'current: "11255"'* ]] || {
+        echo "$hostname: extension, iGPU, LocalPV, or user namespace proof failed" >&2
+        return 1
+    }
     [[ "$link_status" == *"bond0"* && "$link_status" == *"mtu: 1496"* &&
         "$link_status" == *"tor1-link"* && "$link_status" == *"tor2-link"* ]] || {
         echo "$hostname: cross-ToR active-backup bond proof failed" >&2
@@ -199,14 +230,22 @@ apply_node() {
         echo "$hostname: default route proof failed" >&2
         return 1
     }
+    printf '%s\n' \
+        "$hostname: physically fail and restore tor1, then tor2; prove the permanent API, gateway, and MTU through each surviving member." >&2
+    read -r -p "Type 'confirm-bond $hostname' only after both member-path tests pass: " \
+        bond_confirmation
+    [[ "$bond_confirmation" == "confirm-bond $hostname" ]] || {
+        echo "$hostname: bootstrap NIC remains enabled because bond acceptance was not confirmed" >&2
+        return 1
+    }
     disable_patch="$runtime_dir/nodes/$hostname/disable-bootstrap.yaml"
     disabled_config="$runtime_dir/nodes/$hostname/$hostname-disabled.yaml"
     cat > "$disable_patch" <<EOF
 ---
 apiVersion: v1alpha1
-kind: EthernetConfig
+kind: LinkConfig
 name: $(node_field "$hostname" '.bootstrap_link')
-disabled: true
+up: false
 EOF
     chmod 0600 "$disable_patch"
     talosctl machineconfig patch "$config" -p "@$disable_patch" > "$disabled_config"
@@ -215,6 +254,14 @@ EOF
     talosctl --talosconfig "$talosconfig" --nodes "$address" apply-config --file "$disabled_config"
     talosctl --talosconfig "$talosconfig" --nodes "$address" reboot
     wait_talos_api "$address"
+    disabled_links="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get linkstatus --output yaml)"
+    disabled_addresses="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get addressstatus --output yaml)"
+    [[ "$disabled_links" == *"id: $(node_field "$hostname" '.bootstrap_link')"* &&
+        "$disabled_links" == *"operationalState: down"* &&
+        "$disabled_addresses" != *"address: $bootstrap/24"* ]] || {
+        echo "$hostname: bootstrap link disablement did not persist through reboot" >&2
+        return 1
+    }
 }
 
 stage_nodes() {

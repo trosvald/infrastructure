@@ -10,6 +10,7 @@ python - <<'PY'
 from pathlib import Path
 
 script = Path("bootstrap/scripts/cluster.sh").read_text(encoding="utf-8")
+render = Path("talos/scripts/render.sh").read_text(encoding="utf-8")
 justfile = Path("bootstrap/mod.just").read_text(encoding="utf-8")
 expected = (
     "preflight",
@@ -52,7 +53,17 @@ assert "acceptance_api_paths ==" in acceptance
 assert "edge_review_not_before" in script
 assert "timedelta(days=7)" in script
 assert "authorizes_deployment: false" in script
-assert "LocalPV or raw future OSD identity is absent" in script
+assert "protected install, LocalPV, or future OSD identity is absent" in script
+assert ".install_disk.wwid" in script and ".install_disk.bus_path" in script
+assert ".localpv_disk.match" in script and ".future_osd.serial" in script
+assert ".bootstrap_address" in render
+assert 'apply-config --insecure' in render
+assert "verify_maintenance_target" in render
+assert "live protected disk identities changed before apply" in render
+assert "live X710 or NTP gate failed before apply" in render
+assert "verify_node" in render
+assert "confirm-bond $hostname" in script
+assert "bootstrap NIC remains enabled" in script
 junos_intent = "\n".join(
     path.read_text()
     for path in Path("ansible/junos/intent/srx1500").glob("*.yml")

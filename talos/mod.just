@@ -17,6 +17,10 @@ apply-node node:
 render-config node:
     "{{ source_directory() }}/scripts/render.sh" render "{{ node }}"
 
+[doc('Verify one installed protected Talos node; print redacted status only')]
+verify-node node:
+    "{{ source_directory() }}/scripts/render.sh" verify-node "{{ node }}"
+
 [doc('Validate protected five-node hardware inventory; print one topology digest')]
 validate-inventory:
     "{{ source_directory() }}/scripts/validate_inventory.sh"

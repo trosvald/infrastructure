@@ -98,7 +98,7 @@ class NetconfContractTests(unittest.TestCase):
             self.assertIn("no_log: true", playbook)
         self.assertIn("State:\\s+Established", self.read("playbooks/bgp-verify.yml"))
         self.assertIn(
-            "State:[ ]+Established",
+            "State: Established",
             self.read("playbooks/bgp-preflight.yml"),
         )
 
