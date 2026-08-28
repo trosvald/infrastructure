@@ -6,7 +6,7 @@ apiVersion: v1alpha1
 kind: UnattendedInstallConfig
 provisioning:
   diskSelector:
-    match: {{ ('disk.size == ' ~ node.install_disk.size_bytes ~ 'u && disk.model == ' ~ (node.install_disk.model | tojson) ~ ' && disk.wwid == ' ~ (node.install_disk.wwid | tojson) ~ ' && disk.bus_path == ' ~ (node.install_disk.bus_path | tojson)) | tojson }}
+    match: {{ ('disk.size == ' ~ node.install_disk.size_bytes ~ 'u && disk.model == ' ~ (node.install_disk.model | tojson) ~ ' && disk.wwid == ' ~ (node.install_disk.wwid | tojson) ~ ' && disk.bus_path.startsWith(' ~ (node.install_disk.bus_path_prefix | tojson) ~ ')') | tojson }}
 ---
 apiVersion: v1alpha1
 kind: KubeNodeConfig

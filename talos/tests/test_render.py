@@ -113,6 +113,7 @@ def main() -> int:
         assert "mtu: 1496" in text
         assert "name: tor1-link" in text and "name: tor2-link" in text
         assert f"naa.fake-system-{index:02d}" in text
+        assert 'disk.bus_path.startsWith("/pci0000:00/ata1/")' in text
         assert "filesystem:" in text and "type: xfs" in text
         assert f"FAKE-LOCALPV-{index:02d}" in text
         assert f"FAKE-OSD-{index:02d}" not in text

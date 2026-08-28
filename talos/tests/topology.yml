@@ -30,7 +30,7 @@ nodes:
     links:
       tor1: { permanent_mac: "02:00:00:00:01:11", switch: synthetic-tor1, port: xe-0/0/11, native_vlan: 2511 }
       tor2: { permanent_mac: "02:00:00:00:02:11", switch: synthetic-tor2, port: xe-0/0/11, native_vlan: 2511 }
-    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-01", bus_path: "/pci0000:00/ata1" }
+    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-01", bus_path_prefix: "/pci0000:00/ata1/" }
     localpv_disk: { match: 'disk.size == 512110190592u && disk.model == "Synthetic LocalPV NVMe" && disk.serial == "FAKE-LOCALPV-01" && disk.wwid == "eui.fake-localpv-01" && disk.bus_path == "/pci0000:00/0000:02:00.0/nvme"' }
     future_osd: { model: "Synthetic OSD NVMe", serial: "FAKE-OSD-01", wwid: "eui.fake-osd-01", bus_path: "/pci0000:00/0000:03:00.0/nvme", size_bytes: 1000204886016 }
     labels: { region: synthetic, zone: synthetic-zone, site: lab, power_domain: power-a, network_domain: network-a }
@@ -42,7 +42,7 @@ nodes:
     links:
       tor1: { permanent_mac: "02:00:00:00:01:12", switch: synthetic-tor1, port: xe-0/0/12, native_vlan: 2511 }
       tor2: { permanent_mac: "02:00:00:00:02:12", switch: synthetic-tor2, port: xe-0/0/12, native_vlan: 2511 }
-    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-02", bus_path: "/pci0000:00/ata1" }
+    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-02", bus_path_prefix: "/pci0000:00/ata1/" }
     localpv_disk: { match: 'disk.size == 512110190592u && disk.model == "Synthetic LocalPV NVMe" && disk.serial == "FAKE-LOCALPV-02" && disk.wwid == "eui.fake-localpv-02" && disk.bus_path == "/pci0000:00/0000:02:00.0/nvme"' }
     future_osd: { model: "Synthetic OSD NVMe", serial: "FAKE-OSD-02", wwid: "eui.fake-osd-02", bus_path: "/pci0000:00/0000:03:00.0/nvme", size_bytes: 1000204886016 }
     labels: { region: synthetic, zone: synthetic-zone, site: lab, power_domain: power-a, network_domain: network-a }
@@ -54,7 +54,7 @@ nodes:
     links:
       tor1: { permanent_mac: "02:00:00:00:01:13", switch: synthetic-tor1, port: xe-0/0/13, native_vlan: 2511 }
       tor2: { permanent_mac: "02:00:00:00:02:13", switch: synthetic-tor2, port: xe-0/0/13, native_vlan: 2511 }
-    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-03", bus_path: "/pci0000:00/ata1" }
+    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-03", bus_path_prefix: "/pci0000:00/ata1/" }
     localpv_disk: { match: 'disk.size == 512110190592u && disk.model == "Synthetic LocalPV NVMe" && disk.serial == "FAKE-LOCALPV-03" && disk.wwid == "eui.fake-localpv-03" && disk.bus_path == "/pci0000:00/0000:02:00.0/nvme"' }
     future_osd: { model: "Synthetic OSD NVMe", serial: "FAKE-OSD-03", wwid: "eui.fake-osd-03", bus_path: "/pci0000:00/0000:03:00.0/nvme", size_bytes: 1000204886016 }
     labels: { region: synthetic, zone: synthetic-zone, site: lab, power_domain: power-a, network_domain: network-a }
@@ -66,7 +66,7 @@ nodes:
     links:
       tor1: { permanent_mac: "02:00:00:00:01:14", switch: synthetic-tor1, port: xe-0/0/14, native_vlan: 2511 }
       tor2: { permanent_mac: "02:00:00:00:02:14", switch: synthetic-tor2, port: xe-0/0/14, native_vlan: 2511 }
-    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-04", bus_path: "/pci0000:00/ata1" }
+    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-04", bus_path_prefix: "/pci0000:00/ata1/" }
     localpv_disk: { match: 'disk.size == 512110190592u && disk.model == "Synthetic LocalPV NVMe" && disk.serial == "FAKE-LOCALPV-04" && disk.wwid == "eui.fake-localpv-04" && disk.bus_path == "/pci0000:00/0000:02:00.0/nvme"' }
     future_osd: { model: "Synthetic OSD NVMe", serial: "FAKE-OSD-04", wwid: "eui.fake-osd-04", bus_path: "/pci0000:00/0000:03:00.0/nvme", size_bytes: 1000204886016 }
     labels: { region: synthetic, zone: synthetic-zone, site: lab, power_domain: power-a, network_domain: network-a }
@@ -78,7 +78,7 @@ nodes:
     links:
       tor1: { permanent_mac: "02:00:00:00:01:15", switch: synthetic-tor1, port: xe-0/0/15, native_vlan: 2511 }
       tor2: { permanent_mac: "02:00:00:00:02:15", switch: synthetic-tor2, port: xe-0/0/15, native_vlan: 2511 }
-    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-05", bus_path: "/pci0000:00/ata1" }
+    install_disk: { model: "Synthetic System SSD", size_bytes: 500107862016, wwid: "naa.fake-system-05", bus_path_prefix: "/pci0000:00/ata1/" }
     localpv_disk: { match: 'disk.size == 512110190592u && disk.model == "Synthetic LocalPV NVMe" && disk.serial == "FAKE-LOCALPV-05" && disk.wwid == "eui.fake-localpv-05" && disk.bus_path == "/pci0000:00/0000:02:00.0/nvme"' }
     future_osd: { model: "Synthetic OSD NVMe", serial: "FAKE-OSD-05", wwid: "eui.fake-osd-05", bus_path: "/pci0000:00/0000:03:00.0/nvme", size_bytes: 1000204886016 }
     labels: { region: synthetic, zone: synthetic-zone, site: lab, power_domain: power-a, network_domain: network-a }

@@ -42,8 +42,10 @@ def network(name: str, driver: str, address: str, bus: str = "") -> dict[str, ob
 
 def inventory(path: Path) -> list[dict[str, object]]:
     if path.name.startswith("disks-"):
+        system = disk(500_107_862_016, "sata", "system")
+        system["spec"]["bus_path"] = "/pci0000:00/0000:00:17.0/ata1/host1/target1:0:0"
         return [
-            disk(500_107_862_016, "sata", "system"),
+            system,
             disk(512_110_190_592, "nvme", "localpv"),
             disk(1_000_204_886_016, "nvme", "osd"),
         ]
@@ -60,6 +62,7 @@ assert node["bootstrap_link"] == "eno1"
 assert node["links"]["tor1"]["permanent_mac"] == "02:00:00:00:00:02"
 assert node["links"]["tor2"]["permanent_mac"] == "02:00:00:00:00:03"
 assert node["install_disk"]["wwid"] == "wwid-system"
+assert node["install_disk"]["bus_path_prefix"] == "/pci0000:00/0000:00:17.0/ata1/"
 assert "disk.size == 512110190592u" in node["localpv_disk"]["match"]
 assert 'disk.wwid == "wwid-localpv"' in node["localpv_disk"]["match"]
 assert node["future_osd"]["wwid"] == "wwid-osd"
