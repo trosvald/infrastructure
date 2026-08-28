@@ -222,7 +222,7 @@ apply_node() {
         return 1
     }
     [[ "$link_status" == *"bond0"* && "$link_status" == *"mtu: 1496"* &&
-        "$link_status" == *"tor1-link"* && "$link_status" == *"tor2-link"* ]] || {
+        "$link_status" == *"enp1s0f0np0"* && "$link_status" == *"enp1s0f1np1"* ]] || {
         echo "$hostname: cross-ToR active-backup bond proof failed" >&2
         return 1
     }
