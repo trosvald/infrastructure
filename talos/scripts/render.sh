@@ -157,7 +157,7 @@ verify_node() {
         echo "$hostname: installed schematic extensions differ from the reviewed set" >&2
         return 1
     }
-    [[ "$modules" == *"id: i915"* && "$volumes" == *"id: local-hostpath"* &&
+    [[ "$modules" == *"id: i915"* && "$volumes" == *"id: u-local-hostpath"* &&
         "$params" == *"id: proc.sys.user.max_user_namespaces"* &&
         "$params" == *'current: "11255"'* && "$watchdog" == *"/dev/watchdog0"* ]] || {
         echo "$hostname: iGPU, LocalPV, user namespace, or watchdog proof failed" >&2

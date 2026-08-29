@@ -215,7 +215,7 @@ apply_node() {
     }
     [[ "$extension_status" == *"intel-ucode"* && "$extension_status" == *"i915"* &&
         "$extension_status" == *"nfsrahead"* && "$extension_status" != *"iscsi"* &&
-        "$module_status" == *"id: i915"* && "$volume_status" == *"id: local-hostpath"* &&
+        "$module_status" == *"id: i915"* && "$volume_status" == *"id: u-local-hostpath"* &&
         "$param_status" == *"id: proc.sys.user.max_user_namespaces"* &&
         "$param_status" == *'current: "11255"'* ]] || {
         echo "$hostname: extension, iGPU, LocalPV, or user namespace proof failed" >&2

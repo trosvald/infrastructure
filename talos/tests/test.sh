@@ -63,3 +63,9 @@ python "$talos_dir/scripts/render.py" \
     echo "Talos renderer did not produce a mode-0600 talosconfig" >&2
     exit 1
 }
+yq -o=json '.' "$runtime_dir/talosconfig/talosconfig" |
+    jq -e '
+        .context == "synthetic-bsd" and
+        .contexts[.context].endpoints == ["192.0.2.101", "192.0.2.102", "192.0.2.103"] and
+        .contexts[.context].nodes == ["192.0.2.101"]
+    ' >/dev/null
