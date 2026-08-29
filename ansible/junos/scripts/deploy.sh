@@ -57,8 +57,7 @@ echo "Candidate SHA-256: $digest"
 read -r -p "Type 'srx1500 $digest' to deploy with commit-confirmed: " answer
 [[ "$answer" == "srx1500 $digest" ]] || { echo "Confirmation mismatch; aborted" >&2; exit 1; }
 ansible-playbook playbooks/live.yml \
-  -e operation=deploy -e "junos_intent_commit_comment=Ansible candidate $digest" \
-  -e "junos_expected_digest=$digest"
+  -e "{\"operation\":\"deploy\",\"junos_intent_commit_comment\":\"Ansible candidate $digest\",\"junos_expected_digest\":\"$digest\"}"
 [[ -f "$state_file" && ! -L "$state_file" ]] || {
   echo "Deployment did not publish a regular state artifact" >&2
   exit 1

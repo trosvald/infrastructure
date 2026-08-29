@@ -49,7 +49,8 @@ case "$mode" in
                 elif [[ $# -eq 2 && "$2" == "playbooks/drift.yml" ]]; then
                     :
                 elif [[ $# -eq 2 &&
-                    ( "$2" == "playbooks/bgp-preflight.yml" ||
+                    ( "$2" == "playbooks/operational-verify.yml" ||
+                      "$2" == "playbooks/bgp-preflight.yml" ||
                       "$2" == "playbooks/bgp-verify.yml" ) ]]; then
                     :
                 elif [[ $# -eq 4 && "$2" == "playbooks/bgp-acceptance.yml" &&

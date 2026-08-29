@@ -1,0 +1,49 @@
+---
+- name: Verify the isolated controller can collect fixed SRX operational evidence
+  hosts: junos
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Read device identity before operational verification
+      juniper.device.junos_facts:
+        gather_subset:
+          - default
+          - hardware
+      register: operational_verify_facts
+      no_log: true
+
+    - name: Enforce approved device identity and release train
+      ansible.builtin.assert:
+        that:
+          - operational_verify_facts.ansible_facts.ansible_net_model | upper == junos_expected_model
+          - operational_verify_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
+          - operational_verify_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
+      no_log: true
+
+    - name: Read the fixed post-commit evidence through controller Python
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/read_operational.py"
+          - postcommit
+      register: operational_verify_raw
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Report only the safe fixed-command failure identity
+      ansible.builtin.assert:
+        that:
+          - operational_verify_raw.rc == 0
+        fail_msg: "{{ operational_verify_raw.stderr }}"
+
+    - name: Require the complete fixed evidence set
+      ansible.builtin.assert:
+        that:
+          - (operational_verify_raw.stdout | from_json).stdout is defined
+          - (operational_verify_raw.stdout | from_json).stdout | length == 11
+          - (operational_verify_raw.stdout | from_json).stdout | select('string') | list | length == 11
+        fail_msg: "The isolated controller could not collect the complete fixed SRX evidence set."
+      no_log: true

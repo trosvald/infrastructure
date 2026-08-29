@@ -11,7 +11,7 @@ POSTCOMMIT_COMMANDS = (
     "show system commit | no-more",
     "show configuration groups ANSIBLE_SRX1500 | display set | no-more",
     "show configuration apply-groups | display set | no-more",
-    "show interfaces terse | match 'irb[.]2510|irb[.]2512' | no-more",
+    "show interfaces terse | match 'irb[.]251[02]'",
     "show vlans VLAN-MGMT | no-more",
     "show route 0.0.0.0/0 exact | no-more",
     "show route table VR-XLSATU.inet.0 0.0.0.0/0 exact | no-more",
@@ -63,7 +63,14 @@ def main() -> int:
             allow_agent=False,
             gather_facts=False,
         ) as device:
-            output = [device.cli(command, warning=False) for command in MODES[sys.argv[1]]]
+            output = []
+            for index, command in enumerate(MODES[sys.argv[1]], start=1):
+                try:
+                    output.append(device.cli(command, warning=False))
+                except Exception as error:
+                    raise RuntimeError(
+                        f"fixed operational command {index} failed: {type(error).__name__}"
+                    ) from error
         if any(not isinstance(value, str) for value in output):
             raise RuntimeError("Junos did not return text operational evidence")
         json.dump({"stdout": output}, sys.stdout, separators=(",", ":"))

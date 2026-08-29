@@ -43,6 +43,7 @@ class NetconfContractTests(unittest.TestCase):
         for relative in (
             "playbooks/verify.yml",
             "playbooks/drift.yml",
+            "playbooks/operational-verify.yml",
             "playbooks/bgp-preflight.yml",
             "playbooks/bgp-verify.yml",
             "playbooks/bgp-acceptance.yml",
@@ -51,7 +52,11 @@ class NetconfContractTests(unittest.TestCase):
             self.assertIn("juniper.device.junos_facts:", text)
             if relative == "playbooks/drift.yml":
                 self.assertIn("scripts/read_managed.py", text)
-            elif relative in ("playbooks/verify.yml", "playbooks/bgp-verify.yml"):
+            elif relative in (
+                "playbooks/verify.yml",
+                "playbooks/operational-verify.yml",
+                "playbooks/bgp-verify.yml",
+            ):
                 self.assertIn("scripts/read_operational.py", text)
             else:
                 self.assertIn("juniper.device.junos_command:", text)
@@ -79,6 +84,10 @@ class NetconfContractTests(unittest.TestCase):
         self.assertIn('lines: "{{ junos_intent_fresh_candidate_lines }}"', role)
         self.assertIn('digest="$(sha256_file "$candidate_path")"', deploy)
         self.assertIn('"$emitted_digest" == "$digest"', deploy)
+        self.assertIn(
+            '\\"junos_intent_commit_comment\\":\\"Ansible candidate $digest\\"',
+            deploy,
+        )
         self.assertIn("ansible-playbook playbooks/verify.yml", deploy)
         self.assertIn("ansible-playbook playbooks/confirm.yml", deploy)
         self.assertIn("JUNOS_CANDIDATE_FILE", deploy)
@@ -169,6 +178,27 @@ class NetconfContractTests(unittest.TestCase):
         self.assertIn("if len(sys.argv) != 2 or sys.argv[1] not in MODES", reader)
         self.assertIn("device.cli(command, warning=False)", reader)
         self.assertNotIn("juniper.device.junos_command:", playbook)
+
+    def test_controller_python_is_reached_only_through_just_and_ansible(self):
+        dispatch = self.read("scripts/dispatch.sh")
+        runtime = self.read("scripts/with-openbao-runtime.sh")
+        playbook = self.read("playbooks/operational-verify.yml")
+        self.assertIn("operational-verify)", dispatch)
+        self.assertIn("playbooks/operational-verify.yml", dispatch)
+        self.assertIn("playbooks/operational-verify.yml", runtime)
+        self.assertIn("{{ ansible_playbook_python }}", playbook)
+        self.assertNotIn("jnpr.junos", playbook)
+        forbidden = "/.local/share/mise/" + "installs/"
+        paths = [
+            *(ROOT / "scripts").glob("*.sh"),
+            *(ROOT / "scripts").glob("*.py"),
+            *(ROOT / "playbooks").glob("*.yml"),
+            *(ROOT / "roles").rglob("*.yml"),
+            REPO_ROOT / "ansible" / "mod.just",
+        ]
+        for path in paths:
+            self.assertNotIn(forbidden, path.read_text(encoding="utf-8"), str(path))
+
     def test_openbao_runtime_allowlist_boundaries(self):
         shared_runtime = REPO_ROOT / "scripts/with-openbao-runtime.sh"
         junos_runtime = ROOT / "scripts/with-openbao-runtime.sh"
@@ -319,7 +349,7 @@ class NetconfContractTests(unittest.TestCase):
     def test_deploy_requires_committed_true_adoption(self):
         adoption = self.read("adoption.yml")
         role = self.read("roles/junos_intent/tasks/main.yml")
-        self.assertIn("adopted: false", adoption)
+        self.assertIn("adopted: true", adoption)
         self.assertIn("HEAD:ansible/junos/adoption.yml", role)
         self.assertIn("adopted | default(false) | bool", role)
         self.assertIn("junos_intent_operation == 'deploy'", role)
