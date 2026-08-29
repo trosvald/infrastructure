@@ -85,5 +85,4 @@ read -r -p "Type 'confirm $digest' to confirm the pending Junos commit: " answer
   exit 1
 }
 ansible-playbook playbooks/confirm.yml \
-  -e "junos_commit_comment=Ansible candidate $digest" \
-  -e "junos_expected_digest=$digest"
+  -e "{\"junos_commit_comment\":\"Ansible candidate $digest\",\"junos_expected_digest\":\"$digest\"}"

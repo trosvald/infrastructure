@@ -33,7 +33,7 @@ case "$mode" in
         ;;
     live)
         case "${1:-}" in
-            scripts/deploy.sh|scripts/backup.sh)
+            scripts/deploy.sh|scripts/confirm-pending.sh|scripts/backup.sh)
                 [[ $# -eq 1 ]] || {
                     echo "live scripts do not accept trailing arguments" >&2
                     exit 2

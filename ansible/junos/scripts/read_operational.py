@@ -5,10 +5,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
+if __package__:
+    from .read_managed import canonical_group
+else:
+    from read_managed import canonical_group
 
 POSTCOMMIT_COMMANDS = (
-    "show system commit | no-more",
+    "show system commit",
     "show configuration groups ANSIBLE_SRX1500 | display set | no-more",
     "show configuration apply-groups | display set | no-more",
     "show interfaces terse | match 'irb[.]251[02]'",
@@ -36,6 +41,25 @@ MODES = {
     "postcommit": POSTCOMMIT_COMMANDS,
     "bgp-verify": BGP_VERIFY_COMMANDS,
 }
+
+
+def newest_commit_record(output: str) -> str:
+    lines = output.splitlines()
+    start = next(
+        (index for index, line in enumerate(lines) if re.match(r"^\s*0\s+", line)),
+        None,
+    )
+    if start is None:
+        raise RuntimeError("Junos commit output has no newest record")
+    record = []
+    for line in lines[start:]:
+        if record and re.match(r"^\s*[1-9][0-9]*\s+", line):
+            break
+        record.append(line)
+    normalized = "\n".join(record).strip()
+    if not normalized:
+        raise RuntimeError("Junos newest commit record is empty")
+    return normalized
 
 
 def required(name: str) -> str:
@@ -73,6 +97,9 @@ def main() -> int:
                     ) from error
         if any(not isinstance(value, str) for value in output):
             raise RuntimeError("Junos did not return text operational evidence")
+        if sys.argv[1] == "postcommit":
+            output[0] = newest_commit_record(output[0])
+            output[1] = canonical_group(output[1])
         json.dump({"stdout": output}, sys.stdout, separators=(",", ":"))
         sys.stdout.write("\n")
     except Exception as error:

@@ -42,13 +42,12 @@
         verify_reviewed_group_lines: >-
           {{ verify_candidate_text.splitlines() | map('trim')
              | select('match', '^set groups ANSIBLE_SRX1500 ')
-             | reject('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+             | reject('search', ' protocols bgp group CILIUM authentication-key ')
              | list | sort }}
-        verify_reviewed_authentication_paths: >-
-          {{ verify_candidate_text.splitlines() | map('trim')
-             | select('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
-             | map('regex_replace', '^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\\s+.+$', '\\1')
-             | list }}
+        verify_reviewed_authentication_count: >-
+          {{ verify_candidate_text.splitlines()
+             | select('search', ' protocols bgp group CILIUM authentication-key ')
+             | list | length }}
         verify_reviewed_apply_lines: >-
           {{ verify_candidate_text.splitlines() | map('trim')
              | select('match', '^set apply-groups ANSIBLE_SRX1500$') | list | sort }}
@@ -121,20 +120,16 @@
 
     - name: Isolate only the newest commit record and normalize running configuration
       ansible.builtin.set_fact:
-        verify_newest_commit_record: >-
-          {{ (verify_operational.stdout[0] | default(''))
-             | regex_search('(?ms)^\\s*0\\s+.*?(?=\\n\\s*[0-9]+\\s+|\\Z)')
-             | default('') }}
+        verify_newest_commit_record: "{{ verify_operational.stdout[0] | default('') }}"
         verify_running_group_lines: >-
           {{ verify_operational.stdout[1].splitlines() | map('trim')
              | reject('equalto', '')
-             | reject('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+             | reject('search', ' protocols bgp group CILIUM authentication-key ')
              | list | sort }}
-        verify_running_authentication_paths: >-
-          {{ verify_operational.stdout[1].splitlines() | map('trim')
-             | select('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
-             | map('regex_replace', '^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\\s+.+$', '\\1')
-             | list }}
+        verify_running_authentication_count: >-
+          {{ verify_operational.stdout[1].splitlines()
+             | select('search', ' protocols bgp group CILIUM authentication-key ')
+             | list | length }}
         verify_running_apply_lines: >-
           {{ verify_operational.stdout[2].splitlines() | map('trim')
              | reject('equalto', '') | list | sort }}
@@ -143,6 +138,30 @@
              | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
              | list }}
       no_log: true
+    - name: Extract reviewed verification policy order
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/junos_intent.py"
+          - --order-ids
+        stdin: "{{ verify_reviewed_ordered_lines | to_json }}"
+      register: verify_reviewed_order
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Extract running verification policy order
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/junos_intent.py"
+          - --order-ids
+        stdin: "{{ verify_running_ordered_lines | to_json }}"
+      register: verify_running_order
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
 
     - name: Require the newest pending commit and exact managed candidate
       ansible.builtin.assert:
@@ -152,15 +171,15 @@
           - verify_newest_commit_record | length > 0
           - verify_newest_commit_record | lower is search('commit confirmed|pending|rollback in')
           - >-
-            (verify_newest_commit_record
-             | regex_search('(?m)^\\s*Ansible candidate ' ~ junos_expected_digest ~ '\\s*$')) is not none
+            verify_newest_commit_record
+            is search('(?m)^[ ]*Ansible candidate ' ~ junos_expected_digest ~ '[ ]*$')
           - verify_reviewed_group_lines | length > 0
           - verify_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
           - verify_running_group_lines == verify_reviewed_group_lines
-          - verify_reviewed_authentication_paths == ['set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key']
-          - verify_running_authentication_paths == verify_reviewed_authentication_paths
+          - verify_reviewed_authentication_count | int == 1
+          - verify_running_authentication_count | int == 1
           - verify_running_apply_lines == verify_reviewed_apply_lines
-          - verify_running_ordered_lines == verify_reviewed_ordered_lines
+          - (verify_running_order.stdout | from_json) == (verify_reviewed_order.stdout | from_json)
         fail_msg: "Newest pending commit or complete managed configuration is not bound to this digest."
       no_log: true
 

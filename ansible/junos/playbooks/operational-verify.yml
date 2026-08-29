@@ -45,5 +45,6 @@
           - (operational_verify_raw.stdout | from_json).stdout is defined
           - (operational_verify_raw.stdout | from_json).stdout | length == 11
           - (operational_verify_raw.stdout | from_json).stdout | select('string') | list | length == 11
+          - (operational_verify_raw.stdout | from_json).stdout[0] is search('(?m)^\\s*0\\s+')
         fail_msg: "The isolated controller could not collect the complete fixed SRX evidence set."
       no_log: true
