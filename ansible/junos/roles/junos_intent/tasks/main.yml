@@ -282,20 +282,20 @@
     - junos_intent_candidate_result.changed | default(false) | bool
 
 - name: Verify post-commit operational state
-  juniper.device.junos_command:
-    commands:
-      - show system commit
-      - show configuration groups ANSIBLE_SRX1500 | display set
-      - show configuration apply-groups | display set
-      - show interfaces terse | match 'irb[.]2510|irb[.]2512'
-      - show vlans VLAN-MGMT
-      - show route 0.0.0.0/0 exact
-      - show route table VR-XLSATU.inet.0 0.0.0.0/0 exact
-      - show security nat source rule all
-      - show configuration security policies | display inheritance no-comments | display set | no-more
-      - show bgp summary group CILIUM
-      - show route 10.25.20.0/24 exact
-  register: junos_intent_postcheck_result
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/../../scripts/read_operational.py"
+      - postcommit
+  register: junos_intent_postcheck_raw
+  changed_when: false
+  delegate_to: localhost
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Parse bounded post-commit operational evidence
+  ansible.builtin.set_fact:
+    junos_intent_postcheck_result: "{{ junos_intent_postcheck_raw.stdout | from_json }}"
   when: junos_intent_operation == 'deploy'
   no_log: true
 

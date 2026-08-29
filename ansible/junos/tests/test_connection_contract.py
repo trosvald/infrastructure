@@ -39,6 +39,7 @@ class NetconfContractTests(unittest.TestCase):
         self.assertNotIn("juniper.device.facts:", role)
         self.assertNotIn("juniper.device.config:", role)
     def test_read_only_playbooks_use_native_facts_commands(self):
+        literal_reader = self.read("scripts/read_operational.py")
         for relative in (
             "playbooks/verify.yml",
             "playbooks/drift.yml",
@@ -50,13 +51,17 @@ class NetconfContractTests(unittest.TestCase):
             self.assertIn("juniper.device.junos_facts:", text)
             if relative == "playbooks/drift.yml":
                 self.assertIn("scripts/read_managed.py", text)
+            elif relative in ("playbooks/verify.yml", "playbooks/bgp-verify.yml"):
+                self.assertIn("scripts/read_operational.py", text)
             else:
                 self.assertIn("juniper.device.junos_command:", text)
             self.assertNotIn("juniper.device.facts:", text)
             self.assertNotIn("juniper.device.command:", text)
+        self.assertIn("device.cli(command, warning=False)", literal_reader)
         confirm = self.read("playbooks/confirm.yml")
         self.assertIn("juniper.device.junos_facts:", confirm)
         self.assertIn("juniper.device.junos_config:", confirm)
+        self.assertIn("scripts/read_operational.py", confirm)
     def test_deploy_commit_check_runs_in_normal_mode_and_binds_fresh_digest(self):
         role = self.read("roles/junos_intent/tasks/main.yml")
         deploy = self.read("scripts/deploy.sh")
@@ -125,6 +130,15 @@ class NetconfContractTests(unittest.TestCase):
         )
 
     def test_confirmation_binds_newest_record_and_complete_candidate(self):
+        reader = self.read("scripts/read_operational.py")
+        self.assertIn("show configuration groups ANSIBLE_SRX1500 | display set | no-more", reader)
+        self.assertIn("show configuration apply-groups | display set | no-more", reader)
+        self.assertIn(
+            "show configuration security policies | display inheritance no-comments "
+            "| display set | no-more",
+            reader,
+        )
+        self.assertIn('"postcommit": POSTCOMMIT_COMMANDS', reader)
         for relative in ("playbooks/verify.yml", "playbooks/confirm.yml"):
             text = self.read(relative)
             self.assertIn("regex_search('(?ms)^\\\\s*0\\\\s+.*?(?=\\\\n\\\\s*[0-9]+\\\\s+|\\\\Z)')", text)
@@ -132,19 +146,29 @@ class NetconfContractTests(unittest.TestCase):
             self.assertIn("rstrip=false", text)
             self.assertIn("running_group_lines ==", text)
             self.assertIn("running_apply_lines ==", text)
-            self.assertIn("show configuration groups ANSIBLE_SRX1500 | display set", text)
-            self.assertIn("show configuration apply-groups | display set", text)
+            self.assertIn("scripts/read_operational.py", text)
             self.assertIn("running_ordered_lines == ", text)
-            self.assertIn(
-                "show configuration security policies | display inheritance no-comments "
-                "| display set | no-more",
-                text,
-            )
             self.assertIn("Read managed-group exclusions with a bounded NETCONF XPath", text)
             self.assertIn('<filter type="xpath" select="', text)
             self.assertIn("local-name()='apply-groups-except'", text)
             self.assertIn("stdout | length == 11", text)
             self.assertIn("stdout is not search('apply-groups-except')", text)
+        role = self.read("roles/junos_intent/tasks/main.yml")
+        self.assertIn("scripts/read_operational.py", role)
+        self.assertNotIn(
+            "show configuration groups ANSIBLE_SRX1500 | display set",
+            role,
+        )
+
+    def test_bgp_verification_uses_fixed_literal_cli_reader(self):
+        playbook = self.read("playbooks/bgp-verify.yml")
+        reader = self.read("scripts/read_operational.py")
+        self.assertIn("scripts/read_operational.py", playbook)
+        self.assertIn("- bgp-verify", playbook)
+        self.assertIn('"bgp-verify": BGP_VERIFY_COMMANDS', reader)
+        self.assertIn("if len(sys.argv) != 2 or sys.argv[1] not in MODES", reader)
+        self.assertIn("device.cli(command, warning=False)", reader)
+        self.assertNotIn("juniper.device.junos_command:", playbook)
     def test_openbao_runtime_allowlist_boundaries(self):
         shared_runtime = REPO_ROOT / "scripts/with-openbao-runtime.sh"
         junos_runtime = ROOT / "scripts/with-openbao-runtime.sh"
@@ -196,18 +220,27 @@ class NetconfContractTests(unittest.TestCase):
     def test_bgp_actions_are_secret_suppressed_and_structurally_bounded(self):
         dispatch = self.read("scripts/dispatch.sh")
         runtime = self.read("scripts/with-openbao-runtime.sh")
+        literal_reader = self.read("scripts/read_operational.py")
         for action in ("bgp-preflight", "bgp-verify"):
             self.assertIn(action, dispatch)
             self.assertIn(f"playbooks/{action}.yml", runtime)
             playbook = self.read(f"playbooks/{action}.yml")
-            self.assertIn("show bgp summary group CILIUM", playbook)
-            self.assertIn("show bgp neighbor 10.25.11.15", playbook)
-            self.assertIn("show route protocol bgp", playbook)
+            evidence_source = literal_reader if action == "bgp-verify" else playbook
+            self.assertIn("show bgp summary group CILIUM", evidence_source)
             self.assertIn(
-                "show route receive-protocol bgp 10.25.11.15",
-                playbook,
+                "show bgp neighbor {peer}"
+                if action == "bgp-verify"
+                else "show bgp neighbor 10.25.11.15",
+                evidence_source,
             )
-            self.assertIn("show route 10.25.20.0/24 exact", playbook)
+            self.assertIn("show route protocol bgp", evidence_source)
+            self.assertIn(
+                "show route receive-protocol bgp {peer}"
+                if action == "bgp-verify"
+                else "show route receive-protocol bgp 10.25.11.15",
+                evidence_source,
+            )
+            self.assertIn("show route 10.25.20.0/24 exact", evidence_source)
             self.assertIn("no_log: true", playbook)
         self.assertIn("State:\\s+Established", self.read("playbooks/bgp-verify.yml"))
         self.assertIn(
@@ -232,8 +265,9 @@ class NetconfContractTests(unittest.TestCase):
 
 
     def test_operational_evidence_is_concrete(self):
+        literal_reader = self.read("scripts/read_operational.py")
         for relative in ("roles/junos_intent/tasks/main.yml", "playbooks/verify.yml", "playbooks/confirm.yml"):
-            text = self.read(relative)
+            text = self.read(relative) + literal_reader
             for evidence in (
                 "irb[.]2510",
                 "irb[.]2512",
