@@ -636,6 +636,20 @@ verification fails, the command is interrupted, or confirmation is withheld,
 do not manually confirm; Junos automatically rolls back. The candidate and
 runtime credentials are deleted only after this uninterrupted transaction
 exits. See [Junos confirmed commits](https://www.juniper.net/documentation/us/en/software/junos/cli/topics/topic-map/junos-configuration-commit.html).
+If the wrapper exits after publishing and verifying a pending transaction but before confirmation,
+do not rerun `deploy` or confirm from an unbound CLI session. Recover through the same protected
+runtime:
+
+```console
+just ansible junos confirm-pending
+```
+
+Enter the exact `confirm-pending <digest>` phrase. This action freshly renders and hashes the
+candidate, binds it to the newest pending commit comment, rechecks the complete managed group,
+authentication path, apply-group, scoped policy order, direct-reservation conflicts, and fixed
+operational evidence, then confirms through NETCONF. A mismatched digest or invariant leaves the
+transaction unconfirmed for automatic rollback.
+
 
 ### Cilium BGP gates
 
@@ -680,6 +694,15 @@ The command requires a clean committed adoption record containing an exact boole
 either state so `adopted: false` cannot hide recovery evidence. It retrieves only bounded managed
 and direct-reservation scope, compares normalized managed lines in memory, and writes a bounded
 count/path summary under ignored `.build/`; it never persists effective whole-device configuration.
+For a direct live-evidence check without creating or loading a candidate, run:
+
+```console
+just ansible junos operational-verify
+```
+
+This verifies device identity and collects the fixed post-commit interface, VLAN, route, policy,
+reservation, and discard-route evidence through the protected controller runtime.
+
 
 ### Talos reservation parity recovery
 
@@ -728,7 +751,8 @@ separately stored `monosense` administrator key only for the bounded direct clea
 6. If source proof fails, restore the exact previous `.data.data` with a second CAS write only when
    metadata proves the failed update is still current. Otherwise stop for concurrent-change review.
 7. With console/recovery access available, use the independent administrator session and exclusive
-   configuration mode. Stage only:
+   configuration mode. The completed recovery removed exactly the five direct PROD BSD containers
+   plus these nine additional direct containers that overlapped group ownership:
 
    ```text
    delete access address-assignment pool PROD family inet host bsd-k8s-01
@@ -736,21 +760,35 @@ separately stored `monosense` administrator key only for the bounded direct clea
    delete access address-assignment pool PROD family inet host bsd-k8s-03
    delete access address-assignment pool PROD family inet host bsd-k8s-04
    delete access address-assignment pool PROD family inet host bsd-k8s-05
+   delete access address-assignment pool MGMT family inet host ap1
+   delete access address-assignment pool MGMT family inet host ap2
+   delete access address-assignment pool MGMT family inet host csw
+   delete access address-assignment pool MGMT family inet host psw
+   delete access address-assignment pool MGMT family inet host svc
+   delete access address-assignment pool MGMT family inet host ts1
+   delete access address-assignment pool MGMT family inet host ts2
+   delete routing-instances VR-XLSATU access address-assignment pool HOME family inet host ezky-ideapad
+   delete routing-instances VR-XLSATU access address-assignment pool HOME family inet host ezzel-ideapad
    ```
 
-   Do not delete or edit any other direct host, and do not edit a group reservation. `show |
-   compare` must be confined to those five exact direct roots. Run `commit check`, then use a
-   ten-minute confirmed commit with an explicit parity-repair comment. Discard and stop if Junos
-   reports any other invalid hierarchy.
+   Do not delete or edit a group reservation. Before repeating any recovery, derive the bounded
+   direct paths from current drift evidence rather than assuming this historical list still
+   applies. `show | compare` must remain confined to the reviewed direct roots. Run `commit check`,
+   then use a ten-minute confirmed commit with an explicit parity-repair comment. Discard and stop
+   if Junos reports any other invalid hierarchy.
 8. During the timer, apply the already reviewed `ANSIBLE_SRX1500` candidate so the group rename and
-   direct deletion form one verified end state. Run `check`, `diff`, `drift`, and `bgp-verify`;
-   verify Talos nodes `10.25.11.11` through `.15`, Kubernetes Ready state, management/NETCONF
-   reachability, and the five MGMT reservation triples. Require zero managed drift, no remaining
-   direct PROD BSD paths, five established authenticated BGP peers, and the covering discard route.
-   Confirm only if every proof passes before expiry; otherwise allow automatic rollback.
-9. Repeat every proof after confirmation, remove all plaintext temporary files, and only then
-   restore `adopted: true` in a separate reviewed commit. A final intentional no-op `deploy` must
-   report the converged digest and leave no pending commit.
+   direct deletion form one verified end state. For this recovery's approved scope-relevant gate,
+   run `drift` and `operational-verify`, recheck management/NETCONF reachability, and verify the
+   five MGMT reservation triples. Require zero managed drift, zero direct reservation paths, exact
+   scoped policy order, and the fixed interface, VLAN, route, policy, reservation, and discard-route
+   evidence. Confirm only if every selected proof passes before expiry; otherwise allow automatic
+   rollback. BGP, Talos, and Kubernetes health remain separate operator gates when their respective
+   surfaces are changed.
+9. Repeat the scope-relevant proof after confirmation, remove all plaintext temporary files, and
+   only then restore `adopted: true` in a separate reviewed commit. The completed recovery ended
+   with `373` expected and actual managed paths, zero missing or extra paths, zero direct
+   reservation paths, no ordered-policy mismatch, and a successful intentional no-op `deploy`
+   that left no pending commit.
 
 ### Encrypted backup
 
