@@ -99,29 +99,21 @@
           <filter type="xpath" select="//*[local-name()='apply-groups-except' and normalize-space(.)='ANSIBLE_SRX1500']"/>
       register: verify_apply_groups_exceptions
       no_log: true
-    - name: Read direct managed-pool reservations with a bounded NETCONF XPath
-      ansible.netcommon.netconf_rpc:
-        rpc: get-config
-        xmlns: urn:ietf:params:xml:ns:netconf:base:1.0
-        content: |
-          <source><running/></source>
-          <filter type="xpath"
-                  select="/*[local-name()='configuration']/*[local-name()='access']
-                          /*[local-name()='address-assignment']/*[local-name()='pool'][*[local-name()='name' and (.='MGMT' or .='PROD' or .='DEV')]]
-                          /*[local-name()='family']/*[local-name()='inet']/*[local-name()='host']
-                          |
-                          /*[local-name()='configuration']/*[local-name()='routing-instances']
-                          /*[local-name()='instance'][*[local-name()='name']='VR-XLSATU']/*[local-name()='access']
-                          /*[local-name()='address-assignment']/*[local-name()='pool'][*[local-name()='name']='HOME']
-                          /*[local-name()='family']/*[local-name()='inet']/*[local-name()='host']"/>
+    - name: Read direct managed-pool reservations with bounded Junos commands
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/read_managed.py"
       register: verify_direct_reservations
+      changed_when: false
+      delegate_to: localhost
       no_log: true
 
     - name: Reject direct DHCP reservation ownership conflicts
       ansible.builtin.assert:
         that:
-          - verify_direct_reservations.stdout is defined
-          - verify_direct_reservations.stdout is not search('(?s)<(?:[^:<>]+:)?host(?:\\s|>)')
+          - (verify_direct_reservations.stdout | from_json).direct_reservation_paths is defined
+          - (verify_direct_reservations.stdout | from_json).direct_reservation_paths == []
         fail_msg: >-
           Direct DHCP reservation stanzas overlap ANSIBLE_SRX1500 ownership; refusing deployment
           verification.

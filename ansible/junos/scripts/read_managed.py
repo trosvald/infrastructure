@@ -27,17 +27,20 @@ CANONICAL_FAMILY = (
 APPLY_GROUPS_EXCEPTION_RE = re.compile(
     r"^set .+ apply-groups-except ANSIBLE_SRX1500$"
 )
-DIRECT_RESERVATION_XPATH = (
-    "/*[local-name()='configuration']/*[local-name()='access']"
-    "/*[local-name()='address-assignment']/*[local-name()='pool']"
-    "[*[local-name()='name' and (.='MGMT' or .='PROD' or .='DEV')]]"
-    "/*[local-name()='family']/*[local-name()='inet']/*[local-name()='host']"
-    " | "
-    "/*[local-name()='configuration']/*[local-name()='routing-instances']"
-    "/*[local-name()='instance'][*[local-name()='name']='VR-XLSATU']"
-    "/*[local-name()='access']/*[local-name()='address-assignment']"
-    "/*[local-name()='pool'][*[local-name()='name']='HOME']"
-    "/*[local-name()='family']/*[local-name()='inet']/*[local-name()='host']"
+DIRECT_RESERVATION_COMMANDS = (
+    "show configuration access address-assignment pool MGMT | display set | no-more",
+    "show configuration access address-assignment pool PROD | display set | no-more",
+    "show configuration access address-assignment pool DEV | display set | no-more",
+    "show configuration routing-instances VR-XLSATU access address-assignment "
+    "pool HOME | display set | no-more",
+)
+DIRECT_MASTER_RESERVATION_RE = re.compile(
+    r"^set access address-assignment pool (MGMT|PROD|DEV) family inet host "
+    r"(\S+)(?:\s+.*)?$"
+)
+DIRECT_HOME_RESERVATION_RE = re.compile(
+    r"^set routing-instances VR-XLSATU access address-assignment pool HOME "
+    r"family inet host (\S+)(?:\s+.*)?$"
 )
 
 
@@ -82,84 +85,27 @@ def normalize_apply_groups_exceptions_xml(output: str) -> list[str]:
         tokens.extend(["apply-groups-except", "ANSIBLE_SRX1500"])
         lines.append("set " + " ".join(tokens))
     return normalize_apply_groups_exceptions("\n".join(lines))
-def _local_name(element: ET.Element) -> str:
-    return element.tag.rsplit("}", 1)[-1]
-
-
-def _single_name(element: ET.Element, kind: str) -> str:
-    names = [
-        (child.text or "").strip()
-        for child in element
-        if _local_name(child) == "name"
-    ]
-    if len(names) != 1 or not names[0]:
-        raise RuntimeError(f"direct reservation {kind} must have exactly one nonempty name")
-    return names[0]
-
-
-def normalize_direct_reservation_paths_xml(output: str) -> list[str]:
-    root = ET.fromstring(output)
-    parents = {child: parent for parent in root.iter() for child in parent}
-    paths: list[str] = []
-    for host in (element for element in root.iter() if _local_name(element) == "host"):
-        ancestors: list[ET.Element] = []
-        parent = parents.get(host)
-        while parent is not None:
-            ancestors.append(parent)
-            parent = parents.get(parent)
-        ancestors.reverse()
-        ancestor_tags = [_local_name(element) for element in ancestors]
-        if "groups" in ancestor_tags:
-            raise RuntimeError("direct reservation response unexpectedly contains groups")
-        try:
-            configuration_index = ancestor_tags.index("configuration")
-        except ValueError as error:
-            raise RuntimeError(
-                "direct reservation host is outside configuration"
-            ) from error
-        hierarchy = ancestors[configuration_index + 1 :] + [host]
-        tags = [_local_name(element) for element in hierarchy]
-        host_name = _single_name(host, "host")
-        if tags == [
-            "access",
-            "address-assignment",
-            "pool",
-            "family",
-            "inet",
-            "host",
-        ]:
-            pool_name = _single_name(hierarchy[2], "pool")
-            if pool_name not in {"MGMT", "PROD", "DEV"}:
-                raise RuntimeError("direct reservation has an unexpected master pool")
-            path = (
+def normalize_direct_reservation_paths(output: str) -> list[str]:
+    paths: set[str] = set()
+    for line in (value.strip() for value in output.splitlines() if value.strip()):
+        if " family inet host " not in line:
+            continue
+        master = DIRECT_MASTER_RESERVATION_RE.fullmatch(line)
+        if master:
+            pool_name, host_name = master.groups()
+            paths.add(
                 f"access/address-assignment/pool/{pool_name}/family/inet/host/"
                 f"{host_name}"
             )
-        elif tags == [
-            "routing-instances",
-            "instance",
-            "access",
-            "address-assignment",
-            "pool",
-            "family",
-            "inet",
-            "host",
-        ]:
-            instance_name = _single_name(hierarchy[1], "routing instance")
-            pool_name = _single_name(hierarchy[4], "pool")
-            if instance_name != "VR-XLSATU" or pool_name != "HOME":
-                raise RuntimeError(
-                    "direct reservation has an unexpected routing instance or pool"
-                )
-            path = (
+            continue
+        home = DIRECT_HOME_RESERVATION_RE.fullmatch(line)
+        if home:
+            paths.add(
                 "routing-instances/VR-XLSATU/access/address-assignment/pool/"
-                f"HOME/family/inet/host/{host_name}"
+                f"HOME/family/inet/host/{home.group(1)}"
             )
-        else:
-            raise RuntimeError("direct reservation has an unexpected hierarchy")
-        if path in paths:
-            raise RuntimeError("duplicate direct reservation path")
-        paths.append(path)
+            continue
+        raise RuntimeError("direct reservation has an unexpected hierarchy")
     return sorted(paths)
 
 
@@ -228,11 +174,14 @@ def main() -> int:
                     ),
                 ).data_xml
             )
-            direct_reservation_paths = normalize_direct_reservation_paths_xml(
-                device._conn.get_config(
-                    source="running",
-                    filter=("xpath", DIRECT_RESERVATION_XPATH),
-                ).data_xml
+            direct_reservation_output = [
+                device.cli(command, warning=False)
+                for command in DIRECT_RESERVATION_COMMANDS
+            ]
+            if any(not isinstance(value, str) for value in direct_reservation_output):
+                raise RuntimeError("Junos did not return text direct reservation configuration")
+            direct_reservation_paths = normalize_direct_reservation_paths(
+                "\n".join(direct_reservation_output)
             )
         if not isinstance(group, str) or not isinstance(apply_groups, str):
             raise RuntimeError("Junos did not return text managed configuration")

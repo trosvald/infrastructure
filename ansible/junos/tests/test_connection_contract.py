@@ -302,39 +302,23 @@ class NetconfContractTests(unittest.TestCase):
         reader = self.read("scripts/read_managed.py")
         drift = self.read("playbooks/drift.yml")
         role = self.read("roles/junos_intent/tasks/main.yml")
-        master_branch = (
-            "/*[local-name()='configuration']/*[local-name()='access']"
-        )
-        home_branch = (
-            "/*[local-name()='configuration']/*[local-name()='routing-instances']"
-        )
+        for command in (
+            "show configuration access address-assignment pool MGMT",
+            "show configuration access address-assignment pool PROD",
+            "show configuration access address-assignment pool DEV",
+            "show configuration routing-instances VR-XLSATU access address-assignment ",
+            "pool HOME | display set | no-more",
+        ):
+            self.assertIn(command, reader)
+        self.assertNotIn("DIRECT_RESERVATION_XPATH", reader)
         for text in (
             role,
             self.read("playbooks/verify.yml"),
             self.read("playbooks/confirm.yml"),
         ):
-            self.assertIn(master_branch, text)
-            self.assertIn(home_branch, text)
-            self.assertIn(
-                "/*[local-name()='instance'][*[local-name()='name']='VR-XLSATU']"
-                "/*[local-name()='access']",
-                text,
-            )
-            self.assertNotIn(
-                "/*[local-name()='configuration']/*[local-name()='groups']"
-                "/*[local-name()='access']",
-                text,
-            )
-        self.assertIn("DIRECT_RESERVATION_XPATH", reader)
-        self.assertIn('"/*[local-name()=\'configuration\']/*[local-name()=\'access\']"', reader)
-        self.assertIn(
-            '"/*[local-name()=\'configuration\']/*[local-name()=\'routing-instances\']"',
-            reader,
-        )
-        self.assertNotIn(
-            '"/*[local-name()=\'configuration\']/*[local-name()=\'groups\']"',
-            reader,
-        )
+            self.assertIn("scripts/read_managed.py", text)
+            self.assertIn("direct_reservation_paths is defined", text)
+            self.assertIn("direct_reservation_paths == []", text)
         self.assertIn('"direct_reservation_paths": direct_reservation_paths', reader)
         self.assertIn(
             "drift_managed_configuration.direct_reservation_paths | type_debug == 'list'",
