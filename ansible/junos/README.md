@@ -200,13 +200,18 @@ https://vault.monosense.io:8200
 ```
 
 The Junos project is an OpenBao consumer. An OpenBao administrator must create
-exactly three KV v2 records before any real render or device operation can run:
+exactly three KV v2 records before routine render or device operations can run:
 
 ```text
 kv/network/junos/srx1500/netconf
 kv/network/junos/srx1500/topology
 kv/network/bgp/cilium-srx1500
 ```
+
+The separately provisioned `kv/network/junos/srx1500/admin` record holds the
+dedicated `monosense` SRX administrator key for reviewed recovery work. The
+`monosense-infra` service identity can read that exact record, but routine
+render, check, drift, and deployment commands do not fetch it.
 
 There is no `intent_secret`, local vars file, or lookup plugin. The committed
 intent contains `{ topology: ... }` references. At runtime the wrapper reads the
@@ -227,6 +232,11 @@ The `netconf` record has exactly these fields:
 
 Password authentication is not implemented. The matching public key must
 already be installed on the SRX automation account.
+
+The `admin` record has exactly the same two-field shape, with `username` set to
+`monosense` and `private_key` set to the dedicated SRX administrator private
+key. It is not the routine NETCONF automation key and must never be written to
+Git or emitted in command output.
 
 The `network/bgp/cilium-srx1500` record has exactly one field:
 
@@ -461,11 +471,12 @@ also validates and loads the NETCONF record before opening a device session.
 
 ### Access policy and rotation
 
-The repository automation identity has `read` only on the five exact KV v2 API
+The repository automation identity has `read` only on the six exact KV v2 API
 paths in `docker/c0/openbao/policies/monosense-infra.hcl`:
 
 ```text
 kv/data/network/junos/srx1500/netconf
+kv/data/network/junos/srx1500/admin
 kv/data/network/junos/srx1500/topology
 kv/data/network/bgp/cilium-srx1500
 kv/data/platform/talos/bsd/topology
@@ -549,11 +560,12 @@ Recovery uses two reviewed commits:
 
 No repository command mutates the adoption record. A failed recovery leaves it false.
 
-`reservations.prod` in the Junos topology record is the authoritative ownership point for PROD
-DHCP reservations. Drift retrieves only `ANSIBLE_SRX1500`, its `apply-groups` reference, bounded
-group exclusions, and direct `host` names under the four managed DHCP pools. It normalizes those
-values in memory and writes only counts and value-free paths under ignored `.build/`; it never
-persists effective whole-device configuration, reservation MACs, or reservation IPs.
+`reservations.mgmt` in the Junos topology record is the authoritative ownership point for the five
+Talos nodes' `eno1` MGMT reservations. Drift retrieves only `ANSIBLE_SRX1500`, its `apply-groups`
+reference, bounded group exclusions, and direct `host` names under the four managed DHCP pools. It
+normalizes those values in memory and writes only counts and value-free paths under ignored
+`.build/`; it never persists effective whole-device configuration, reservation MACs, or
+reservation IPs.
 
 
 ## Command safety
@@ -672,50 +684,49 @@ count/path summary under ignored `.build/`; it never persists effective whole-de
 ### Talos reservation parity recovery
 
 Use this runbook only for the reviewed five-node parity repair. Keep `adoption.yml` committed as
-`adopted: false` throughout recovery. The routine NETCONF identity remains group-scoped; do not
-broaden its permissions for this one-time direct cleanup.
+`adopted: false` throughout recovery. The routine NETCONF identity remains group-scoped; use the
+separately stored `monosense` administrator key only for the bounded direct cleanup.
 
 1. Create `just ansible junos backup`, transfer the new
    `.build/backups/srx1500-<UTC timestamp>.conf.age` ciphertext to approved offline custody, and
    prove decryption with the recovery age identity into a mode-`0600` temporary file. Confirm the
    plaintext is the complete committed configuration for hostname `srx1500`, then remove it.
-2. In an independently authenticated SRX administrator session, capture only:
+2. In an independently authenticated SRX administrator session, capture only the five
+   group-owned MGMT reservations and five direct PROD containers:
 
    ```text
-   show configuration groups ANSIBLE_SRX1500 access address-assignment pool PROD family inet host | display set | no-more
+   show configuration groups ANSIBLE_SRX1500 access address-assignment pool MGMT family inet host | display set | no-more
+   show configuration access address-assignment pool PROD family inet host | display set | no-more
    ```
 
-   Store the output in a mode-`0600` temporary file outside Git. Require exactly
-   `bsd-k8s-01` through `bsd-k8s-05`, one `hardware-address` and one `ip-address` per host, and
-   `10.25.11.101` through `10.25.11.105` in hostname order.
-3. On the authorized OpenBao administrator workstation, set `umask 077` and read both protected
-   records into separate mode-`0600` temporary files:
+   Store the output in mode-`0600` temporary files outside Git. Require group hosts `p0` through
+   `p4` at `10.25.10.111` through `10.25.10.115`, one `hardware-address` and one `ip-address` per
+   host, and direct PROD hosts `bsd-k8s-01` through `bsd-k8s-05`. Each direct PROD MAC must equal
+   the corresponding MGMT reservation MAC.
+3. On the authorized OpenBao administrator workstation, set `umask 077` and read the protected
+   Junos topology into a mode-`0600` temporary file:
 
    ```console
    bao kv get -mount=kv -format=json network/junos/srx1500/topology
-   bao kv get -mount=kv -format=json platform/talos/bsd/topology
    ```
 
-   Require exactly the five Talos node names and one `links.tor1.permanent_mac` per node. Each MAC
-   must equal the corresponding running group reservation. Stop on any mismatch.
-4. Starting from the Junos record’s `.data.data`, preserve every field and every unrelated PROD
-   reservation. Replace only PROD entries named `bsd-k8s-01` through `bsd-k8s-05` with sorted
-   `{name, mac, ip}` objects whose lowercase MAC comes from the matching Talos
-   `links.tor1.permanent_mac` and whose IP is `.101` through `.105` in hostname order. Validate
-   global reservation name, MAC, and IP uniqueness.
+4. Starting from the record's `.data.data`, preserve every unrelated field and reservation.
+   Rename MGMT reservations `p0` through `p4` to `bsd-k8s-01` through `bsd-k8s-05` in order,
+   retaining their exact lowercase MACs and `.111` through `.115` IPs. Remove every PROD
+   reservation named `bsd-k8s-01` through `bsd-k8s-05`; do not add a replacement PROD
+   reservation. Validate global reservation name, MAC, and IP uniqueness.
 5. Read the current Junos KV metadata version and perform one complete CAS write:
 
    ```console
    bao kv put -mount=kv -cas="$current_version" network/junos/srx1500/topology @"$topology_file"
    ```
 
-   Never write the Talos record. A CAS conflict requires refetch and full revalidation; never force
-   an overwrite. Run `render`, `check`, and `diff`; require commit-check success and
-   `No candidate difference reported`. Drift must report zero managed missing/extra paths and the
-   same five direct PROD host paths.
+   A CAS conflict requires refetch and full revalidation; never force an overwrite. Run `render`,
+   `check`, and `diff`; require commit-check success. Drift must report only the expected managed
+   group rename delta and the previously captured direct paths. Do not mutate the SRX if any other
+   change appears.
 6. If source proof fails, restore the exact previous `.data.data` with a second CAS write only when
    metadata proves the failed update is still current. Otherwise stop for concurrent-change review.
-   Re-run render/check/diff after rollback and do not mutate the SRX.
 7. With console/recovery access available, use the independent administrator session and exclusive
    configuration mode. Stage only:
 
@@ -727,13 +738,15 @@ broaden its permissions for this one-time direct cleanup.
    delete access address-assignment pool PROD family inet host bsd-k8s-05
    ```
 
-   Do not delete or edit a group reservation. `show | compare` must be confined to those five direct
-   roots. Run `commit check`, then use a ten-minute confirmed commit with an explicit parity-repair
-   comment. Discard and stop if Junos reports any other invalid hierarchy.
-8. During the timer, run `check`, `diff`, `drift`, and `bgp-verify`; verify Talos nodes
-   `10.25.11.11` through `.15`, Kubernetes Ready state, management/NETCONF reachability, and all five
-   group-owned reservation triples against the protected capture. Require zero managed drift, zero
-   direct paths, five established authenticated BGP peers, and the covering discard route.
+   Do not delete or edit any other direct host, and do not edit a group reservation. `show |
+   compare` must be confined to those five exact direct roots. Run `commit check`, then use a
+   ten-minute confirmed commit with an explicit parity-repair comment. Discard and stop if Junos
+   reports any other invalid hierarchy.
+8. During the timer, apply the already reviewed `ANSIBLE_SRX1500` candidate so the group rename and
+   direct deletion form one verified end state. Run `check`, `diff`, `drift`, and `bgp-verify`;
+   verify Talos nodes `10.25.11.11` through `.15`, Kubernetes Ready state, management/NETCONF
+   reachability, and the five MGMT reservation triples. Require zero managed drift, no remaining
+   direct PROD BSD paths, five established authenticated BGP peers, and the covering discard route.
    Confirm only if every proof passes before expiry; otherwise allow automatic rollback.
 9. Repeat every proof after confirmation, remove all plaintext temporary files, and only then
    restore `adopted: true` in a separate reviewed commit. A final intentional no-op `deploy` must
