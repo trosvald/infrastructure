@@ -85,11 +85,48 @@
           - show route 0.0.0.0/0 exact
           - show route table VR-XLSATU.inet.0 0.0.0.0/0 exact
           - show security nat source rule all
-          - show configuration security policies | display set
+          - show configuration security policies | display inheritance no-comments | display set | no-more
           - show bgp summary group CILIUM
           - show route 10.25.20.0/24 exact
       register: confirm_pending
       no_log: true
+
+    - name: Read managed-group exclusions with a bounded NETCONF XPath
+      ansible.netcommon.netconf_rpc:
+        rpc: get-config
+        xmlns: urn:ietf:params:xml:ns:netconf:base:1.0
+        content: |
+          <source><running/></source>
+          <filter type="xpath" select="//*[local-name()='apply-groups-except' and normalize-space(.)='ANSIBLE_SRX1500']"/>
+      register: confirm_apply_groups_exceptions
+      no_log: true
+    - name: Read direct managed-pool reservations with a bounded NETCONF XPath
+      ansible.netcommon.netconf_rpc:
+        rpc: get-config
+        xmlns: urn:ietf:params:xml:ns:netconf:base:1.0
+        content: |
+          <source><running/></source>
+          <filter type="xpath"
+                  select="/*[local-name()='configuration']/*[local-name()='access']
+                          /*[local-name()='address-assignment']/*[local-name()='pool'][*[local-name()='name' and (.='MGMT' or .='PROD' or .='DEV')]]
+                          /*[local-name()='family']/*[local-name()='inet']/*[local-name()='host']
+                          |
+                          /*[local-name()='configuration']/*[local-name()='routing-instances']
+                          /*[local-name()='instance'][*[local-name()='name']='VR-XLSATU']/*[local-name()='access']
+                          /*[local-name()='address-assignment']/*[local-name()='pool'][*[local-name()='name']='HOME']
+                          /*[local-name()='family']/*[local-name()='inet']/*[local-name()='host']"/>
+      register: confirm_direct_reservations
+      no_log: true
+
+    - name: Reject direct DHCP reservation ownership conflicts before confirmation
+      ansible.builtin.assert:
+        that:
+          - confirm_direct_reservations.stdout is defined
+          - confirm_direct_reservations.stdout is not search('(?s)<(?:[^:<>]+:)?host(?:\\s|>)')
+        fail_msg: >-
+          Direct DHCP reservation stanzas overlap ANSIBLE_SRX1500 ownership; refusing confirmation.
+      no_log: true
+
 
     - name: Isolate only the newest commit record and normalize running configuration
       ansible.builtin.set_fact:
@@ -163,6 +200,8 @@
           - confirm_pending.stdout[10] is search('10[.]25[.]20[.]0/24')
           - confirm_pending.stdout[10] is search('Discard')
           - confirm_pending.stdout[10] is search('[*>]')
+          - confirm_apply_groups_exceptions.stdout is defined
+          - confirm_apply_groups_exceptions.stdout is not search('apply-groups-except')
         fail_msg: "Cilium peer configuration or static discard changed before confirmation."
       no_log: true
 

@@ -2,10 +2,10 @@ name: Junos offline validation
 
 on:
   pull_request:
-    paths: ['ansible/**', 'docs/SOPS.md', 'scripts/gitleaks-scan.sh', '.mise.toml', 'mise.lock', '.justfile', '.github/workflows/junos.yaml', '.gitignore', '.gitleaks.toml']
+    paths: ['ansible/**', 'docs/SOPS.md', 'scripts/gitleaks-scan.sh', 'scripts/with-openbao-runtime.sh', '.mise.toml', 'mise.lock', '.justfile', '.github/workflows/junos.yaml', '.gitignore', '.gitleaks.toml']
   push:
     branches: [main]
-    paths: ['ansible/**', 'docs/SOPS.md', 'scripts/gitleaks-scan.sh', '.mise.toml', 'mise.lock', '.justfile', '.github/workflows/junos.yaml', '.gitignore', '.gitleaks.toml']
+    paths: ['ansible/**', 'docs/SOPS.md', 'scripts/gitleaks-scan.sh', 'scripts/with-openbao-runtime.sh', '.mise.toml', 'mise.lock', '.justfile', '.github/workflows/junos.yaml', '.gitignore', '.gitleaks.toml']
   workflow_dispatch:
 
 permissions:

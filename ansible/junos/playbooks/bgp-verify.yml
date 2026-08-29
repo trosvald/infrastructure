@@ -65,7 +65,7 @@
             (bgp_verify.stdout[0]
              | regex_findall('(?m)^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\s+.+$')
              | length) == 1
-          - bgp_verify.stdout[0] is search('protocols bgp group CILIUM peer-as 64513$')
+          - bgp_verify.stdout[0] is search('(?m)^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM peer-as 64513$')
         fail_msg: "Configured CILIUM peers or value-free authentication path is not exact."
       no_log: true
 

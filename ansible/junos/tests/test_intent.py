@@ -301,6 +301,23 @@ class IntentTests(unittest.TestCase):
         self.assertIn("system services ssh macs hmac-sha2-512", text)
         self.assertNotIn("unit 0 family inet dhcp\n", text)
 
+    def test_prod_reservation_renders_exact_hardware_and_ip_leaves(self):
+        commands = self.build()
+        prefix = (
+            "set groups ANSIBLE_SRX1500 access address-assignment pool PROD "
+            "family inet host synthetic-prod-a "
+        )
+        reservation_lines = [
+            command for command in commands if command.startswith(prefix)
+        ]
+        self.assertEqual(
+            reservation_lines,
+            [
+                prefix + "hardware-address 02:00:00:00:20:01",
+                prefix + "ip-address 198.51.100.11",
+            ],
+        )
+
     def test_dhcp_router_range_and_reservation_containment(self):
         outside = self.with_topology(lambda topology: topology["networks"]["mgmt"].update(gateway="198.51.100.254"))
         with self.assertRaisesRegex(module.IntentError, "router is outside"):

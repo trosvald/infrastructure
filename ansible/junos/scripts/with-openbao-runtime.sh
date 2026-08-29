@@ -6,7 +6,7 @@ repo_dir="$(cd "$project_dir/../.." && pwd)"
 export ANSIBLE_CONFIG="$project_dir/ansible.cfg"
 export ANSIBLE_LOCAL_TEMP="$project_dir/.build/tmp/controller"
 export ANSIBLE_REMOTE_TEMP="$project_dir/.build/tmp/remote"
-unset SSH_AUTH_SOCK
+unset SSH_AUTH_SOCK JUNOS_DEPLOY_LOCK_HELD
 # shellcheck source=toolchain.sh
 source "$project_dir/scripts/toolchain.sh"
 cd "$project_dir"
