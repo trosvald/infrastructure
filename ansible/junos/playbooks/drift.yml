@@ -31,13 +31,23 @@
       changed_when: false
       delegate_to: localhost
 
-    - name: Require completed adoption from committed Git content
+    - name: Parse the committed adoption authorization
+      ansible.builtin.set_fact:
+        drift_adoption_record: "{{ drift_committed_adoption.stdout | from_yaml }}"
+
+    - name: Require an exact committed adoption boolean
       ansible.builtin.assert:
         that:
-          - (drift_committed_adoption.stdout | from_yaml).adopted | default(false) | bool
+          - drift_adoption_record is mapping
+          - drift_adoption_record.adopted is defined
+          - drift_adoption_record.adopted | type_debug == 'bool'
         fail_msg: >-
-          Drift is fail-closed before adoption. Complete the reviewed direct-config cleanup and
-          parity migration, commit the adoption record, and keep its working copy clean.
+          Drift requires a clean committed adoption record containing an exact boolean.
+
+    - name: Record committed adoption state for diagnostic output
+      ansible.builtin.set_fact:
+        drift_adopted: "{{ drift_adoption_record.adopted }}"
+      no_log: true
     - name: Render the reviewed candidate in memory
       ansible.builtin.command:
         argv:
@@ -67,7 +77,7 @@
           - drift_device_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
           - drift_device_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
 
-    - name: Retrieve only the managed group and apply-groups reference
+    - name: Retrieve only the managed group, application, and exclusions
       ansible.builtin.command:
         argv:
           - "{{ ansible_playbook_python }}"
@@ -81,6 +91,30 @@
       ansible.builtin.set_fact:
         drift_managed_configuration: "{{ drift_configuration.stdout | from_json }}"
       no_log: true
+
+    - name: Reject managed-group exclusions
+      ansible.builtin.assert:
+        that:
+          - drift_managed_configuration.apply_groups_exceptions is defined
+          - drift_managed_configuration.apply_groups_exceptions == []
+        fail_msg: "ANSIBLE_SRX1500 is excluded from one or more configuration hierarchies."
+      no_log: true
+    - name: Require bounded direct reservation evidence
+      ansible.builtin.assert:
+        that:
+          - drift_managed_configuration.direct_reservation_paths is defined
+          - drift_managed_configuration.direct_reservation_paths | type_debug == 'list'
+          - >-
+            drift_managed_configuration.direct_reservation_paths ==
+            (drift_managed_configuration.direct_reservation_paths | unique | sort)
+          - >-
+            drift_managed_configuration.direct_reservation_paths
+            | reject('match',
+                     '^(access/address-assignment/pool/(MGMT|PROD|DEV)/family/inet/host/[^/]+|routing-instances/VR-XLSATU/access/address-assignment/pool/HOME/family/inet/host/[^/]+)$')
+            | list | length == 0
+        fail_msg: "Direct DHCP reservation evidence is absent or outside the bounded schema."
+      no_log: true
+
 
     - name: Normalize managed lines in memory
       ansible.builtin.set_fact:
@@ -227,10 +261,16 @@
       ansible.builtin.copy:
         content: |
           managed_group: ANSIBLE_SRX1500
+          adopted: {{ drift_adopted | bool | lower }}
           expected_paths: {{ drift_expected_lines | length }}
           actual_paths: {{ drift_actual_lines | length }}
           missing_count: {{ drift_missing | length }}
           extra_count: {{ drift_extra | length }}
+          direct_reservation_count: {{ drift_managed_configuration.direct_reservation_paths | length }}
+          direct_reservation_paths:
+          {% for path_id in drift_managed_configuration.direct_reservation_paths %}
+          - {{ path_id | to_json }}
+          {% endfor %}
           ordered_policy_mismatch: {{ drift_order_mismatch | bool | lower }}
           missing_paths:
           {% for path_id in drift_missing_ids %}

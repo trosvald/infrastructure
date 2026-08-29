@@ -8,7 +8,7 @@
 
 </div>
 
-This project turns reviewed structured intent into a deterministic Junos candidate. OpenBao supplies real topology and NETCONF credentials; SOPS is not in the Junos secret path. Live changes use verified NETCONF, commit-check, explicit diff review, and commit-confirmed deployment.
+This project turns reviewed structured intent into a deterministic Junos candidate. OpenBao supplies real topology and NETCONF credentials; SOPS protects only the fixed service-authentication bootstrap. Live changes use verified NETCONF, commit-check, explicit diff review, and commit-confirmed deployment.
 
 ## Contents
 
@@ -55,13 +55,15 @@ flowchart TB
 ```mermaid
 sequenceDiagram
   participant O as Operator
+  participant S as SOPS age identity
   participant B as OpenBao CLI
   participant T as Ephemeral runtime
   participant J as SRX NETCONF
-  O->>B: bao login using an enabled human method
-  B-->>O: token helper stores session
-  O->>B: exact-path KV reads over verified HTTPS
-  B-->>T: topology, username, private key, host key
+  O->>T: fixed repository action
+  T->>S: decrypt monosense-infra credentials
+  T->>B: userpass login as monosense-infra
+  T->>B: exact-path KV reads over verified HTTPS
+  B-->>T: topology, BGP password, username, private key, host key
   T->>J: strict host-verified NETCONF on port 830
   J-->>T: operation result
   T->>T: trap removes all runtime files
@@ -120,9 +122,10 @@ Before a live command, all of these external prerequisites must already exist:
   the service administrator supplies a private CA file. `BAO_SKIP_VERIFY`,
   `VAULT_SKIP_VERIFY`, and unreviewed TLS server-name overrides are prohibited
   and rejected before any OpenBao call.
-- An enabled human OpenBao authentication method and a token with read access
-  to the two exact KV v2 data paths. The repository does not create auth
-  methods, policies, tokens, mounts, or Docker resources.
+- A real, non-symlink SOPS age identity at `SOPS_AGE_KEY_FILE` (default
+  `~/.config/sops/age/keys.txt`) that can decrypt the tracked
+  `encrypted/monosense-infra.env` service credentials. Routine commands reject
+  pre-set `BAO_TOKEN` and `VAULT_TOKEN` values.
 - A KV v2 engine mounted at `kv/`. An administrator can confirm the mount type
   and version with `bao secrets list -detailed` without reading Junos data.
 - Network reachability from the trusted controller to the SRX NETCONF SSH
@@ -169,21 +172,24 @@ All steps through offline validation are locally testable on macOS, Linux, and W
    just ansible junos lint
    ```
 
-5. Authenticate to the existing network OpenBao service using the human method already enabled by its administrator:
+5. Ensure the SOPS age identity exists as a real, non-symlink file:
 
    ```console
-   bao login
-   bao token lookup
+   test -f "${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}"
+   test ! -L "${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}"
    ```
 
-Root `.mise.toml` exports the private `BAO_ADDR=https://vault.monosense.io:8200`
-endpoint. The workflow uses the OpenBao CLI's token helper. It never reads,
-exports, prints, or revokes the operator-owned token. TLS validation remains
-enabled. If the service uses a private CA, configure the standard OpenBao CA
-option; never use an insecure-skip flag. See
-[OpenBao login](https://openbao.org/docs/commands/login/),
-[token helpers](https://openbao.org/docs/commands/token-helper/), and
-[TLS listener settings](https://openbao.org/docs/configuration/listener/tcp/).
+   Routine `just ansible junos ...` commands decrypt the tracked
+   `encrypted/monosense-infra.env` only inside a protected temporary directory,
+   authenticate through userpass as the fixed `monosense-infra` service identity,
+   and revoke the short-lived token on exit. Do not run `bao login` and do not
+   pre-set `BAO_TOKEN` or `VAULT_TOKEN` for routine repository actions.
+
+Root `.mise.toml` exports the fixed
+`BAO_ADDR=https://vault.monosense.io:8200` endpoint. TLS validation remains
+enabled. If the service uses a private CA, configure `BAO_CACERT` with the
+administrator-supplied CA file; never use an insecure-skip or server-name
+override. See [TLS listener settings](https://openbao.org/docs/configuration/listener/tcp/).
 
 ## OpenBao contract
 
@@ -194,19 +200,26 @@ https://vault.monosense.io:8200
 ```
 
 The Junos project is an OpenBao consumer. An OpenBao administrator must create
-exactly two KV v2 records before any real render or device operation can run:
+exactly three KV v2 records before routine render or device operations can run:
 
 ```text
 kv/network/junos/srx1500/netconf
 kv/network/junos/srx1500/topology
+kv/network/bgp/cilium-srx1500
 ```
 
-There is no `intent_secret`, SOPS document, local vars file, or lookup plugin.
-The committed intent contains `{ topology: ... }` references. At runtime the
-wrapper reads the `topology` record, resolves those references in memory, and
-removes its temporary files on exit. The `netconf` record is used only to open
-the authenticated NETCONF session; it is never rendered into Junos
-configuration.
+The separately provisioned `kv/network/junos/srx1500/admin` record holds the
+dedicated `monosense` SRX administrator key for reviewed recovery work. The
+`monosense-infra` service identity can read that exact record, but routine
+render, check, drift, and deployment commands do not fetch it.
+
+There is no `intent_secret`, local vars file, or lookup plugin. The committed
+intent contains `{ topology: ... }` references. At runtime the wrapper reads the
+`topology` record, resolves those references in memory, and injects the BGP
+record's password into the rendered topology without persisting it in intent.
+The `netconf` record is used only to open the authenticated NETCONF session; it
+is never rendered into Junos configuration. SOPS protects the service login
+bootstrap, not device intent or credentials.
 
 ### What to store
 
@@ -219,6 +232,17 @@ The `netconf` record has exactly these fields:
 
 Password authentication is not implemented. The matching public key must
 already be installed on the SRX automation account.
+
+The `admin` record has exactly the same two-field shape, with `username` set to
+`monosense` and `private_key` set to the dedicated SRX administrator private
+key. It is not the routine NETCONF automation key and must never be written to
+Git or emitted in command output.
+
+The `network/bgp/cilium-srx1500` record has exactly one field:
+
+| Field | Required value |
+|---|---|
+| `password` | Exactly 43 base64url characters matching `[A-Za-z0-9_-]{43}` |
 
 The `topology` record has this complete shape. The values below are reserved
 documentation values that show types and nesting; replace every value with the
@@ -323,12 +347,14 @@ Topology is kept in OpenBao because it is environment-specific and sensitive,
 even though not every field is cryptographic secret material. OpenBao must not
 contain the operator's OpenBao token, an age private identity, SOPS keys, a
 rendered candidate, a plaintext backup, or OpenBao server TLS private keys under
-either Junos path.
+any of these Junos-consumed paths.
 
 ### Create or update the records
 
 Perform writes from an authorized administrator workstation, outside this
-repository. Use `-mount=kv` so the KV v2 mount and logical path are unambiguous.
+repository. This subsection is the only place `bao login` applies; it uses an
+administrator identity for provisioning and is not part of routine operator
+execution. Use `-mount=kv` so the KV v2 mount and logical path are unambiguous.
 For the first NETCONF write, construct one protected JSON document outside the
 repository. A trap removes the temporary document when the shell exits:
 
@@ -358,6 +384,20 @@ chmod 0600 "$topology_file"
 bao kv put -mount=kv -cas=0 network/junos/srx1500/topology @"$topology_file"
 ```
 
+Create the Cilium BGP password as a protected JSON object outside the checkout,
+validate its exact shape, and perform the initial compare-and-set write:
+
+```bash
+bgp_file=/secure/path/outside-the-repository/cilium-srx1500.json
+chmod 0600 "$bgp_file"
+jq -e '
+  (type == "object") and
+  (keys == ["password"]) and
+  (.password | type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$"))
+' "$bgp_file" >/dev/null
+bao kv put -mount=kv -cas=0 network/bgp/cilium-srx1500 @"$bgp_file"
+```
+
 `-cas=0` deliberately fails if the record already exists. This prevents an
 initialization command from overwriting live data. For an intentional update,
 read only the current metadata version and supply it to `-cas`; the update then
@@ -371,9 +411,19 @@ bao kv put -mount=kv -cas="$current_version" \
 unset current_version
 ```
 
-Use the same compare-and-set procedure for the NETCONF record. Delete any
-temporary source file after the write according to the workstation's secure
-deletion policy. OpenBao KV v2 retains versions according to the mount's
+Use the same compare-and-set procedure for the NETCONF record. For a BGP
+password rotation, read only its metadata version and bind the update to it:
+
+```bash
+current_version="$({ bao kv metadata get -mount=kv -format=json network/bgp/cilium-srx1500; } \
+  | jq -er '.data.current_version')"
+bao kv put -mount=kv -cas="$current_version" \
+  network/bgp/cilium-srx1500 @"$bgp_file"
+unset current_version
+```
+
+Delete temporary source files after writes according to the workstation's
+secure deletion policy. OpenBao KV v2 retains versions according to the mount's
 administrator-owned retention policy; ordinary consumers cannot purge history.
 See [KV v2 versioning and policies](https://openbao.org/docs/secrets/kv/kv-v2/)
 and [`bao kv put` JSON input and CAS](https://openbao.org/docs/commands/kv/put/).
@@ -405,6 +455,14 @@ bao kv get -mount=kv -format=json network/junos/srx1500/topology \
       and ($v.netconf_host_key | type == "object")
       and ($v.backup_age_recipient | type == "string")
     ' >/dev/null
+
+bao kv get -mount=kv -format=json network/bgp/cilium-srx1500 \
+  | jq -e '
+      (.data.data | type == "object")
+      and (.data.data | keys) == ["password"]
+      and (.data.data.password
+           | type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$"))
+    ' >/dev/null
 ```
 
 Then run `just ansible junos render`. It performs the repository's complete
@@ -413,11 +471,12 @@ also validates and loads the NETCONF record before opening a device session.
 
 ### Access policy and rotation
 
-The repository automation identity has `read` only on the five exact KV v2 API
+The repository automation identity has `read` only on the six exact KV v2 API
 paths in `docker/c0/openbao/policies/monosense-infra.hcl`:
 
 ```text
 kv/data/network/junos/srx1500/netconf
+kv/data/network/junos/srx1500/admin
 kv/data/network/junos/srx1500/topology
 kv/data/network/bgp/cilium-srx1500
 kv/data/platform/talos/bsd/topology
@@ -486,29 +545,27 @@ authentication remain device-local.
 
 ## Migration and adoption boundary
 
-The reviewed migration is complete. The live SRX contains the
-`ANSIBLE_SRX1500` group and `apply-groups ANSIBLE_SRX1500`; equivalent direct managed statements
-were removed atomically while login, root authentication, the dedicated automation identity, and
-other recovery ownership remained device-local.
+Adoption is a continuously proved state, not a one-time migration marker. A parity regression
+reopens adoption immediately. Commit `adoption.yml` with `adopted: false` before recovery work.
+That state blocks `deploy` without blocking non-activating `check`/`diff`, read-only `drift`,
+encrypted backup, or either BGP gate. The role and live wrapper read the committed record directly,
+reject an uncommitted record change, and accept no extra-variable override.
 
-The migration followed the separately approved maintenance boundary:
+Recovery uses two reviewed commits:
 
-1. Captured an encrypted committed-configuration backup and proved decryption with the c1-held
-   recovery identity.
-2. Compared direct configuration with the rendered group semantically.
-3. Loaded the group, removed only semantically identical direct statements, and applied the group
-   in one commit-checked, ten-minute commit-confirmed transaction.
-4. Re-verified management and NETCONF access, exact managed-group parity, zero direct managed
-   duplicates, preserved recovery identities, and fail-closed authenticated Cilium BGP state.
-5. Explicitly confirmed the pending commit, then changed the tracked adoption record separately.
+1. Commit `adopted: false` with the containment and recovery tooling. Diagnose and repair parity
+   while routine deployment remains disabled.
+2. Commit `adopted: true` separately only after the live backup, source update, direct-ownership
+   cleanup, commit-confirmed verification, and post-confirmation parity proof all succeed.
 
-The tracked `adoption.yml` record is now `adopted: true`. The role, drift playbook, and live
-wrapper still read the committed record directly, reject an uncommitted record change, and accept
-no extra-variable override. No repository command mutates the record.
+No repository command mutates the adoption record. A failed recovery leaves it false.
 
-The drift workflow retrieves only `ANSIBLE_SRX1500` and its `apply-groups` reference, normalizes
-them in memory, and writes a bounded count/value-free path summary under ignored `.build/`; it
-never persists effective whole-device configuration.
+`reservations.mgmt` in the Junos topology record is the authoritative ownership point for the five
+Talos nodes' `eno1` MGMT reservations. Drift retrieves only `ANSIBLE_SRX1500`, its `apply-groups`
+reference, bounded group exclusions, and direct `host` names under the four managed DHCP pools. It
+normalizes those values in memory and writes only counts and value-free paths under ignored
+`.build/`; it never persists effective whole-device configuration, reservation MACs, or
+reservation IPs.
 
 
 ## Command safety
@@ -524,7 +581,7 @@ never persists effective whole-device configuration.
 | `just ansible junos deploy` | Live | Yes | Yes | Confirmed | Yes | Digest only |
 | `just ansible junos bgp-preflight` | Live | Yes | No | No | No | Suppressed |
 | `just ansible junos bgp-verify` | Live | Yes | No | No | No | Suppressed |
-| `just ansible junos drift` | Live after adoption | Yes (managed scope only) | No | No | No | Bounded path/count summary |
+| `just ansible junos drift` | Live | Yes (managed scope only) | No | No | No | Bounded path/count summary |
 | `just ansible junos backup` | Live | Yes | No | No | No | Age ciphertext |
 
 `*` Bootstrap may download tools or collections but never accesses OpenBao or the SRX.
@@ -579,6 +636,20 @@ verification fails, the command is interrupted, or confirmation is withheld,
 do not manually confirm; Junos automatically rolls back. The candidate and
 runtime credentials are deleted only after this uninterrupted transaction
 exits. See [Junos confirmed commits](https://www.juniper.net/documentation/us/en/software/junos/cli/topics/topic-map/junos-configuration-commit.html).
+If the wrapper exits after publishing and verifying a pending transaction but before confirmation,
+do not rerun `deploy` or confirm from an unbound CLI session. Recover through the same protected
+runtime:
+
+```console
+just ansible junos confirm-pending
+```
+
+Enter the exact `confirm-pending <digest>` phrase. This action freshly renders and hashes the
+candidate, binds it to the newest pending commit comment, rechecks the complete managed group,
+authentication path, apply-group, scoped policy order, direct-reservation conflicts, and fixed
+operational evidence, then confirms through NETCONF. A mismatched digest or invariant leaves the
+transaction unconfirmed for automatic rollback.
+
 
 ### Cilium BGP gates
 
@@ -619,10 +690,105 @@ administrator sources must be present in protected topology before narrowing.
 just ansible junos drift
 ```
 
-The command is fail-closed before adoption. After migration, it retrieves
-only `ANSIBLE_SRX1500` and its `apply-groups` reference, compares normalized
-managed lines in memory, and writes a bounded count/path summary under
-ignored `.build/`; it never persists effective whole-device configuration.
+The command requires a clean committed adoption record containing an exact boolean. It runs in
+either state so `adopted: false` cannot hide recovery evidence. It retrieves only bounded managed
+and direct-reservation scope, compares normalized managed lines in memory, and writes a bounded
+count/path summary under ignored `.build/`; it never persists effective whole-device configuration.
+For a direct live-evidence check without creating or loading a candidate, run:
+
+```console
+just ansible junos operational-verify
+```
+
+This verifies device identity and collects the fixed post-commit interface, VLAN, route, policy,
+reservation, and discard-route evidence through the protected controller runtime.
+
+
+### Talos reservation parity recovery
+
+Use this runbook only for the reviewed five-node parity repair. Keep `adoption.yml` committed as
+`adopted: false` throughout recovery. The routine NETCONF identity remains group-scoped; use the
+separately stored `monosense` administrator key only for the bounded direct cleanup.
+
+1. Create `just ansible junos backup`, transfer the new
+   `.build/backups/srx1500-<UTC timestamp>.conf.age` ciphertext to approved offline custody, and
+   prove decryption with the recovery age identity into a mode-`0600` temporary file. Confirm the
+   plaintext is the complete committed configuration for hostname `srx1500`, then remove it.
+2. In an independently authenticated SRX administrator session, capture only the five
+   group-owned MGMT reservations and five direct PROD containers:
+
+   ```text
+   show configuration groups ANSIBLE_SRX1500 access address-assignment pool MGMT family inet host | display set | no-more
+   show configuration access address-assignment pool PROD family inet host | display set | no-more
+   ```
+
+   Store the output in mode-`0600` temporary files outside Git. Require group hosts `p0` through
+   `p4` at `10.25.10.111` through `10.25.10.115`, one `hardware-address` and one `ip-address` per
+   host, and direct PROD hosts `bsd-k8s-01` through `bsd-k8s-05`. Each direct PROD MAC must equal
+   the corresponding MGMT reservation MAC.
+3. On the authorized OpenBao administrator workstation, set `umask 077` and read the protected
+   Junos topology into a mode-`0600` temporary file:
+
+   ```console
+   bao kv get -mount=kv -format=json network/junos/srx1500/topology
+   ```
+
+4. Starting from the record's `.data.data`, preserve every unrelated field and reservation.
+   Rename MGMT reservations `p0` through `p4` to `bsd-k8s-01` through `bsd-k8s-05` in order,
+   retaining their exact lowercase MACs and `.111` through `.115` IPs. Remove every PROD
+   reservation named `bsd-k8s-01` through `bsd-k8s-05`; do not add a replacement PROD
+   reservation. Validate global reservation name, MAC, and IP uniqueness.
+5. Read the current Junos KV metadata version and perform one complete CAS write:
+
+   ```console
+   bao kv put -mount=kv -cas="$current_version" network/junos/srx1500/topology @"$topology_file"
+   ```
+
+   A CAS conflict requires refetch and full revalidation; never force an overwrite. Run `render`,
+   `check`, and `diff`; require commit-check success. Drift must report only the expected managed
+   group rename delta and the previously captured direct paths. Do not mutate the SRX if any other
+   change appears.
+6. If source proof fails, restore the exact previous `.data.data` with a second CAS write only when
+   metadata proves the failed update is still current. Otherwise stop for concurrent-change review.
+7. With console/recovery access available, use the independent administrator session and exclusive
+   configuration mode. The completed recovery removed exactly the five direct PROD BSD containers
+   plus these nine additional direct containers that overlapped group ownership:
+
+   ```text
+   delete access address-assignment pool PROD family inet host bsd-k8s-01
+   delete access address-assignment pool PROD family inet host bsd-k8s-02
+   delete access address-assignment pool PROD family inet host bsd-k8s-03
+   delete access address-assignment pool PROD family inet host bsd-k8s-04
+   delete access address-assignment pool PROD family inet host bsd-k8s-05
+   delete access address-assignment pool MGMT family inet host ap1
+   delete access address-assignment pool MGMT family inet host ap2
+   delete access address-assignment pool MGMT family inet host csw
+   delete access address-assignment pool MGMT family inet host psw
+   delete access address-assignment pool MGMT family inet host svc
+   delete access address-assignment pool MGMT family inet host ts1
+   delete access address-assignment pool MGMT family inet host ts2
+   delete routing-instances VR-XLSATU access address-assignment pool HOME family inet host ezky-ideapad
+   delete routing-instances VR-XLSATU access address-assignment pool HOME family inet host ezzel-ideapad
+   ```
+
+   Do not delete or edit a group reservation. Before repeating any recovery, derive the bounded
+   direct paths from current drift evidence rather than assuming this historical list still
+   applies. `show | compare` must remain confined to the reviewed direct roots. Run `commit check`,
+   then use a ten-minute confirmed commit with an explicit parity-repair comment. Discard and stop
+   if Junos reports any other invalid hierarchy.
+8. During the timer, apply the already reviewed `ANSIBLE_SRX1500` candidate so the group rename and
+   direct deletion form one verified end state. For this recovery's approved scope-relevant gate,
+   run `drift` and `operational-verify`, recheck management/NETCONF reachability, and verify the
+   five MGMT reservation triples. Require zero managed drift, zero direct reservation paths, exact
+   scoped policy order, and the fixed interface, VLAN, route, policy, reservation, and discard-route
+   evidence. Confirm only if every selected proof passes before expiry; otherwise allow automatic
+   rollback. BGP, Talos, and Kubernetes health remain separate operator gates when their respective
+   surfaces are changed.
+9. Repeat the scope-relevant proof after confirmation, remove all plaintext temporary files, and
+   only then restore `adopted: true` in a separate reviewed commit. The completed recovery ended
+   with `373` expected and actual managed paths, zero missing or extra paths, zero direct
+   reservation paths, no ordered-policy mismatch, and a successful intentional no-op `deploy`
+   that left no pending commit.
 
 ### Encrypted backup
 
@@ -647,10 +813,10 @@ Incomplete ciphertext is removed on error or interruption. Transfer valid cipher
 | Tool outside mise | Activate mise and remove ambient PATH precedence; package-manager and project-virtualenv paths are rejected. |
 | Python/pipx import failure | Regenerate the universal hash lock with mise-managed uv, reinstall, and rerun bootstrap. |
 | Galaxy module missing | Rerun bootstrap; collections belong only under `.ansible/collections`. |
-| `bao token lookup` fails | Run `bao login` with an enabled human auth method and inspect the token helper. |
+| Service authentication fails | Verify the real non-symlink SOPS age identity can decrypt `encrypted/monosense-infra.env`; do not substitute `bao login` or an ambient token. |
 | OpenBao DNS/TLS failure | Verify DNS, time, certificate chain, and legitimate CA configuration; never disable validation. |
-| KV permission denied | Compare token policy with the two exact `/data/` paths. |
-| KV schema rejected | Correct the username, OpenSSH key, topology, host key, or age recipient at the source. |
+| KV permission denied | Compare the `monosense-infra` policy with the three Junos-consumed exact `/data/` paths. |
+| KV schema rejected | Correct the username, OpenSSH key, topology, host key, age recipient, or 43-character BGP password at the source. |
 | SSH host-key mismatch | Stop; independently verify the SRX key before an administrator updates OpenBao. |
 | NETCONF unavailable | Verify port 830, NETCONF service, routing, policy, account public key, and session limits. |
 | Wrong model/release | Stop; live workflows permit only SRX1500 on reviewed `23.4R2`. |

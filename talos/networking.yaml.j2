@@ -34,10 +34,6 @@ mtu: 1496
 ---
 apiVersion: v1alpha1
 kind: ResolverConfig
-hostDNS:
-  enabled: true
-  forwardKubeDNSToHost: true
-  resolveMemberNames: true
 nameservers:
 {% for nameserver in topology.private_dns %}
   - address: {{ nameserver }}

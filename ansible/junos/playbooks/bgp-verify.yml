@@ -29,28 +29,19 @@
       no_log: true
 
     - name: Read exact Cilium BGP session and route state
-      juniper.device.junos_command:
-        commands:
-          - show configuration groups ANSIBLE_SRX1500 protocols bgp group CILIUM | display set
-          - show bgp summary group CILIUM
-          - show bgp neighbor 10.25.11.11
-          - show bgp neighbor 10.25.11.12
-          - show bgp neighbor 10.25.11.13
-          - show bgp neighbor 10.25.11.14
-          - show bgp neighbor 10.25.11.15
-          - show route protocol bgp
-          - show route receive-protocol bgp 10.25.11.11
-          - show route receive-protocol bgp 10.25.11.12
-          - show route receive-protocol bgp 10.25.11.13
-          - show route receive-protocol bgp 10.25.11.14
-          - show route receive-protocol bgp 10.25.11.15
-          - show route advertising-protocol bgp 10.25.11.11
-          - show route advertising-protocol bgp 10.25.11.12
-          - show route advertising-protocol bgp 10.25.11.13
-          - show route advertising-protocol bgp 10.25.11.14
-          - show route advertising-protocol bgp 10.25.11.15
-          - show route 10.25.20.0/24 exact
-      register: bgp_verify
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/read_operational.py"
+          - bgp-verify
+      register: bgp_verify_raw
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Parse bounded Cilium BGP evidence
+      ansible.builtin.set_fact:
+        bgp_verify: "{{ bgp_verify_raw.stdout | from_json }}"
       no_log: true
 
     - name: Require the exact configured authenticated peer set
@@ -65,7 +56,7 @@
             (bgp_verify.stdout[0]
              | regex_findall('(?m)^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\s+.+$')
              | length) == 1
-          - bgp_verify.stdout[0] is search('protocols bgp group CILIUM peer-as 64513$')
+          - bgp_verify.stdout[0] is search('(?m)^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM peer-as 64513$')
         fail_msg: "Configured CILIUM peers or value-free authentication path is not exact."
       no_log: true
 

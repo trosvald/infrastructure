@@ -16,6 +16,7 @@ parsed = {
 expected_paths = {
     "kv/data/network/junos/srx1500/topology",
     "kv/data/network/junos/srx1500/netconf",
+    "kv/data/network/junos/srx1500/admin",
     "kv/data/network/bgp/cilium-srx1500",
     "kv/data/platform/talos/bsd/topology",
     "kv/data/platform/talos/bsd/secrets",
@@ -35,4 +36,4 @@ for denied in (
     "sys/policies/acl/monosense-infra",
 ):
     assert denied not in parsed
-print("monosense-infra policy grants read on only the five approved records")
+print("monosense-infra policy grants read on only the six approved records")

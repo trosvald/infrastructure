@@ -1,6 +1,9 @@
 # SOPS and age
 
-This guide defines the repository-wide workstation convention for SOPS identities. Junos automation does not use SOPS for topology or credentials; it reads those values from OpenBao. Junos uses age directly only when encrypting configuration backups.
+This guide defines the repository-wide workstation convention for SOPS identities. Junos uses
+SOPS only to decrypt the tracked `encrypted/monosense-infra.env` for fixed `monosense-infra`
+service authentication. Junos topology and device credentials come from OpenBao; configuration
+backups use age directly rather than SOPS.
 
 ## Storage boundary
 

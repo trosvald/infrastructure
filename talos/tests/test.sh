@@ -35,11 +35,12 @@ jq -n \
     '{topology: $topology[0], secrets: $secrets[0]}' > "$runtime_dir/context.json"
 chmod 0600 "$runtime_dir"/*.{json,yaml}
 
+mapfile -t hostnames < <(jq -er '.nodes[].hostname' "$runtime_dir/topology.json")
 for output in first second; do
-    for index in 01 02 03 04 05; do
+    for hostname in "${hostnames[@]}"; do
         python "$talos_dir/scripts/render.py" \
             --context "$runtime_dir/context.json" \
-            --hostname "bsd-k8s-$index" \
+            --hostname "$hostname" \
             --output-dir "$runtime_dir/$output" \
             --template-dir "$talos_dir" \
             --allow-synthetic \
@@ -54,7 +55,7 @@ python "$talos_dir/tests/test_render.py" \
 
 python "$talos_dir/scripts/render.py" \
     --context "$runtime_dir/context.json" \
-    --hostname bsd-k8s-01 \
+    --hostname "${hostnames[0]}" \
     --output-dir "$runtime_dir/talosconfig" \
     --template-dir "$talos_dir" \
     --allow-synthetic >/dev/null
@@ -63,9 +64,10 @@ python "$talos_dir/scripts/render.py" \
     echo "Talos renderer did not produce a mode-0600 talosconfig" >&2
     exit 1
 }
-yq -o=json '.' "$runtime_dir/talosconfig/talosconfig" |
-    jq -e '
-        .context == "synthetic-bsd" and
-        .contexts[.context].endpoints == ["192.0.2.101", "192.0.2.102", "192.0.2.103"] and
-        .contexts[.context].nodes == ["192.0.2.101"]
-    ' >/dev/null
+jq -e --slurpfile topology "$runtime_dir/topology.json" '
+    .context == "synthetic-bsd" and
+    .contexts[.context].endpoints ==
+        [$topology[0].nodes[] | select(.role == "controlplane") | .bootstrap_address] and
+    .contexts[.context].nodes == [$topology[0].nodes[0].bootstrap_address]
+' < <(yq -o=json '.' "$runtime_dir/talosconfig/talosconfig") >/dev/null
+"$talos_dir/tests/test_apply.sh"

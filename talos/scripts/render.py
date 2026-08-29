@@ -88,13 +88,6 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
     ):
         raise RenderError("ntp_servers must contain exactly three valid hostnames")
 
-    live_sans = [
-        "k8s.monosense.io",
-        "10.25.20.10",
-        "10.25.11.11",
-        "10.25.11.12",
-        "10.25.11.13",
-    ]
     if not synthetic:
         if cluster["name"] != "bsd-k8s":
             raise RenderError("live cluster name must be bsd-k8s")
@@ -105,8 +98,6 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
             raise RenderError("live snapshot recipient differs from reviewed recovery custody")
         if cluster["endpoint"] != "https://k8s.monosense.io:6443":
             raise RenderError("live control-plane endpoint must be https://k8s.monosense.io:6443")
-        if cluster["api_sans"] != live_sans:
-            raise RenderError("live API SANs differ from the approved hostname, VIP, and nodes")
         if network != {"subnet": "10.25.11.0/24", "gateway": "10.25.11.1"}:
             raise RenderError("live Talos network must be VLAN 2511 at 10.25.11.0/24")
         if management_network != {"subnet": "10.25.10.0/24", "gateway": "10.25.10.1"}:
@@ -128,22 +119,22 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
     if management_gateway not in management_subnet:
         raise RenderError("management gateway is outside the MGMT subnet")
 
-    expected_hosts = [f"bsd-k8s-{index:02d}" for index in range(1, 6)]
     nodes = topology["nodes"]
-    if not isinstance(nodes, list) or [node.get("hostname") for node in nodes] != expected_hosts:
-        raise RenderError("topology must contain exactly bsd-k8s-01 through bsd-k8s-05 in order")
-    expected_roles = ["controlplane", "controlplane", "controlplane", "worker", "worker"]
-    expected_live_addresses = [f"10.25.11.{index}" for index in range(11, 16)]
-    expected_bootstrap_addresses = [
-        str(ipaddress.ip_address(int(management_subnet.network_address) + 101 + index))
-        if synthetic
-        else f"10.25.10.{111 + index}"
-        for index in range(5)
-    ]
+    if not isinstance(nodes, list) or not nodes:
+        raise RenderError("topology nodes must be a nonempty ordered list")
+    hostnames = [node.get("hostname") for node in nodes if isinstance(node, dict)]
+    if (
+        len(hostnames) != len(nodes)
+        or any(not re.fullmatch(r"bsd-k8s-[0-9]{2,}", str(hostname)) for hostname in hostnames)
+        or len(set(hostnames)) != len(hostnames)
+    ):
+        raise RenderError("topology node hostnames must be unique bsd-k8s-NN names")
     seen_macs: set[str] = set()
+    seen_addresses: set[ipaddress._BaseAddress] = set()
     seen_bootstrap_addresses: set[ipaddress._BaseAddress] = set()
     seen_disk_ids: set[str] = set()
-    for index, (node, role) in enumerate(zip(nodes, expected_roles, strict=True)):
+    controlplane_addresses: list[str] = []
+    for index, node in enumerate(nodes):
         require_exact_keys(
             node,
             {
@@ -160,17 +151,21 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
             },
             f"node {node.get('hostname', index)}",
         )
-        if node["role"] != role:
-            raise RenderError(f"{node['hostname']}: role must be {role}")
+        if node["role"] not in {"controlplane", "worker"}:
+            raise RenderError(f"{node['hostname']}: role must be controlplane or worker")
         address = ipaddress.ip_address(str(node["address"]))
-        if address not in subnet or address in {gateway, subnet.network_address, subnet.broadcast_address}:
-            raise RenderError(f"{node['hostname']}: invalid VLAN 2511 address")
-        if not synthetic and str(address) != expected_live_addresses[index]:
-            raise RenderError(f"{node['hostname']}: live address is not approved")
+        if (
+            address not in subnet
+            or address in {gateway, subnet.network_address, subnet.broadcast_address}
+            or address in seen_addresses
+        ):
+            raise RenderError(f"{node['hostname']}: VLAN 2511 address is invalid or duplicated")
+        seen_addresses.add(address)
+        if node["role"] == "controlplane":
+            controlplane_addresses.append(str(address))
         bootstrap_address = ipaddress.ip_address(str(node["bootstrap_address"]))
         if (
             bootstrap_address not in management_subnet
-            or str(bootstrap_address) != expected_bootstrap_addresses[index]
             or bootstrap_address in {
                 management_gateway,
                 management_subnet.network_address,
@@ -203,10 +198,8 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
             node["bootstrap_link"] != "eno1"
             or node["links"]["tor1"]["switch"] != "tor1"
             or node["links"]["tor2"]["switch"] != "tor2"
-            or node["links"]["tor1"]["port"] != str(index + 1)
-            or node["links"]["tor2"]["port"] != str(index + 1)
         ):
-            raise RenderError(f"{node['hostname']}: live bootstrap or ToR port mapping differs")
+            raise RenderError(f"{node['hostname']}: live bootstrap or ToR mapping differs")
         if node["links"]["tor1"]["switch"] == node["links"]["tor2"]["switch"]:
             raise RenderError(f"{node['hostname']}: bond members must terminate on different ToRs")
         install_disk = node["install_disk"]
@@ -289,6 +282,15 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
         }:
             raise RenderError(f"{node['hostname']}: labels differ from the approved baseline")
 
+    if not controlplane_addresses:
+        raise RenderError("topology must contain at least one control-plane node")
+    if not synthetic:
+        expected_api_sans = ["k8s.monosense.io", "10.25.20.10", *controlplane_addresses]
+        if cluster["api_sans"] != expected_api_sans:
+            raise RenderError(
+                "live API SANs must contain the approved hostname, VIP, and ordered control planes"
+            )
+
     admin_sources = topology["approved_admin_sources"]
     if not isinstance(admin_sources, list) or not admin_sources:
         raise RenderError("approved Talos administrator source list must be nonempty")
@@ -338,6 +340,7 @@ def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
             command,
             check=True,
             text=True,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             **kwargs,
@@ -368,9 +371,15 @@ def main() -> int:
 
     context = json.loads(args.context.read_text(encoding="utf-8"))
     topology = validate_context(context, args.allow_synthetic)
+    client_version = run(["talosctl", "version", "--client"]).stdout
+    expected_version = str(topology["versions"]["talos"])
+    if not re.search(rf"(?m)^\s*Tag:\s+{re.escape(expected_version)}\s*$", client_version):
+        raise RenderError(
+            f"talosctl client must be {expected_version}; use the mise-locked project toolchain"
+        )
     node = next((item for item in topology["nodes"] if item["hostname"] == args.hostname), None)
     if node is None:
-        raise RenderError("hostname is not one of the five protected inventory nodes")
+        raise RenderError("hostname is not a protected inventory node")
     output_dir = args.output_dir.resolve()
     if output_dir.is_symlink() or not output_dir.is_dir():
         raise RenderError("output directory must be an existing real directory")
@@ -492,7 +501,7 @@ def main() -> int:
     metadata = {
         "hostname": node["hostname"],
         "role": node["role"],
-        "address": node["address"],
+        "data_address": node["address"],
         "sha256": digest,
         "future_osd_present": True,
     }

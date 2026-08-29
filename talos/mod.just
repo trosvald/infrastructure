@@ -8,8 +8,9 @@ set shell := ['bash', '-euo', 'pipefail', '-c']
 default:
     just -l talos
 
+
 [confirm('Apply protected Talos config to ' + node + ' [y|N] ?')]
-[doc('Render, validate, and apply protected Talos config to one inventory node')]
+[doc('Render, preflight, apply if needed, reboot, and verify one Talos node')]
 apply-node node:
     "{{ source_directory() }}/scripts/render.sh" apply-node "{{ node }}"
 
@@ -21,11 +22,11 @@ render-config node:
 verify-node node:
     "{{ source_directory() }}/scripts/render.sh" verify-node "{{ node }}"
 
-[doc('Validate protected five-node hardware inventory; print one topology digest')]
+[doc('Validate protected hardware inventory; print one topology digest')]
 validate-inventory:
     "{{ source_directory() }}/scripts/validate_inventory.sh"
 
-[doc('Render and validate all five synthetic Talos nodes twice')]
+[doc('Render and validate every synthetic Talos inventory node twice')]
 test:
     "{{ source_directory() }}/tests/test.sh"
 [doc('Generate the reviewed Talos factory schematic ID')]
@@ -39,7 +40,7 @@ schematic-id:
 [confirm('Reboot node ' + node + ' [y|N] ?')]
 [doc('Reboot a node')]
 reboot-node node *args:
-    talosctl -n "{{ node }}" reboot {{ args }}
+    talosctl -n "{{ node }}" reboot --wait=false {{ args }}
 
 [confirm('Reset node ' + node + ' [y|N] ?')]
 [doc('Reset a node')]

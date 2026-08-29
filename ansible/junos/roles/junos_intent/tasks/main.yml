@@ -133,6 +133,28 @@
       - junos_intent_device_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
       - junos_intent_device_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
     fail_msg: Connected device identity or Junos release does not match the approved target.
+- name: Read direct managed-pool reservations with bounded Junos commands
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/../../scripts/read_managed.py"
+  register: junos_intent_direct_reservations
+  changed_when: false
+  delegate_to: localhost
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Reject direct DHCP reservation ownership conflicts
+  ansible.builtin.assert:
+    that:
+      - (junos_intent_direct_reservations.stdout | from_json).direct_reservation_paths is defined
+      - (junos_intent_direct_reservations.stdout | from_json).direct_reservation_paths == []
+    fail_msg: >-
+      Direct DHCP reservation stanzas overlap ANSIBLE_SRX1500 ownership; complete the reviewed
+      parity cleanup before loading a deployment candidate.
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
 
 - name: Require a digest-bound deployment request
   ansible.builtin.assert:
@@ -141,7 +163,145 @@
       - junos_intent_commit_comment == 'Ansible candidate ' ~ junos_expected_digest
     fail_msg: "Deployment requires the exact rendered candidate digest in its commit comment."
   when: junos_intent_operation == 'deploy'
+
+- name: Bind the protected deployment state destination
+  ansible.builtin.set_fact:
+    junos_intent_deploy_state_file: "{{ lookup('ansible.builtin.env', 'JUNOS_DEPLOY_STATE_FILE') }}"
+    junos_intent_runtime_dir: "{{ lookup('ansible.builtin.env', 'OPENBAO_RUNTIME_DIR') }}"
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Require the deployment state destination inside the protected runtime
+  ansible.builtin.assert:
+    that:
+      - junos_intent_runtime_dir | length > 0
+      - junos_intent_deploy_state_file == junos_intent_runtime_dir ~ '/junos/deploy-state'
+      - junos_intent_deploy_state_file.startswith(junos_intent_runtime_dir ~ '/')
+    fail_msg: "Deployment state must be written inside the protected OpenBao runtime."
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Read commit state before candidate modification
+  juniper.device.junos_command:
+    commands:
+      - show system commit
+  register: junos_intent_preflight_commit
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Isolate the newest preflight commit record
+  ansible.builtin.set_fact:
+    junos_intent_preflight_commit_record: >-
+      {{ (junos_intent_preflight_commit.stdout[0] | default('')).splitlines()
+         | select('match', '^[ ]*0[ ]+') | first | default('') }}
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Reject a preexisting pending confirmed commit
+  ansible.builtin.assert:
+    that:
+      - junos_intent_preflight_commit.stdout is defined
+      - junos_intent_preflight_commit.stdout | length == 1
+      - junos_intent_preflight_commit_record | trim | length > 0
+      - junos_intent_preflight_commit_record | lower is not search('commit confirmed|pending|rollback in')
+    fail_msg: "A pending confirmed commit already exists; wait for rollback or confirm it through its originating reviewed transaction before deploying."
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+- name: Normalize the current and reviewed candidate before loading
+  ansible.builtin.set_fact:
+    junos_intent_current_configuration: "{{ junos_intent_direct_reservations.stdout | from_json }}"
+    junos_intent_preload_reviewed_lines: >-
+      {{ junos_intent_fresh_candidate_lines
+         | select('match', '^set groups ANSIBLE_SRX1500 ')
+         | reject('search', ' protocols bgp group CILIUM authentication-key ')
+         | list | sort }}
+    junos_intent_preload_running_lines: >-
+      {{ (junos_intent_direct_reservations.stdout | from_json).group.splitlines()
+         | select('match', '^set groups ANSIBLE_SRX1500 ')
+         | reject('search', ' protocols bgp group CILIUM authentication-key ')
+         | list | sort }}
+    junos_intent_preload_reviewed_authentication_count: >-
+      {{ junos_intent_fresh_candidate_lines
+         | select('search', ' protocols bgp group CILIUM authentication-key ')
+         | list | length }}
+    junos_intent_preload_running_authentication_count: >-
+      {{ (junos_intent_direct_reservations.stdout | from_json).group.splitlines()
+         | select('search', ' protocols bgp group CILIUM authentication-key ')
+         | list | length }}
+    junos_intent_preload_reviewed_ordered_lines: >-
+      {{ junos_intent_fresh_candidate_lines
+         | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+         | list }}
+    junos_intent_preload_running_ordered_lines: >-
+      {{ (junos_intent_direct_reservations.stdout | from_json).group.splitlines()
+         | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
+         | list }}
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Extract reviewed pre-load policy order
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/../../scripts/junos_intent.py"
+      - --order-ids
+    stdin: "{{ junos_intent_preload_reviewed_ordered_lines | to_json }}"
+  register: junos_intent_preload_reviewed_order
+  changed_when: false
+  delegate_to: localhost
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Extract running pre-load policy order
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/../../scripts/junos_intent.py"
+      - --order-ids
+    stdin: "{{ junos_intent_preload_running_ordered_lines | to_json }}"
+  register: junos_intent_preload_running_order
+  changed_when: false
+  delegate_to: localhost
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Evaluate secret-safe convergence checks before candidate loading
+  ansible.builtin.set_fact:
+    junos_intent_convergence_checks:
+      managed_lines: "{{ junos_intent_preload_reviewed_lines == junos_intent_preload_running_lines }}"
+      reviewed_authentication: "{{ junos_intent_preload_reviewed_authentication_count | int == 1 }}"
+      running_authentication: "{{ junos_intent_preload_running_authentication_count | int == 1 }}"
+      apply_group: >-
+        {{ junos_intent_current_configuration.apply_groups.splitlines()
+           | map('trim') | reject('equalto', '') | list
+           == ['set apply-groups ANSIBLE_SRX1500'] }}
+      policy_order: >-
+        {{ (junos_intent_preload_reviewed_order.stdout | from_json)
+           == (junos_intent_preload_running_order.stdout | from_json) }}
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Detect a fully converged candidate before loading secrets
+  ansible.builtin.set_fact:
+    junos_intent_candidate_converged: >-
+      {{ junos_intent_convergence_checks.values() | reject('equalto', true) | list | length == 0 }}
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Report only failed pre-load convergence check names
+  ansible.builtin.debug:
+    msg: >-
+      {{ junos_intent_convergence_checks | dict2items
+         | rejectattr('value', 'equalto', true) | map(attribute='key') | list }}
+  when:
+    - junos_intent_operation == 'deploy'
+    - not (junos_intent_candidate_converged | bool)
+
+
 - name: Validate and review the candidate without activation
+  when: >-
+    junos_intent_operation != 'deploy'
+    or not (junos_intent_candidate_converged | default(false) | bool)
   block:
     - name: Load candidate and run commit-check without activation
       juniper.device.junos_config:
@@ -197,61 +357,75 @@
     src_format: set
     update: merge
     check_commit: false
-    # The pinned juniper.device NETCONF plugin serializes confirm-timeout in seconds.
-    confirm: 600
+    # juniper.device.junos_config expresses the confirmed rollback timer in minutes.
+    confirm: 10
     comment: "{{ junos_intent_commit_comment }}"
   register: junos_intent_deployment_result
   check_mode: false
-  when: junos_intent_operation == 'deploy'
+  when:
+    - junos_intent_operation == 'deploy'
+    - junos_intent_candidate_result.changed | default(false) | bool
   no_log: true
 
 - name: Reset the NETCONF session after a confirmed commit
   ansible.builtin.include_tasks: reset_connection.yml
-  when: junos_intent_operation == 'deploy'
+  when:
+    - junos_intent_operation == 'deploy'
+    - junos_intent_candidate_result.changed | default(false) | bool
 
 - name: Verify post-commit operational state
-  juniper.device.junos_command:
-    commands:
-      - show system commit
-      - show configuration groups ANSIBLE_SRX1500 | display set
-      - show configuration apply-groups | display set
-      - show interfaces terse | match 'irb[.]2510|irb[.]2512'
-      - show vlans VLAN-MGMT
-      - show route 0.0.0.0/0 exact
-      - show route table VR-XLSATU.inet.0 0.0.0.0/0 exact
-      - show security nat source rule all
-      - show configuration security policies | display set
-      - show bgp summary group CILIUM
-      - show route 10.25.20.0/24 exact
-  register: junos_intent_postcheck_result
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/../../scripts/read_operational.py"
+      - postcommit
+  register: junos_intent_postcheck_raw
+  changed_when: false
+  delegate_to: localhost
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Parse bounded post-commit operational evidence
+  ansible.builtin.set_fact:
+    junos_intent_postcheck_result: "{{ junos_intent_postcheck_raw.stdout | from_json }}"
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Read managed-group exclusions with a bounded NETCONF XPath
+  ansible.netcommon.netconf_rpc:
+    rpc: get-config
+    xmlns: urn:ietf:params:xml:ns:netconf:base:1.0
+    content: |
+      <source><running/></source>
+      <filter type="xpath" select="//*[local-name()='apply-groups-except' and normalize-space(.)='ANSIBLE_SRX1500']"/>
+  register: junos_intent_apply_groups_exceptions
   when: junos_intent_operation == 'deploy'
   no_log: true
 
 - name: Normalize the reviewed and running managed configuration
   ansible.builtin.set_fact:
+    junos_intent_postcheck_commit_record: "{{ junos_intent_postcheck_result.stdout[0] | default('') }}"
     junos_intent_reviewed_group_lines: >-
       {{ junos_intent_fresh_candidate_lines
          | select('match', '^set groups ANSIBLE_SRX1500 ')
-         | reject('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+         | reject('search', ' protocols bgp group CILIUM authentication-key ')
          | list | sort }}
-    junos_intent_reviewed_authentication_paths: >-
+    junos_intent_reviewed_authentication_count: >-
       {{ junos_intent_fresh_candidate_lines
-         | select('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
-         | map('regex_replace', '^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\\s+.+$', '\\1')
-         | list }}
+         | select('search', ' protocols bgp group CILIUM authentication-key ')
+         | list | length }}
     junos_intent_reviewed_apply_lines: >-
       {{ junos_intent_fresh_candidate_lines
          | select('match', '^set apply-groups ANSIBLE_SRX1500$') | list | sort }}
     junos_intent_running_group_lines: >-
       {{ junos_intent_postcheck_result.stdout[1].splitlines() | map('trim')
          | reject('equalto', '')
-         | reject('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+         | reject('search', ' protocols bgp group CILIUM authentication-key ')
          | list | sort }}
-    junos_intent_running_authentication_paths: >-
-      {{ junos_intent_postcheck_result.stdout[1].splitlines() | map('trim')
-         | select('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
-         | map('regex_replace', '^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\\s+.+$', '\\1')
-         | list }}
+    junos_intent_running_authentication_count: >-
+      {{ junos_intent_postcheck_result.stdout[1].splitlines()
+         | select('search', ' protocols bgp group CILIUM authentication-key ')
+         | list | length }}
     junos_intent_running_apply_lines: >-
       {{ junos_intent_postcheck_result.stdout[2].splitlines() | map('trim')
          | reject('equalto', '') | list | sort }}
@@ -265,28 +439,45 @@
          | list }}
   when: junos_intent_operation == 'deploy'
   no_log: true
+- name: Extract reviewed postcheck policy order
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/../../scripts/junos_intent.py"
+      - --order-ids
+    stdin: "{{ junos_intent_reviewed_ordered_lines | to_json }}"
+  register: junos_intent_reviewed_order
+  changed_when: false
+  delegate_to: localhost
+  when: junos_intent_operation == 'deploy'
+  no_log: true
 
-- name: Require the newest pending commit record and exact managed candidate
+- name: Extract running postcheck policy order
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/../../scripts/junos_intent.py"
+      - --order-ids
+    stdin: "{{ junos_intent_running_ordered_lines | to_json }}"
+  register: junos_intent_running_order
+  changed_when: false
+  delegate_to: localhost
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+
+- name: Require the exact managed candidate and common operational evidence
   ansible.builtin.assert:
     that:
       - junos_intent_postcheck_result.stdout is defined
       - junos_intent_postcheck_result.stdout | length == 11
-      - >-
-        (junos_intent_postcheck_result.stdout[0] | default('')
-         | regex_search('(?ms)^\\s*0\\s+.*?(?=\\n\\s*[0-9]+\\s+|\\Z)')
-         | default('')) is search('(?i)commit confirmed|pending|rollback in')
-      - >-
-        (junos_intent_postcheck_result.stdout[0] | default('')
-         | regex_search('(?ms)^\\s*0\\s+.*?(?=\\n\\s*[0-9]+\\s+|\\Z)')
-         | default('')
-         | regex_search('(?m)^\\s*Ansible candidate ' ~ junos_expected_digest ~ '\\s*$')) is not none
       - junos_intent_reviewed_group_lines | length > 0
       - junos_intent_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
       - junos_intent_running_group_lines == junos_intent_reviewed_group_lines
-      - junos_intent_reviewed_authentication_paths == ['set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key']
-      - junos_intent_running_authentication_paths == junos_intent_reviewed_authentication_paths
+      - junos_intent_reviewed_authentication_count | int == 1
+      - junos_intent_running_authentication_count | int == 1
       - junos_intent_running_apply_lines == junos_intent_reviewed_apply_lines
-      - junos_intent_running_ordered_lines == junos_intent_reviewed_ordered_lines
+      - (junos_intent_running_order.stdout | from_json) == (junos_intent_reviewed_order.stdout | from_json)
       - junos_intent_postcheck_result.stdout[3] is search('(?m)^\\s*irb[.]2510\\s+up\\s+up(?:\\s|$)')
       - junos_intent_postcheck_result.stdout[3] is search('(?m)^\\s*irb[.]2512\\s+up\\s+up(?:\\s|$)')
       - junos_intent_postcheck_result.stdout[4] is search('(?m)^\\s*\\S+\\s+VLAN-MGMT\\s+2510\\b')
@@ -306,8 +497,23 @@
       - junos_intent_postcheck_result.stdout[10] is search('10[.]25[.]20[.]0/24')
       - junos_intent_postcheck_result.stdout[10] is search('Discard')
       - junos_intent_postcheck_result.stdout[10] is search('[*>]')
-    fail_msg: "Post-commit evidence is missing, stale, or does not match the reviewed candidate."
+      - junos_intent_apply_groups_exceptions.stdout is defined
+      - junos_intent_apply_groups_exceptions.stdout is not search('apply-groups-except')
+    fail_msg: "Managed configuration or operational evidence does not match the reviewed candidate."
   when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Require the newest pending commit record for a changed candidate
+  ansible.builtin.assert:
+    that:
+      - junos_intent_postcheck_commit_record is search('(?i)commit confirmed|pending|rollback in')
+      - >-
+        junos_intent_postcheck_commit_record
+        is search('(?m)^[ ]*Ansible candidate ' ~ junos_expected_digest ~ '[ ]*$')
+    fail_msg: "Newest pending commit is not bound to the reviewed candidate."
+  when:
+    - junos_intent_operation == 'deploy'
+    - junos_intent_candidate_result.changed | default(false) | bool
   no_log: true
 
 - name: Require every reviewed security policy and action
@@ -334,6 +540,18 @@
     - set security policies from-zone PROD to-zone HOME policy PROD-BLOCK-HOME then deny
     - set security policies from-zone DEV to-zone HOME policy DEV-BLOCK-HOME then deny
     - set security policies default-policy deny-all
+  when: junos_intent_operation == 'deploy'
+  no_log: true
+
+- name: Publish the verified digest-bound deployment state
+  ansible.builtin.copy:
+    content: |
+      {{ 'pending' if (junos_intent_candidate_result.changed | default(false) | bool)
+         else 'converged' }} {{ junos_expected_digest }}
+    dest: "{{ junos_intent_deploy_state_file }}"
+    mode: "0600"
+    follow: false
+  delegate_to: localhost
   when: junos_intent_operation == 'deploy'
   no_log: true
 

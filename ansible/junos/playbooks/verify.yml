@@ -42,13 +42,12 @@
         verify_reviewed_group_lines: >-
           {{ verify_candidate_text.splitlines() | map('trim')
              | select('match', '^set groups ANSIBLE_SRX1500 ')
-             | reject('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+             | reject('search', ' protocols bgp group CILIUM authentication-key ')
              | list | sort }}
-        verify_reviewed_authentication_paths: >-
-          {{ verify_candidate_text.splitlines() | map('trim')
-             | select('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
-             | map('regex_replace', '^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\\s+.+$', '\\1')
-             | list }}
+        verify_reviewed_authentication_count: >-
+          {{ verify_candidate_text.splitlines()
+             | select('search', ' protocols bgp group CILIUM authentication-key ')
+             | list | length }}
         verify_reviewed_apply_lines: >-
           {{ verify_candidate_text.splitlines() | map('trim')
              | select('match', '^set apply-groups ANSIBLE_SRX1500$') | list | sort }}
@@ -74,38 +73,63 @@
           - verify_device_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
           - verify_device_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
     - name: Read commit, managed configuration, and required operational evidence
-      juniper.device.junos_command:
-        commands:
-          - show system commit
-          - show configuration groups ANSIBLE_SRX1500 | display set
-          - show configuration apply-groups | display set
-          - show interfaces terse | match 'irb[.]2510|irb[.]2512'
-          - show vlans VLAN-MGMT
-          - show route 0.0.0.0/0 exact
-          - show route table VR-XLSATU.inet.0 0.0.0.0/0 exact
-          - show security nat source rule all
-          - show configuration security policies | display set
-          - show bgp summary group CILIUM
-          - show route 10.25.20.0/24 exact
-      register: verify_operational
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/read_operational.py"
+          - postcommit
+      register: verify_operational_raw
+      changed_when: false
+      delegate_to: localhost
       no_log: true
+
+    - name: Parse bounded post-commit operational evidence
+      ansible.builtin.set_fact:
+        verify_operational: "{{ verify_operational_raw.stdout | from_json }}"
+      no_log: true
+
+    - name: Read managed-group exclusions with a bounded NETCONF XPath
+      ansible.netcommon.netconf_rpc:
+        rpc: get-config
+        xmlns: urn:ietf:params:xml:ns:netconf:base:1.0
+        content: |
+          <source><running/></source>
+          <filter type="xpath" select="//*[local-name()='apply-groups-except' and normalize-space(.)='ANSIBLE_SRX1500']"/>
+      register: verify_apply_groups_exceptions
+      no_log: true
+    - name: Read direct managed-pool reservations with bounded Junos commands
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/read_managed.py"
+      register: verify_direct_reservations
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Reject direct DHCP reservation ownership conflicts
+      ansible.builtin.assert:
+        that:
+          - (verify_direct_reservations.stdout | from_json).direct_reservation_paths is defined
+          - (verify_direct_reservations.stdout | from_json).direct_reservation_paths == []
+        fail_msg: >-
+          Direct DHCP reservation stanzas overlap ANSIBLE_SRX1500 ownership; refusing deployment
+          verification.
+      no_log: true
+
 
     - name: Isolate only the newest commit record and normalize running configuration
       ansible.builtin.set_fact:
-        verify_newest_commit_record: >-
-          {{ (verify_operational.stdout[0] | default(''))
-             | regex_search('(?ms)^\\s*0\\s+.*?(?=\\n\\s*[0-9]+\\s+|\\Z)')
-             | default('') }}
+        verify_newest_commit_record: "{{ verify_operational.stdout[0] | default('') }}"
         verify_running_group_lines: >-
           {{ verify_operational.stdout[1].splitlines() | map('trim')
              | reject('equalto', '')
-             | reject('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
+             | reject('search', ' protocols bgp group CILIUM authentication-key ')
              | list | sort }}
-        verify_running_authentication_paths: >-
-          {{ verify_operational.stdout[1].splitlines() | map('trim')
-             | select('match', '^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\\s+')
-             | map('regex_replace', '^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\\s+.+$', '\\1')
-             | list }}
+        verify_running_authentication_count: >-
+          {{ verify_operational.stdout[1].splitlines()
+             | select('search', ' protocols bgp group CILIUM authentication-key ')
+             | list | length }}
         verify_running_apply_lines: >-
           {{ verify_operational.stdout[2].splitlines() | map('trim')
              | reject('equalto', '') | list | sort }}
@@ -114,6 +138,30 @@
              | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
              | list }}
       no_log: true
+    - name: Extract reviewed verification policy order
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/junos_intent.py"
+          - --order-ids
+        stdin: "{{ verify_reviewed_ordered_lines | to_json }}"
+      register: verify_reviewed_order
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Extract running verification policy order
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/junos_intent.py"
+          - --order-ids
+        stdin: "{{ verify_running_ordered_lines | to_json }}"
+      register: verify_running_order
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
 
     - name: Require the newest pending commit and exact managed candidate
       ansible.builtin.assert:
@@ -123,15 +171,15 @@
           - verify_newest_commit_record | length > 0
           - verify_newest_commit_record | lower is search('commit confirmed|pending|rollback in')
           - >-
-            (verify_newest_commit_record
-             | regex_search('(?m)^\\s*Ansible candidate ' ~ junos_expected_digest ~ '\\s*$')) is not none
+            verify_newest_commit_record
+            is search('(?m)^[ ]*Ansible candidate ' ~ junos_expected_digest ~ '[ ]*$')
           - verify_reviewed_group_lines | length > 0
           - verify_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
           - verify_running_group_lines == verify_reviewed_group_lines
-          - verify_reviewed_authentication_paths == ['set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key']
-          - verify_running_authentication_paths == verify_reviewed_authentication_paths
+          - verify_reviewed_authentication_count | int == 1
+          - verify_running_authentication_count | int == 1
           - verify_running_apply_lines == verify_reviewed_apply_lines
-          - verify_running_ordered_lines == verify_reviewed_ordered_lines
+          - (verify_running_order.stdout | from_json) == (verify_reviewed_order.stdout | from_json)
         fail_msg: "Newest pending commit or complete managed configuration is not bound to this digest."
       no_log: true
 
@@ -162,6 +210,8 @@
           - verify_operational.stdout[10] is search('10[.]25[.]20[.]0/24')
           - verify_operational.stdout[10] is search('Discard')
           - verify_operational.stdout[10] is search('[*>]')
+          - verify_apply_groups_exceptions.stdout is defined
+          - verify_apply_groups_exceptions.stdout is not search('apply-groups-except')
         fail_msg: "Cilium peer configuration or active static discard fallback is incomplete."
       no_log: true
 

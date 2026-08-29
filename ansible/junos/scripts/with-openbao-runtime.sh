@@ -6,7 +6,7 @@ repo_dir="$(cd "$project_dir/../.." && pwd)"
 export ANSIBLE_CONFIG="$project_dir/ansible.cfg"
 export ANSIBLE_LOCAL_TEMP="$project_dir/.build/tmp/controller"
 export ANSIBLE_REMOTE_TEMP="$project_dir/.build/tmp/remote"
-unset SSH_AUTH_SOCK
+unset SSH_AUTH_SOCK JUNOS_DEPLOY_LOCK_HELD
 # shellcheck source=toolchain.sh
 source "$project_dir/scripts/toolchain.sh"
 cd "$project_dir"
@@ -33,7 +33,7 @@ case "$mode" in
         ;;
     live)
         case "${1:-}" in
-            scripts/deploy.sh|scripts/backup.sh)
+            scripts/deploy.sh|scripts/confirm-pending.sh|scripts/backup.sh)
                 [[ $# -eq 1 ]] || {
                     echo "live scripts do not accept trailing arguments" >&2
                     exit 2
@@ -49,7 +49,8 @@ case "$mode" in
                 elif [[ $# -eq 2 && "$2" == "playbooks/drift.yml" ]]; then
                     :
                 elif [[ $# -eq 2 &&
-                    ( "$2" == "playbooks/bgp-preflight.yml" ||
+                    ( "$2" == "playbooks/operational-verify.yml" ||
+                      "$2" == "playbooks/bgp-preflight.yml" ||
                       "$2" == "playbooks/bgp-verify.yml" ) ]]; then
                     :
                 elif [[ $# -eq 4 && "$2" == "playbooks/bgp-acceptance.yml" &&

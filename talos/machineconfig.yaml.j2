@@ -9,6 +9,10 @@ machine:
   features:
     apidCheckExtKeyUsage: true
     diskQuotaSupport: true
+    hostDNS:
+      enabled: true
+      forwardKubeDNSToHost: true
+      resolveMemberNames: true
     rbac: true
   token: {{ secrets.trustdinfo.token }}
 cluster:

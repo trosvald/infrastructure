@@ -5,6 +5,11 @@ cd "$project_dir"
 # shellcheck source=toolchain.sh
 source scripts/toolchain.sh
 [[ $# -eq 0 ]] || { echo "deploy does not accept trailing arguments" >&2; exit 2; }
+require_mise_tools python
+if [[ "${JUNOS_DEPLOY_LOCK_HELD:-}" != "1" ]]; then
+  exec python scripts/deploy_lock.py
+fi
+unset JUNOS_DEPLOY_LOCK_HELD
 adoption_file="$project_dir/adoption.yml"
 [[ -f "$adoption_file" && ! -L "$adoption_file" ]] || {
   echo "Fixed tracked adoption record is missing or unsafe" >&2
@@ -29,6 +34,12 @@ candidate_path="${JUNOS_CANDIDATE_FILE:-}"
   echo "Deployment candidate must be inside the protected OpenBao runtime" >&2
   exit 1
 }
+state_file="$OPENBAO_RUNTIME_DIR/junos/deploy-state"
+[[ "$state_file" == "$OPENBAO_RUNTIME_DIR/"* && ! -e "$state_file" && ! -L "$state_file" ]] || {
+  echo "Deployment state path is outside the protected runtime or already exists" >&2
+  exit 1
+}
+export JUNOS_DEPLOY_STATE_FILE="$state_file"
 render_result="$(scripts/render.sh --check 2>&1 >/dev/null)"
 emitted_digest="$(printf '%s\n' "$render_result" | sed -n 's/^sha256://p')"
 [[ -f "$candidate_path" && ! -L "$candidate_path" ]] || {
@@ -46,8 +57,26 @@ echo "Candidate SHA-256: $digest"
 read -r -p "Type 'srx1500 $digest' to deploy with commit-confirmed: " answer
 [[ "$answer" == "srx1500 $digest" ]] || { echo "Confirmation mismatch; aborted" >&2; exit 1; }
 ansible-playbook playbooks/live.yml \
-  -e operation=deploy -e "junos_intent_commit_comment=Ansible candidate $digest" \
-  -e "junos_expected_digest=$digest"
+  -e "{\"operation\":\"deploy\",\"junos_intent_commit_comment\":\"Ansible candidate $digest\",\"junos_expected_digest\":\"$digest\"}"
+[[ -f "$state_file" && ! -L "$state_file" ]] || {
+  echo "Deployment did not publish a regular state artifact" >&2
+  exit 1
+}
+deployment_state="$(cat "$state_file")"
+state_lines="$(wc -l < "$state_file" | tr -d '[:space:]')"
+state_bytes="$(wc -c < "$state_file" | tr -d '[:space:]')"
+[[ "$state_lines" == "1" && "$state_bytes" == "$((${#deployment_state} + 1))" ]] || {
+  echo "Deployment state artifact is malformed" >&2
+  exit 1
+}
+if [[ "$deployment_state" == "converged $digest" ]]; then
+  echo "Candidate already converged and operationally verified: $digest"
+  exit 0
+fi
+[[ "$deployment_state" == "pending $digest" ]] || {
+  echo "Deployment state artifact is not bound to the reviewed candidate" >&2
+  exit 1
+}
 ansible-playbook playbooks/verify.yml -e "junos_expected_digest=$digest"
 echo "Read-only verification succeeded for candidate SHA-256: $digest"
 read -r -p "Type 'confirm $digest' to confirm the pending Junos commit: " answer
@@ -56,5 +85,4 @@ read -r -p "Type 'confirm $digest' to confirm the pending Junos commit: " answer
   exit 1
 }
 ansible-playbook playbooks/confirm.yml \
-  -e "junos_commit_comment=Ansible candidate $digest" \
-  -e "junos_expected_digest=$digest"
+  -e "{\"junos_commit_comment\":\"Ansible candidate $digest\",\"junos_expected_digest\":\"$digest\"}"
