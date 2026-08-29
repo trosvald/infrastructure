@@ -171,6 +171,14 @@ and may require explicit confirmation.
   Native Windows and WSL paths under `/mnt/c` are unsupported.
 - `mise` 2026.8.11+ and `mise.lock` are mandatory. Do not substitute Homebrew/system binaries.
 - `just` is the sole task runner. Do not use `mise exec` as the repository execution interface.
+- Invoke recipes directly as `just ...` from the mise-activated project environment. Never wrap
+  `just` with `mise exec`, `mise x`, an absolute mise installation path, or a private pipx Python
+  interpreter. If a supervisor or subprocess lacks the activated toolchain `PATH`, run the recipe
+  from the normal project shell instead of reconstructing or bypassing the repository interface.
+- For an interactive recipe in automation, pipe only the exact reviewed response into bare
+  `just ...`; do not re-launch the recipe through `mise`. `mise exec` is permitted only where an
+  exact dependency-lock regeneration command is documented beside its input file, never to invoke
+  a Just recipe.
 - Python 3.13 runs Junos tooling. `uv` only resolves the hash-pinned
   `ansible/junos/requirements-controller.lock`; it is not a project runner.
 - Regenerate dependency locks only with the command documented beside their input file.
