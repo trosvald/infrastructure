@@ -460,7 +460,33 @@ def main() -> int:
                 "--force",
             ]
         )
-        os.chmod(output_dir / "talosconfig", 0o600)
+        talosconfig_path = output_dir / "talosconfig"
+        os.chmod(talosconfig_path, 0o600)
+        endpoints = [
+            item["bootstrap_address"]
+            for item in topology["nodes"]
+            if item["role"] == "controlplane"
+        ]
+        run(
+            [
+                "talosctl",
+                "--talosconfig",
+                str(talosconfig_path),
+                "config",
+                "endpoint",
+                *endpoints,
+            ]
+        )
+        run(
+            [
+                "talosctl",
+                "--talosconfig",
+                str(talosconfig_path),
+                "config",
+                "node",
+                str(node["bootstrap_address"]),
+            ]
+        )
 
     digest = hashlib.sha256(machine_path.read_bytes()).hexdigest()
     metadata = {
