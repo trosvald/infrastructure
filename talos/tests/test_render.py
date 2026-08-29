@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import hashlib
 from pathlib import Path
 import re
+import subprocess
 
 
 def digest(path: Path) -> str:
@@ -20,7 +22,17 @@ def main() -> int:
     args = parser.parse_args()
 
     fixture = args.fixture.read_text(encoding="utf-8")
+    fixture_data = json.loads(
+        subprocess.run(
+            ["yq", "-o=json", ".", str(args.fixture)],
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+        ).stdout
+    )
+    nodes = fixture_data["nodes"]
     machine_template = (args.talos_dir / "machineconfig.yaml.j2").read_text(encoding="utf-8")
+    networking_template = (args.talos_dir / "networking.yaml.j2").read_text(encoding="utf-8")
     normalized_machine_template = machine_template.replace('"', "")
     tracked = "\n".join(
         path.read_text(encoding="utf-8")
@@ -62,10 +74,11 @@ def main() -> int:
     )
     for pattern in forbidden:
         assert pattern not in tracked, f"tracked Talos source contains forbidden pattern: {pattern}"
-    assert "future_osd:" in fixture and fixture.count("size_bytes: 1000204886016") == 5
-    assert fixture.count("disk.size == 512110190592u") == 5
+    assert "future_osd:" in fixture
+    assert fixture.count("size_bytes: 1000204886016") == len(nodes)
+    assert fixture.count("disk.size == 512110190592u") == len(nodes)
     macs = re.findall(r'permanent_mac: "([0-9a-f:]+)"', fixture)
-    assert len(macs) == 10 and len(set(macs)) == 10
+    assert len(macs) == 2 * len(nodes) and len(set(macs)) == 2 * len(nodes)
     for legacy_field in (
         "  files:",
         "  install:",
@@ -85,27 +98,35 @@ def main() -> int:
         "  secretboxEncryptionSecret:",
     ):
         assert re.search(rf"(?m)^{re.escape(legacy_field)}", machine_template) is None, legacy_field
+    assert "hostDNS:" in machine_template
+    assert "forwardKubeDNSToHost: true" in machine_template
+    assert "resolveMemberNames: true" in machine_template
+    assert "hostDNS:" not in networking_template
     assert all(mac.startswith("02:") for mac in macs)
-    for index in range(1, 6):
-        assert f"bootstrap_address: 192.0.2.{100 + index}" in fixture
+    for node in nodes:
+        assert f"bootstrap_address: {node['bootstrap_address']}" in fixture
 
-    for index in range(1, 6):
-        hostname = f"bsd-k8s-{index:02d}"
+    for node in nodes:
+        hostname = node["hostname"]
         first_path = args.first / f"{hostname}.yaml"
         second_path = args.second / f"{hostname}.yaml"
         assert digest(first_path) == digest(second_path), f"{hostname}: nondeterministic digest"
         text = first_path.read_text(encoding="utf-8")
-        role = "controlplane" if index <= 3 else "worker"
-        address = f"198.51.100.{index + 10}/24"
-        bootstrap_address = f"192.0.2.{index + 100}/24"
+        role = node["role"]
+        address = f"{node['address']}/24"
+        bootstrap_address = f"{node['bootstrap_address']}/24"
+        localpv_serial = re.search(
+            r'disk\.serial == "([^"]+)"', node["localpv_disk"]["match"]
+        )
+        assert localpv_serial is not None
         assert f"hostname: {hostname}" in text
         assert f"type: {role}" in text
         assert address in text
         assert bootstrap_address in text
-        assert f"- 198.51.100.{index + 10}/32" in text
+        assert f"- {node['address']}/32" in text
         assert "kind: LinkConfig" in text
         assert "bondMode: active-backup" in text
-        assert f"hardwareAddr: '02:00:00:00:01:{index + 10}'" in text
+        assert f"hardwareAddr: '{node['links']['tor1']['permanent_mac']}'" in text
         assert "arpInterval: 1000" in text
         assert "arpValidate: active" in text
         assert "arpAllTargets: all" in text
@@ -115,12 +136,13 @@ def main() -> int:
         assert "enp1s0f0np0" in text and "enp1s0f1np1" in text
         assert "kind: LinkAliasConfig" not in text
         assert "metric: 1024" in text and "metric: 2048" in text
-        assert f"naa.fake-system-{index:02d}" in text
-        assert 'disk.bus_path.startsWith("/pci0000:00/ata1/")' in text
+        assert node["install_disk"]["wwid"] in text
+        install_bus_prefix = node["install_disk"]["bus_path_prefix"]
+        assert f'disk.bus_path.startsWith("{install_bus_prefix}")' in text
         assert "filesystem:" in text and "type: xfs" in text
-        assert f"FAKE-LOCALPV-{index:02d}" in text
-        assert f"FAKE-OSD-{index:02d}" not in text
-        assert 'bgp.monosense.io/enabled: "true"' in text
+        assert localpv_serial.group(1) in text
+        assert node["future_osd"]["serial"] not in text
+        assert 'bgp.monosense.io/enabled: \"true\"' in text
         assert "topology.monosense.io/site:" in text
         assert "topology.monosense.io/power-domain:" in text
         assert "topology.monosense.io/network-domain:" in text
@@ -207,13 +229,7 @@ def main() -> int:
                 "KubeTalosAPIAccessConfig",
             ):
                 assert f"kind: {kind}" in text
-            for san in (
-                "k8s.example.invalid",
-                "198.18.0.10",
-                "198.51.100.11",
-                "198.51.100.12",
-                "198.51.100.13",
-            ):
+            for san in fixture_data["cluster"]["api_sans"]:
                 assert san in text
             assert "node-role.kubernetes.io/control-plane" in text
         else:
@@ -222,7 +238,7 @@ def main() -> int:
             assert "kind: KubeEtcdEncryptionConfig" not in text
             assert "kind: KubeTalosAPIAccessConfig" not in text
             assert "node-role.kubernetes.io/worker" in text
-    print("Talos synthetic five-node renders are strict, deterministic, and validated")
+    print(f"Talos synthetic {len(nodes)}-node renders are strict, deterministic, and validated")
     return 0
 
 

@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_dir"
-for tool in python shasum yq; do
+for tool in jq python shasum yq; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "missing locked tool: $tool" >&2
         exit 1
@@ -35,5 +35,6 @@ python talos/scripts/build_topology.py \
     --validator talos/scripts/render.py \
     --output "$topology"
 chmod 0600 "$topology"
+node_count="$(jq -er '.nodes | length' "$topology")"
 digest="$(shasum -a 256 "$topology" | cut -d' ' -f1)"
-printf 'Protected five-node Talos inventory valid; topology_sha256=%s\n' "$digest"
+printf 'Protected %s-node Talos inventory valid; topology_sha256=%s\n' "$node_count" "$digest"

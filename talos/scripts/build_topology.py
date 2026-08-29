@@ -210,11 +210,32 @@ def main() -> int:
     args = parser.parse_args()
 
     decisions = load_decisions(args.decisions)
+    network_suffixes = {
+        int(match.group(1))
+        for path in args.inventory_dir.glob("network-*.yaml")
+        if (match := re.fullmatch(r"network-([0-9]+)[.]yaml", path.name))
+    }
+    disk_suffixes = {
+        int(match.group(1))
+        for path in args.inventory_dir.glob("disks-*.yaml")
+        if (match := re.fullmatch(r"disks-([0-9]+)[.]yaml", path.name))
+    }
+    if not network_suffixes or network_suffixes != disk_suffixes:
+        raise TopologyError("protected network and disk inventories must cover the same nodes")
+    indexes = [suffix - 10 for suffix in sorted(network_suffixes)]
+    if indexes != list(range(1, len(indexes) + 1)):
+        raise TopologyError("protected inventory node suffixes must be contiguous from 11")
+    nodes = [build_node(args.inventory_dir, index) for index in indexes]
+    api_sans = [
+        "k8s.monosense.io",
+        "10.25.20.10",
+        *(node["address"] for node in nodes if node["role"] == "controlplane"),
+    ]
     topology = {
         "cluster": {
             "name": "bsd-k8s",
             "endpoint": "https://k8s.monosense.io:6443",
-            "api_sans": ["k8s.monosense.io", "10.25.20.10", "10.25.11.11", "10.25.11.12", "10.25.11.13"],
+            "api_sans": api_sans,
             "snapshot_age_recipient": decisions["snapshot_age_recipient"],
         },
         "network": {"subnet": "10.25.11.0/24", "gateway": "10.25.11.1"},
@@ -225,7 +246,7 @@ def main() -> int:
             "kubernetes": "v1.36.2",
         },
         "approved_admin_sources": decisions["approved_admin_sources"],
-        "nodes": [build_node(args.inventory_dir, index) for index in range(1, 6)],
+        "nodes": nodes,
         "private_dns": ["10.25.13.35", "10.25.10.100"],
         "ntp_servers": ["time.cloudflare.com", "time.google.com", "0.id.pool.ntp.org"],
     }

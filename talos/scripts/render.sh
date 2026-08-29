@@ -12,18 +12,22 @@ if [[ "${1:-}" == "--authenticated" ]]; then
 fi
 action="${1:-}"
 hostname="${2:-}"
-[[ "$action" == "render" || "$action" == "apply-node" || "$action" == "verify-node" ]] || {
-    echo "usage: render.sh render|apply-node|verify-node bsd-k8s-0N" >&2
-    exit 2
-}
-[[ "$hostname" =~ ^bsd-k8s-0[1-5]$ && $# -eq 2 ]] || {
-    echo "Talos action requires exactly one known hostname" >&2
-    exit 2
-}
+case "$action" in
+    render|apply-node|verify-node)
+        [[ "$hostname" =~ ^bsd-k8s-[0-9]{2,}$ && $# -eq 2 ]] || {
+            echo "Talos action requires exactly one bsd-k8s-NN hostname" >&2
+            exit 2
+        }
+        ;;
+    *)
+        echo "usage: render.sh render|apply-node|verify-node bsd-k8s-NN" >&2
+        exit 2
+        ;;
+esac
 
 if [[ "$authenticated" == false ]]; then
     exec "$repo_dir/scripts/with-openbao-runtime.sh" \
-        talos/scripts/render.sh --authenticated "$action" "$hostname"
+        talos/scripts/render.sh --authenticated "$@"
 fi
 
 [[ -n "${OPENBAO_RUNTIME_DIR:-}" && -d "$OPENBAO_RUNTIME_DIR" &&
@@ -65,56 +69,68 @@ metadata="$(python "$talos_dir/scripts/render.py" \
     --output-dir "$runtime_dir" \
     --template-dir "$talos_dir")"
 printf '%s\n' "$metadata"
+talosconfig="$runtime_dir/talosconfig"
+
+node_field() {
+    local node_hostname="$1" expression="$2"
+    jq -er --arg hostname "$node_hostname" \
+        '.topology.nodes[] | select(.hostname == $hostname) | '"$expression" "$context_file"
+}
 
 verify_maintenance_target() {
+    local node_hostname="$1"
     local bootstrap disks links time_status install_model install_wwid install_bus_prefix install_size
     local localpv_match localpv_serial osd_serial tor1 tor2
-    bootstrap="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .bootstrap_address' "$context_file")"
-    install_model="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .install_disk.model' "$context_file")"
-    install_wwid="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .install_disk.wwid' "$context_file")"
-    install_bus_prefix="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .install_disk.bus_path_prefix' "$context_file")"
-    install_size="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .install_disk.size_bytes' "$context_file")"
-    localpv_match="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .localpv_disk.match' "$context_file")"
+    bootstrap="$(node_field "$node_hostname" '.bootstrap_address')"
+    install_model="$(node_field "$node_hostname" '.install_disk.model')"
+    install_wwid="$(node_field "$node_hostname" '.install_disk.wwid')"
+    install_bus_prefix="$(node_field "$node_hostname" '.install_disk.bus_path_prefix')"
+    install_size="$(node_field "$node_hostname" '.install_disk.size_bytes')"
+    localpv_match="$(node_field "$node_hostname" '.localpv_disk.match')"
     localpv_serial="${localpv_match##*disk.serial == \"}"
     localpv_serial="${localpv_serial%%\"*}"
-    osd_serial="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .future_osd.serial' "$context_file")"
-    tor1="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .links.tor1.permanent_mac' "$context_file")"
-    tor2="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .links.tor2.permanent_mac' "$context_file")"
+    osd_serial="$(node_field "$node_hostname" '.future_osd.serial')"
+    tor1="$(node_field "$node_hostname" '.links.tor1.permanent_mac')"
+    tor2="$(node_field "$node_hostname" '.links.tor2.permanent_mac')"
     disks="$(talosctl --nodes "$bootstrap" get disks --insecure --output yaml)"
     links="$(talosctl --nodes "$bootstrap" get linkstatus --insecure --output yaml)"
     time_status="$(talosctl --nodes "$bootstrap" get timestatus --insecure --output yaml)"
     [[ "$disks" == *"$install_model"* && "$disks" == *"$install_wwid"* &&
         "$disks" == *"$install_bus_prefix"* && "$disks" == *"$install_size"* &&
         "$disks" == *"$localpv_serial"* && "$disks" == *"$osd_serial"* ]] || {
-        echo "$hostname: live protected disk identities changed before apply" >&2
+        echo "$node_hostname: live protected disk identities changed before apply" >&2
         return 1
     }
     [[ "$links" == *"$tor1"* && "$links" == *"$tor2"* &&
         "$links" == *"speedMbit: 10000"* && "$time_status" == *"synced: true"* ]] || {
-        echo "$hostname: live X710 or NTP gate failed before apply" >&2
+        echo "$node_hostname: live X710 or NTP gate failed before apply" >&2
         return 1
     }
 }
 
-verify_node() {
-    local address bootstrap expected_version links routes addresses extensions modules volumes params watchdog disks
-    local localpv_match localpv_serial osd_serial ready=false
-    address="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .address' "$context_file")"
-    bootstrap="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .bootstrap_address' "$context_file")"
-    expected_version="$(jq -er '.topology.versions.talos' "$context_file")"
+wait_talos_api() {
+    local management_target="$1" ready=false
     for _ in {1..60}; do
-        if talosctl --talosconfig "$runtime_dir/talosconfig" --nodes "$address" version \
+        if talosctl --talosconfig "$talosconfig" --nodes "$management_target" version >/dev/null 2>&1; then
+            ready=true
+            break
+        fi
+        sleep 5
+    done
+    [[ "$ready" == true ]]
+}
+
+verify_node() {
+    local node_hostname="$1"
+    local address bootstrap expected_version expected_schematic links routes addresses extensions modules
+    local volumes params watchdog disks localpv_match localpv_serial osd_serial install_model
+    local install_wwid install_bus_prefix install_size tor1 tor2 extension_count ready=false
+    address="$(node_field "$node_hostname" '.address')"
+    bootstrap="$(node_field "$node_hostname" '.bootstrap_address')"
+    expected_version="$(jq -er '.topology.versions.talos' "$context_file")"
+    expected_schematic="$(jq -er '.topology.versions.schematic' "$context_file")"
+    for _ in {1..60}; do
+        if talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" version \
             >"$runtime_dir/server-version.txt" 2>/dev/null; then
             ready=true
             break
@@ -122,68 +138,138 @@ verify_node() {
         sleep 5
     done
     [[ "$ready" == true ]] || {
-        echo "$hostname: permanent Talos API did not become ready" >&2
+        echo "$node_hostname: Talos management API did not become ready" >&2
         return 1
     }
     [[ "$(<"$runtime_dir/server-version.txt")" == *"$expected_version"* ]] || {
-        echo "$hostname: installed Talos version differs from protected topology" >&2
+        echo "$node_hostname: installed Talos version differs from protected topology" >&2
         return 1
     }
-    links="$(talosctl --talosconfig "$runtime_dir/talosconfig" --nodes "$address" get linkstatus --output yaml)"
-    routes="$(talosctl --talosconfig "$runtime_dir/talosconfig" --nodes "$address" get routestatus --output yaml)"
-    addresses="$(talosctl --talosconfig "$runtime_dir/talosconfig" --nodes "$address" get addressstatus --output yaml)"
-    extensions="$(talosctl --talosconfig "$runtime_dir/talosconfig" --nodes "$address" get extensionstatus --output yaml)"
-    modules="$(talosctl --talosconfig "$runtime_dir/talosconfig" --nodes "$address" get loadedkernelmodules --output yaml)"
-    volumes="$(talosctl --talosconfig "$runtime_dir/talosconfig" --nodes "$address" get volumestatus --output yaml)"
-    params="$(talosctl --talosconfig "$runtime_dir/talosconfig" --nodes "$address" get kernelparams --output yaml)"
-    watchdog="$(talosctl --talosconfig "$runtime_dir/talosconfig" --nodes "$address" get watchdogtimerstatus --output yaml)"
-    disks="$(talosctl --talosconfig "$runtime_dir/talosconfig" --nodes "$address" get disks --output yaml)"
+    links="$(talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" get linkstatus --output yaml)"
+    routes="$(talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" get routestatus --output yaml)"
+    addresses="$(talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" get addressstatus --output yaml)"
+    extensions="$(talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" get extensionstatus --output yaml)"
+    modules="$(talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" get loadedkernelmodules --output yaml)"
+    volumes="$(talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" get volumestatus --output yaml)"
+    params="$(talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" get kernelparams --output yaml)"
+    watchdog="$(talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" get watchdogtimerstatus --output yaml)"
+    disks="$(talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" get disks --output yaml)"
+    tor1="$(node_field "$node_hostname" '.links.tor1.permanent_mac')"
+    tor2="$(node_field "$node_hostname" '.links.tor2.permanent_mac')"
     [[ "$links" == *"id: bond0"* && "$links" == *"mtu: 1496"* &&
-        "$links" == *"speedMbit: 10000"* ]] || {
-        echo "$hostname: bond or X710 link state differs from the reviewed contract" >&2
+        "$links" == *"$tor1"* && "$links" == *"$tor2"* &&
+        "$links" == *"speedMbit: 10000"* && "$links" == *"mode: active-backup"* ]] || {
+        echo "$node_hostname: bond or X710 link state differs from the reviewed contract" >&2
         return 1
     }
-    [[ "$routes" == *"gateway: 10.25.11.1"* && "$routes" == *"outLinkName: bond0"* ]] || {
-        echo "$hostname: permanent default route is absent from bond0" >&2
+    [[ "$routes" == *"gateway: 10.25.11.1"* && "$routes" == *"outLinkName: bond0"* &&
+        "$routes" == *"priority: 1024"* ]] || {
+        echo "$node_hostname: permanent default route is absent from bond0" >&2
         return 1
     }
     [[ "$addresses" == *"address: $address/24"* && "$addresses" == *"address: $bootstrap/24"* &&
         ! "$addresses" =~ address:\ 10[.]25[.]11[.]2[0-5][0-9]/24 ]] || {
-        echo "$hostname: static permanent/bootstrap addresses or DHCP exclusion failed" >&2
+        echo "$node_hostname: static permanent/bootstrap addresses or DHCP exclusion failed" >&2
         return 1
     }
-    [[ "$extensions" == *"intel-ucode"* && "$extensions" == *"i915"* &&
-        "$extensions" == *"nfsrahead"* && "$extensions" != *"iscsi"* ]] || {
-        echo "$hostname: installed schematic extensions differ from the reviewed set" >&2
+    extension_count="$(python -c \
+        'import sys; print(sys.stdin.read().count("type: ExtensionStatuses.runtime.talos.dev"))' \
+        <<<"$extensions")"
+    [[ "$extension_count" == 5 && "$extensions" == *"name: intel-ucode"* &&
+        "$extensions" == *"name: i915"* && "$extensions" == *"name: nfsrahead"* &&
+        "$extensions" == *"name: schematic"* && "$extensions" == *"name: modules.dep"* &&
+        "$extensions" == *"$expected_schematic"* && "$extensions" != *"iscsi"* ]] || {
+        echo "$node_hostname: installed schematic extensions differ from the reviewed set" >&2
         return 1
     }
     [[ "$modules" == *"id: i915"* && "$volumes" == *"id: u-local-hostpath"* &&
         "$params" == *"id: proc.sys.user.max_user_namespaces"* &&
         "$params" == *'current: "11255"'* && "$watchdog" == *"/dev/watchdog0"* ]] || {
-        echo "$hostname: iGPU, LocalPV, user namespace, or watchdog proof failed" >&2
+        echo "$node_hostname: iGPU, LocalPV, user namespace, or watchdog proof failed" >&2
         return 1
     }
-    localpv_match="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .localpv_disk.match' "$context_file")"
+    localpv_match="$(node_field "$node_hostname" '.localpv_disk.match')"
     localpv_serial="${localpv_match##*disk.serial == \"}"
     localpv_serial="${localpv_serial%%\"*}"
-    osd_serial="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .future_osd.serial' "$context_file")"
-    [[ "$disks" == *"$localpv_serial"* && "$disks" == *"$osd_serial"* ]] || {
-        echo "$hostname: LocalPV or raw future OSD disappeared after installation" >&2
+    osd_serial="$(node_field "$node_hostname" '.future_osd.serial')"
+    install_model="$(node_field "$node_hostname" '.install_disk.model')"
+    install_wwid="$(node_field "$node_hostname" '.install_disk.wwid')"
+    install_bus_prefix="$(node_field "$node_hostname" '.install_disk.bus_path_prefix')"
+    install_size="$(node_field "$node_hostname" '.install_disk.size_bytes')"
+    [[ "$disks" == *"$install_model"* && "$disks" == *"$install_wwid"* &&
+        "$disks" == *"$install_bus_prefix"* && "$disks" == *"$install_size"* &&
+        "$disks" == *"$localpv_serial"* && "$disks" == *"$osd_serial"* ]] || {
+        echo "$node_hostname: protected install, LocalPV, or future OSD disk disappeared" >&2
         return 1
     }
-    printf '{"hostname":"%s","permanent_api":"ready","network":"verified","hardware":"verified"}\n' \
-        "$hostname"
+    printf '{"hostname":"%s","management_api":"ready","network":"verified","hardware":"verified"}\n' \
+        "$node_hostname"
+}
+wait_verified_node() {
+    local node_hostname="$1" status_file error_file
+    status_file="$runtime_dir/$node_hostname-verify.json"
+    error_file="$runtime_dir/$node_hostname-verify.err"
+    for _ in {1..60}; do
+        if verify_node "$node_hostname" >"$status_file" 2>"$error_file"; then
+            cat "$status_file"
+            return
+        fi
+        sleep 5
+    done
+    cat "$error_file" >&2
+    return 1
 }
 
-if [[ "$action" == "apply-node" ]]; then
-    verify_maintenance_target
-    bootstrap_target="$(jq -er --arg hostname "$hostname" \
-        '.topology.nodes[] | select(.hostname == $hostname) | .bootstrap_address' "$context_file")"
-    talosctl --nodes "$bootstrap_target" apply-config --insecure \
-        --file "$runtime_dir/$hostname.yaml"
-    verify_node
-elif [[ "$action" == "verify-node" ]]; then
-    verify_node
-fi
+
+apply_one_node() {
+    local node_hostname="$1" bootstrap config members_file anchor_hostname anchor_bootstrap
+    bootstrap="$(node_field "$node_hostname" '.bootstrap_address')"
+    config="$runtime_dir/$node_hostname.yaml"
+
+    if talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" version >/dev/null 2>&1; then
+        wait_verified_node "$node_hostname" >/dev/null
+        talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" reboot --wait=false
+        wait_talos_api "$bootstrap" || {
+            echo "$node_hostname: Talos management API did not return after reboot" >&2
+            return 1
+        }
+        wait_verified_node "$node_hostname" >/dev/null
+        echo "$node_hostname: installed configuration verified; apply skipped"
+        return
+    fi
+
+    verify_maintenance_target "$node_hostname"
+    members_file="$runtime_dir/etcd-members.txt"
+    anchor_hostname="$(jq -er \
+        'first(.topology.nodes[] | select(.role == "controlplane") | .hostname)' \
+        "$context_file")"
+    anchor_bootstrap="$(node_field "$anchor_hostname" '.bootstrap_address')"
+    if talosctl --talosconfig "$talosconfig" --nodes "$anchor_bootstrap" get etcdmembers \
+        --output yaml >"$members_file" 2>/dev/null && [[ -s "$members_file" ]]; then
+        echo "Talos initial apply refuses an already bootstrapped etcd cluster" >&2
+        return 1
+    fi
+
+    talosctl --nodes "$bootstrap" apply-config --insecure --mode=auto --file "$config"
+    wait_talos_api "$bootstrap" || {
+        echo "$node_hostname: Talos management API did not become ready" >&2
+        return 1
+    }
+    wait_verified_node "$node_hostname" >/dev/null
+    talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" reboot --wait=false
+    wait_talos_api "$bootstrap" || {
+        echo "$node_hostname: Talos management API did not return after reboot" >&2
+        return 1
+    }
+    wait_verified_node "$node_hostname" >/dev/null
+    echo "$node_hostname: configuration applied and reboot persistence verified"
+}
+
+case "$action" in
+    apply-node)
+        apply_one_node "$hostname"
+        ;;
+    verify-node)
+        wait_verified_node "$hostname"
+        ;;
+esac
