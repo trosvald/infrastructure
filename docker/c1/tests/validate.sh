@@ -146,7 +146,7 @@ assert seen_services==expected_services
 assert seen_edge==expected_edge
 edge_interface=(root/".host/networks/edge/interfaces.d/c1-edge").read_text()
 assert "bond-mode" not in edge_interface and "vlan-raw-device bond0" in edge_interface
-assert "disable_ipv6=1" in edge_interface
+assert '/proc/sys/net/ipv6/conf/"$IFACE"/disable_ipv6' in edge_interface
 assert "ip -6 address flush dev $IFACE scope link" in edge_interface
 assert sorted(projects)==["edge","forgejo","librefs"]
 PY
