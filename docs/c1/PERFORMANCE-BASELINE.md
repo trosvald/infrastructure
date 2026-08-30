@@ -5,8 +5,8 @@ Status: mission live gates complete; final status `OPERATIONAL_WITHOUT_DURABILIT
 no off-host libreFS backup target/restore exists on c1 (no durability claim). User approved
 controlled c1 reboot; outage and SSH recovery observed. Post-reboot verification passed on both
 XFS noatime mounts and assertion units, Docker, c1 SERVICES network/shim, exact management
-default route, bond/VLAN/LACP two 10 Gb members with zero link-failure counts, Doco/OpenBao
-token/controller canaries, healthy pinned `librefs-c1` at `.65` with no host ports and
+default route, active-backup bond/VLAN with two 10 Gb members and zero link-failure counts,
+Doco/OpenBao token/controller canaries, healthy pinned `librefs-c1` at `.65` with no host ports and
 credential files UID/GID 1000 mode 0400. Exact-value leakage and writable-root containment
 scans passed again after reboot. S3 and performance matrices complete: pre-reboot 512 MiB
 same-host Docker-network S3 baseline on `c1_services` against libreFS — upload
@@ -22,6 +22,8 @@ optional bond-member failover; record intentionally not exercised, not a blocker
 `599fff0e01301d77f5a2e204bac5df9a519f1823` and the reviewed helper
 `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is installed `root:root` mode
 0755 on c1. No remaining live gates.
+Correction: c1 `bond0` is active-backup and has never been LACP. Any LACP, hashing, aggregator, or
+aggregate-capacity statement below is invalid; only the recorded end-to-end throughput is evidence.
 
 ## Pre-change evidence retained
 

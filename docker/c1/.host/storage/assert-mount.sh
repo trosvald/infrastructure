@@ -13,6 +13,10 @@ uuid="$(cat "$uuid_file")"; [[ "$uuid" =~ ^[[:alnum:]-]+$ ]] || exit 1
 mountpoint -q "$TARGET" || { printf 'ERROR: %s is not a mount\n' "$TARGET" >&2; exit 1; }
 read -r actual_uuid fstype options < <(findmnt -n -o UUID,FSTYPE,OPTIONS --target "$TARGET")
 [[ "$actual_uuid" == "$uuid" && "$fstype" == xfs && ",$options," == *,rw,* && ",$options," == *,noatime,* ]] || { printf 'ERROR: %s mount identity/state mismatch\n' "$TARGET" >&2; exit 1; }
+if [[ "$ROLE" == applications && ",$options," != *,prjquota,* ]]; then
+    printf 'ERROR: applications mount requires XFS project quotas\n' >&2
+    exit 1
+fi
 xfs_info "$TARGET" | grep -Eq 'ftype=1' || { printf 'ERROR: %s lacks XFS ftype=1\n' "$TARGET" >&2; exit 1; }
 if [[ "$ROLE" == librefs ]]; then
     [[ -d "$TARGET/data" && "$(stat -c '%u:%g:%a' "$TARGET/data")" == 1000:1000:750 ]] || { printf 'ERROR: libreFS data directory state mismatch\n' >&2; exit 1; }

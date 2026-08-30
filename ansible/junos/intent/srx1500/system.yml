@@ -29,6 +29,11 @@ system:
     - [file, messages, authorization, info]
     - [file, security-log, any, any]
     - [file, security-log, match, "RT_FLOW|RT_SCREEN"]
+    - [host, { topology: monitoring.vector_host }, any, any]
+    - [host, { topology: monitoring.vector_host }, port, 6514]
+    - [host, { topology: monitoring.vector_host }, transport, tls]
+    - [host, { topology: monitoring.vector_host }, source-address, { topology: networks.dev.gateway }]
+    - [host, { topology: monitoring.vector_host }, tlsdetails, trusted-ca-group, EDGE-SYSLOG-CA, ca-profiles, { topology: monitoring.syslog_ca_profile }]
   options:
     - [max-configurations-on-flash, 5]
     - [internet-options, no-source-quench]
@@ -37,3 +42,4 @@ system:
     - [license, autoupdate, url, "https://ae1.juniper.net/junos/key_retrieval"]
     - [services, ssh, macs, hmac-sha2-256]
     - [services, ssh, macs, hmac-sha2-512]
+    - [static-host-mapping, { topology: monitoring.vector_host }, inet, { topology: monitoring.vector_address }]

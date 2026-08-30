@@ -1,7 +1,7 @@
 $ORIGIN monosense.io.
 $TTL 300
 @ 300 IN SOA ns1.monosense.io. hostmaster.monosense.io. (
-  2026082503 ; serial
+  2026083001 ; serial
   3600       ; refresh
   600        ; retry
   604800     ; expire
@@ -11,10 +11,16 @@ $TTL 300
 c0 300 IN A 10.25.10.20
 adguard 300 IN A 10.25.10.100
 c1 300 IN A 10.25.10.101
-k1 300 IN A 10.25.11.11
-k2 300 IN A 10.25.11.12
-k3 300 IN A 10.25.11.13
-k4 300 IN A 10.25.11.14
-k5 300 IN A 10.25.11.15
+bsd-k8s-01 300 IN A 10.25.11.111
+bsd-k8s-02 300 IN A 10.25.11.112
+bsd-k8s-03 300 IN A 10.25.11.113
+bsd-k8s-04 300 IN A 10.25.11.114
+bsd-k8s-05 300 IN A 10.25.11.115
 ns1 300 IN A 10.25.13.33
 vault 300 IN A 10.25.13.34
+edge 300 IN A 10.25.15.10
+edge-test 300 IN A 10.25.15.10
+git 300 IN A 10.25.15.10
+s3 300 IN A 10.25.13.65
+status 300 IN A 10.25.13.36
+logs-ingest 300 IN A 10.25.13.37

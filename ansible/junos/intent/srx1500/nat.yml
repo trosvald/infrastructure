@@ -33,3 +33,15 @@ nat:
           source: { topology: networks.dev.subnet }
           destination: 0.0.0.0/0
           action: interface
+  destination_pools:
+    - { name: EDGE-SSH, address: { topology: networks.edge.haproxy_cidr }, port: 22 }
+    - { name: EDGE-HTTP, address: { topology: networks.edge.haproxy_cidr }, port: 80 }
+    - { name: EDGE-HTTPS, address: { topology: networks.edge.haproxy_cidr }, port: 443 }
+  destination_rules:
+    - name: WAN-MYREP-TO-EDGE
+      enabled: { topology: edge.public_enabled }
+      from_zone: WAN-MYREP
+      rules:
+        - { name: EDGE-SSH, destination: { topology: wan.secondary_public_cidr }, protocol: tcp, destination_port: 22, pool: EDGE-SSH }
+        - { name: EDGE-HTTP, destination: { topology: wan.secondary_public_cidr }, protocol: tcp, destination_port: 80, pool: EDGE-HTTP }
+        - { name: EDGE-HTTPS, destination: { topology: wan.secondary_public_cidr }, protocol: tcp, destination_port: 443, pool: EDGE-HTTPS }

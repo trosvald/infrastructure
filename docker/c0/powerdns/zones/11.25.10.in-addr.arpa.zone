@@ -1,15 +1,15 @@
 $ORIGIN 11.25.10.in-addr.arpa.
 $TTL 300
 @ 300 IN SOA ns1.monosense.io. hostmaster.monosense.io. (
-  2026082502 ; serial
+  2026083001 ; serial
   3600       ; refresh
   600        ; retry
   604800     ; expire
   300        ; minimum
 )
 @ 300 IN NS ns1.monosense.io.
-11 300 IN PTR k1.monosense.io.
-12 300 IN PTR k2.monosense.io.
-13 300 IN PTR k3.monosense.io.
-14 300 IN PTR k4.monosense.io.
-15 300 IN PTR k5.monosense.io.
+111 300 IN PTR bsd-k8s-01.monosense.io.
+112 300 IN PTR bsd-k8s-02.monosense.io.
+113 300 IN PTR bsd-k8s-03.monosense.io.
+114 300 IN PTR bsd-k8s-04.monosense.io.
+115 300 IN PTR bsd-k8s-05.monosense.io.

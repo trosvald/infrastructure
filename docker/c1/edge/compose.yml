@@ -1,0 +1,304 @@
+---
+# yamllint disable rule:braces
+# yamllint disable rule:commas
+name: edge-c1
+
+services:
+  haproxy:
+    image: docker.io/library/haproxy:3.2.23-alpine@sha256:0666a2c2f41d341084ed2da85392b48cdcd766adfa28231f31305724ed5c6ea5
+    platform: linux/amd64
+    container_name: haproxy-c1
+    user: "99:99"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    configs:
+      - { source: haproxy_config, target: /usr/local/etc/haproxy/haproxy.cfg, uid: "99", gid: "99", mode: 0440 }
+      - { source: crowdsec_agent, target: /usr/local/etc/haproxy/crowdsec.cfg, uid: "99", gid: "99", mode: 0440 }
+    volumes:
+      - type: bind
+        source: /srv/applications/apps/edge/tls/current
+        target: /run/tls
+        read_only: true
+        bind: { create_host_path: false }
+      - type: bind
+        source: /srv/applications/apps/edge/runtime
+        target: /run/haproxy
+        bind: { create_host_path: false }
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777
+      - /var/lib/haproxy:rw,nosuid,nodev,noexec,size=16m,mode=0750,uid=99,gid=99
+    networks:
+      c1_edge: { ipv4_address: 10.25.15.10 }
+      forgejo_frontend: {}
+      security: { ipv4_address: 172.30.15.17 }
+      echo: { ipv4_address: 172.30.15.49 }
+      telemetry: { ipv4_address: 172.30.15.33 }
+    healthcheck:
+      test: [CMD, haproxy, -c, -f, /usr/local/etc/haproxy/haproxy.cfg]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    cpus: 2.0
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 256
+    ulimits: { nofile: { soft: 65536, hard: 65536 } }
+    logging: &bounded_logs
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
+  crowdsec:
+    image: docker.io/crowdsecurity/crowdsec:v1.7.8@sha256:95a25d0f0fb92d96204e74fd48a5c4bd2c949b1b2a31769fa3487ad4769314e1
+    platform: linux/amd64
+    container_name: crowdsec-c1
+    user: "1000:1000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      COLLECTIONS: crowdsecurity/haproxy
+      AGENT_USERNAME: edge-c1
+      AGENT_PASSWORD: ${EDGE_CROWDSEC_LAPI_KEY:?required}
+      DISABLE_ONLINE_API: "true"
+      BOUNCER_KEY_spoa: ${EDGE_CROWDSEC_BOUNCER_KEY:?required}
+      DISABLE_AGENT: "false"
+    configs:
+      - { source: crowdsec_acquis, target: /etc/crowdsec/acquis.yaml, uid: "1000", gid: "1000", mode: 0440 }
+      - { source: crowdsec_appsec, target: /etc/crowdsec/acquis.d/appsec.yaml, uid: "1000", gid: "1000", mode: 0440 }
+    volumes:
+      - type: bind
+        source: /srv/applications/apps/edge/crowdsec-config
+        target: /etc/crowdsec
+        bind: { create_host_path: false }
+      - type: bind
+        source: /srv/applications/apps/edge/crowdsec
+        target: /var/lib/crowdsec/data
+        bind: { create_host_path: false }
+      - type: bind
+        source: /srv/applications/apps/edge/geolite
+        target: /var/lib/crowdsec/geolite
+        read_only: true
+        bind: { create_host_path: false }
+    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777]
+    networks:
+      security: { ipv4_address: 172.30.15.18 }
+    healthcheck:
+      test: [CMD, cscli, lapi, status]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    cpus: 1.0
+    mem_limit: 768m
+    memswap_limit: 768m
+    pids_limit: 256
+    logging: *bounded_logs
+
+  spoa:
+    image: docker.io/crowdsecurity/spoa-bouncer:v0.3.1@sha256:94707833e96caf215160c10dacfb9f13bf71d59136feb574cf425e84010f33f3
+    platform: linux/amd64
+    container_name: crowdsec-spoa-c1
+    user: "1000:1000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [-c, /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml]
+    configs:
+      - { source: spoa_config, target: /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml, uid: "1000", gid: "1000", mode: 0400 }
+    volumes:
+      - type: bind
+        source: /srv/applications/apps/edge/geolite
+        target: /var/lib/crowdsec/data
+        read_only: true
+        bind: { create_host_path: false }
+    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777]
+    networks:
+      security: { ipv4_address: 172.30.15.19 }
+    depends_on: { crowdsec: { condition: service_healthy } }
+    cpus: 0.5
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 128
+    logging: *bounded_logs
+
+  certbot:
+    image: docker.io/certbot/dns-cloudflare:v5.7.0@sha256:ed5e95feb4d64690df77b4628876f3b72ae856d6e0acd51927a2fd45baf1ccd2
+    platform: linux/amd64
+    container_name: certbot-edge-c1
+    user: "0:0"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    entrypoint: [/bin/sh, -ec]
+    command:
+      - >-
+        while :; do
+        certbot certonly --non-interactive --agree-tos --dns-cloudflare
+        --dns-cloudflare-credentials /run/secrets/cloudflare.ini
+        --email "$$(cat /run/secrets/acme_email)" --cert-name monosense-wildcard
+        -d '*.monosense.io' --keep-until-expiring;
+        python3 /usr/local/bin/install_certificate.py install
+        --lineage /etc/letsencrypt/live/monosense-wildcard
+        --target /run/edge-tls --hostname '*.monosense.io'
+        --min-valid-days 14 --uid 99 --gid 99 --combined;
+        python3 /usr/local/bin/publish_wildcard.py
+        --target /run/edge-tls --token-file /run/secrets/wildcard-publisher.token;
+        sleep 43200;
+        done
+    configs:
+      - { source: cloudflare_credentials, target: /run/secrets/cloudflare.ini, uid: "0", gid: "0", mode: 0400 }
+      - { source: acme_email, target: /run/secrets/acme_email, uid: "0", gid: "0", mode: 0400 }
+    extra_hosts: [vault.monosense.io:10.25.13.34]
+    volumes:
+      - type: bind
+        source: /srv/applications/apps/edge/letsencrypt
+        target: /etc/letsencrypt
+        bind: { create_host_path: false }
+      - type: bind
+        source: /srv/applications/apps/edge/tls
+        target: /run/edge-tls
+        bind: { create_host_path: false }
+      - ../../scripts/install_certificate.py:/usr/local/bin/install_certificate.py:ro
+      - ./scripts/publish-wildcard.py:/usr/local/bin/publish_wildcard.py:ro
+      - type: bind
+        source: /opt/edge/secrets/wildcard-publisher.token
+        target: /run/secrets/wildcard-publisher.token
+        read_only: true
+        bind: { create_host_path: false }
+    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777, /var/log/letsencrypt:rw,nosuid,nodev,noexec,size=32m,mode=0750]
+    networks: [outbound]
+    cpus: 0.5
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 128
+    logging: *bounded_logs
+
+  geoipupdate:
+    image: docker.io/maxmindinc/geoipupdate:v7.1.1@sha256:45e15eb310528fd308c5c0abee9a8e6d580f1e2b1251e960dec2863dc7f0102f
+    platform: linux/amd64
+    container_name: geoipupdate-c1
+    user: "1000:1000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command: [-f, /run/secrets/GeoIP.conf]
+    environment: { GEOIPUPDATE_FREQUENCY: "24" }
+    configs:
+      - { source: maxmind_config, target: /run/secrets/GeoIP.conf, uid: "1000", gid: "1000", mode: 0400 }
+    volumes:
+      - type: bind
+        source: /srv/applications/apps/edge/geolite
+        target: /usr/share/GeoIP
+        bind: { create_host_path: false }
+    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777]
+    networks: [outbound]
+    cpus: 0.25
+    mem_limit: 128m
+    memswap_limit: 128m
+    pids_limit: 64
+    logging: *bounded_logs
+
+  vector:
+    image: docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee
+    platform: linux/amd64
+    container_name: vector-c1
+    user: "1000:1000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    configs:
+      - { source: vector_config, target: /etc/vector/vector.yaml, uid: "1000", gid: "1000", mode: 0440 }
+      - { source: vector_token, target: /run/secrets/vector_token, uid: "1000", gid: "1000", mode: 0400 }
+    volumes:
+      - { type: bind, source: /srv/applications/apps/edge/logs, target: /var/log/edge, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/logs, target: /var/log/forgejo-stack, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/edge/tls/current, target: /run/tls, read_only: true, bind: { create_host_path: false } }
+    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777]
+    networks:
+      outbound: {}
+      telemetry: { ipv4_address: 172.30.15.34 }
+    healthcheck: { test: [CMD, vector, validate, --no-environment, /etc/vector/vector.yaml], interval: 30s, timeout: 5s, retries: 3 }
+    cpus: 0.5
+    mem_limit: 256m
+    memswap_limit: 256m
+    pids_limit: 128
+    logging: *bounded_logs
+
+  echo:
+    image: docker.io/mendhak/http-https-echo:39@sha256:96f9c17b35c4699d71567ec6037f2e3862f55c8b69492a7e2133774e4592dc9f
+    platform: linux/amd64
+    container_name: edge-echo-c1
+    user: "1000:1000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment: { HTTP_PORT: "8080", LOG_WITHOUT_NEWLINE: "true" }
+    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777]
+    networks:
+      echo: { ipv4_address: 172.30.15.50 }
+    cpus: 0.25
+    mem_limit: 128m
+    memswap_limit: 128m
+    pids_limit: 64
+    logging: *bounded_logs
+
+configs:
+  haproxy_config: { file: ./config/haproxy.cfg }
+  crowdsec_agent: { file: ./config/crowdsec.cfg }
+  crowdsec_acquis: { file: ./config/acquis.yaml }
+  crowdsec_appsec: { file: ./config/appsec.yaml }
+  spoa_config:
+    content: |
+      log_mode: stdout
+      log_level: info
+      update_frequency: 10s
+      api_url: http://crowdsec-c1:8080/
+      api_key: ${EDGE_CROWDSEC_BOUNCER_KEY:?required}
+      insecure_skip_verify: false
+      listen_tcp: 0.0.0.0:9000
+      asn_database_path: /var/lib/crowdsec/data/GeoLite2-ASN.mmdb
+      city_database_path: /var/lib/crowdsec/data/GeoLite2-City.mmdb
+      appsec_url: http://crowdsec-c1:7422
+      appsec_timeout: 200ms
+      hosts:
+        - { host: git.monosense.io, appsec: { always_send: false, timeout: 200ms } }
+        - { host: edge-test.monosense.io, appsec: { always_send: false, timeout: 200ms } }
+      prometheus:
+        enabled: false
+  cloudflare_credentials:
+    content: "dns_cloudflare_api_token = ${EDGE_CLOUDFLARE_DNS_TOKEN:?required}\n"
+  acme_email: { content: "${EDGE_ACME_EMAIL:?required}\n" }
+  maxmind_config:
+    content: |
+      AccountID ${EDGE_MAXMIND_ACCOUNT_ID:?required}
+      LicenseKey ${EDGE_MAXMIND_LICENSE_KEY:?required}
+      EditionIDs GeoLite2-ASN GeoLite2-City
+      DatabaseDirectory /usr/share/GeoIP
+  vector_token: { content: "${EDGE_VECTOR_INGEST_TOKEN:?required}\n" }
+  vector_config: { file: ./config/vector.yaml }
+
+networks:
+  c1_edge: { external: true, name: c1_edge }
+  forgejo_frontend: { external: true, name: c1_forgejo_frontend }
+  security:
+    internal: true
+    name: edge-c1-security
+    ipam: { config: [{ subnet: 172.30.15.16/28 }] }
+  echo:
+    internal: true
+    name: edge-c1-echo
+    ipam: { config: [{ subnet: 172.30.15.48/28 }] }
+  telemetry:
+    internal: true
+    name: edge-c1-telemetry
+    ipam: { config: [{ subnet: 172.30.15.32/28 }] }
+  outbound: { name: edge-c1-outbound }

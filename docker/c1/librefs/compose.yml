@@ -7,7 +7,7 @@ services:
     image: ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab
     platform: linux/amd64
     container_name: librefs-c1
-    command: ["server", "/data", "--console-address", ":9001"]
+    command: ["server", "/data", "--address", ":443", "--console-address", ":9001", "--certs-dir", "/certs/current"]
     user: "1000:1000"
     restart: "no"
     environment:
@@ -27,6 +27,8 @@ services:
         mode: 0400
     cap_drop:
       - ALL
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "443"
     security_opt:
       - no-new-privileges:true
     tmpfs:
@@ -35,6 +37,12 @@ services:
       - type: bind
         source: /srv/librefs/data
         target: /data
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /srv/librefs/certs
+        target: /certs
+        read_only: true
         bind:
           create_host_path: false
     networks:
@@ -46,10 +54,11 @@ services:
         - /usr/bin/bash
         - -ceu
         - >-
-          exec 3<>/dev/tcp/127.0.0.1/9000;
-          printf '%s\r\n' 'GET /minio/health/ready HTTP/1.0'
-          'Host: localhost' '' >&3;
-          IFS= read -r status <&3;
+          status="$$(printf '%s\r\n' 'GET /minio/health/ready HTTP/1.0'
+          'Host: s3.monosense.io' '' |
+          openssl s_client -connect 127.0.0.1:443 -servername s3.monosense.io
+          -verify_hostname s3.monosense.io -CAfile /certs/current/public.crt -quiet
+          2>/dev/null | { IFS= read -r line; printf '%s' "$$line"; })";
           [[ "$$status" == *" 200 "* ]]
       interval: 30s
       timeout: 5s

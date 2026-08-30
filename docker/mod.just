@@ -9,7 +9,7 @@ default:
     just -l docker
 
 [doc('Validate the c0 host-scoped Doco-CD configuration')]
-validate-c0: validate-openbao validate-powerdns validate-blocky validate-omada-controller
+validate-c0: validate-openbao validate-powerdns validate-blocky validate-omada-controller validate-monitoring
     cd "{{ source_directory() }}/.."
     yamllint .sops.yaml docker/c0/.doco-cd.yaml docker/c0/.doco-cd/docker-compose.app.yaml docker/c0/.doco-cd/poll-config.yml
     yq -e '.working_dir == "./docker/c0" and .auto_discovery.enabled == true and .auto_discovery.depth == 1 and .auto_discovery.delete == false and .force_recreate == false and .reconciliation.enabled == false' docker/c0/.doco-cd.yaml >/dev/null
@@ -38,9 +38,12 @@ validate-openbao:
     test "$(sops filestatus docker/c0/openbao/encrypted/cloudflare.ini | jq -r '.encrypted')" = true
     test "$(sops filestatus encrypted/monosense-infra.env | jq -r '.encrypted')" = true
     python3 docker/c0/openbao/policies/tests/test_monosense_infra_policy.py
-    bash -n scripts/with-openbao-runtime.sh scripts/provision-openbao-infra.sh scripts/provision-talos-records.sh talos/scripts/validate_inventory.sh
+    bash -n scripts/with-openbao-runtime.sh scripts/provision-openbao-infra.sh \
+        scripts/provision-junos-edge-topology.sh scripts/provision-talos-records.sh \
+        scripts/unseal-openbao.sh scripts/tests/test_unseal_openbao.sh \
+        talos/scripts/validate_inventory.sh
+    scripts/tests/test_unseal_openbao.sh
     python3 scripts/tests/test_openbao_provision.py
-    python3 scripts/tests/test_talos_record_provision.py
     python3 - <<'PY'
     from pathlib import Path
 
@@ -56,6 +59,7 @@ validate-openbao:
     PY
     docker run --rm --platform linux/amd64 --entrypoint python3 \
         --mount type=bind,src="$PWD/docker/c0/openbao",dst=/src,readonly \
+        --mount type=bind,src="$PWD/docker/scripts",dst=/scripts,readonly \
         --tmpfs /tmp:mode=1777 \
         certbot/dns-cloudflare:v5.7.0@sha256:ed5e95feb4d64690df77b4628876f3b72ae856d6e0acd51927a2fd45baf1ccd2 \
         -m unittest discover -s /src/tests -v
@@ -109,6 +113,19 @@ validate-powerdns:
     ' "$rendered" >/dev/null
 
 [private]
+validate-monitoring:
+    cd "{{ source_directory() }}/.."
+    yamllint docker/c0/monitoring/.doco-cd.yaml docker/c0/monitoring/compose.yml
+    yq -e '.name == "monitoring-c0"' docker/c0/monitoring/.doco-cd.yaml >/dev/null
+    bash -n docker/c0/monitoring/tests/validate.sh \
+        docker/c0/.host/openbao/update-wildcard-certificate.sh \
+        docker/c0/.host/openbao/install-wildcard-assets.sh \
+        docker/c0/.host/openbao/materialize-monitoring-secrets.sh
+    docker/c0/monitoring/tests/validate.sh
+    python3 -m py_compile docker/scripts/install_certificate.py \
+        docker/scripts/fetch_wildcard_certificate.py
+
+[private]
 validate-blocky:
     cd "{{ source_directory() }}/.."
     yamllint docker/c0/blocky/.doco-cd.yaml docker/c0/blocky/compose.yml docker/c0/blocky/config.yml
@@ -135,12 +152,13 @@ validate-blocky:
         and .upstreams.timeout == "3s"
         and .connectIPVersion == "v4"
         and .conditional.fallbackUpstream == false
-        and (.conditional.mapping | length) == 5
+        and (.conditional.mapping | length) == 6
         and .conditional.mapping."monosense.io" == "10.25.13.33"
         and .conditional.mapping."10.25.10.in-addr.arpa" == "10.25.13.33"
         and .conditional.mapping."11.25.10.in-addr.arpa" == "10.25.13.33"
         and .conditional.mapping."12.25.10.in-addr.arpa" == "10.25.13.33"
         and .conditional.mapping."13.25.10.in-addr.arpa" == "10.25.13.33"
+        and .conditional.mapping."15.25.10.in-addr.arpa" == "10.25.13.33"
         and (.blocking.denylists.default | length) == 1
         and .blocking.denylists.default[0] == "https://raw.githubusercontent.com/hagezi/dns-blocklists/a3d0c5c7a0402f669f3f1392527b8a50622128cf/wildcard/multi.txt"
         and (.blocking.allowlists.default | length) == 1
@@ -149,6 +167,7 @@ validate-blocky:
         and (.blocking.allowlists.default[0] | contains("11.25.10.in-addr.arpa\n*.11.25.10.in-addr.arpa\n"))
         and (.blocking.allowlists.default[0] | contains("12.25.10.in-addr.arpa\n*.12.25.10.in-addr.arpa\n"))
         and (.blocking.allowlists.default[0] | contains("13.25.10.in-addr.arpa\n*.13.25.10.in-addr.arpa\n"))
+        and (.blocking.allowlists.default[0] | contains("15.25.10.in-addr.arpa\n*.15.25.10.in-addr.arpa\n"))
         and (.blocking.clientGroupsBlock.default | length) == 1
         and .blocking.clientGroupsBlock.default[0] == "default"
         and .blocking.blockType == "nxDomain"

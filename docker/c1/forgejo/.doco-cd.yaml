@@ -1,0 +1,15 @@
+---
+name: forgejo-c1
+external_secrets:
+  FORGEJO_POSTGRES_PASSWORD: kv:kv:docker/c1/forgejo:postgres_password
+  FORGEJO_SECRET_KEY: kv:kv:docker/c1/forgejo:forgejo_secret_key
+  FORGEJO_INTERNAL_TOKEN: kv:kv:docker/c1/forgejo:forgejo_internal_token
+  FORGEJO_JWT_SECRET: kv:kv:docker/c1/forgejo:forgejo_jwt_secret
+  FORGEJO_LFS_JWT_SECRET: kv:kv:docker/c1/forgejo:forgejo_lfs_jwt_secret
+  FORGEJO_BOOTSTRAP_ADMIN_PASSWORD: kv:kv:docker/c1/forgejo:bootstrap_admin_password
+  FORGEJO_BOOTSTRAP_ADMIN_EMAIL: kv:kv:docker/c1/forgejo:bootstrap_admin_email
+  FORGEJO_ZOHO_USERNAME: kv:kv:docker/c1/forgejo:zoho_username
+  FORGEJO_ZOHO_PASSWORD: kv:kv:docker/c1/forgejo:zoho_password
+  FORGEJO_KOPIA_REPOSITORY_PASSWORD: kv:kv:docker/c1/forgejo:kopia_repository_password
+  FORGEJO_LIBREFS_ACCESS_KEY: kv:kv:docker/c1/forgejo:librefs_access_key
+  FORGEJO_LIBREFS_SECRET_KEY: kv:kv:docker/c1/forgejo:librefs_secret_key

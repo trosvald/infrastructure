@@ -43,7 +43,7 @@ case "$name" in
   elif [[ "$*" == *' -o UUID,FSTYPE,OPTIONS '* && "$*" == *'/srv/librefs'* ]]; then
    if [[ "${FAIL:-}" == relatime && ! -e "$FAKE_STATE/noatime-librefs" ]]; then echo 'canary-librefs-uuid xfs rw,relatime'; else echo 'canary-librefs-uuid xfs rw,noatime'; fi
   elif [[ "$*" == *' -o UUID,FSTYPE,OPTIONS '* && "$*" == *'/srv/applications'* ]]; then
-   if [[ "${FAIL:-}" == relatime && ! -e "$FAKE_STATE/noatime-applications" ]]; then echo 'canary-applications-uuid xfs rw,relatime'; else echo 'canary-applications-uuid xfs rw,noatime'; fi
+   if [[ "${FAIL:-}" == relatime && ! -e "$FAKE_STATE/noatime-applications" ]]; then echo 'canary-applications-uuid xfs rw,relatime,prjquota'; else echo 'canary-applications-uuid xfs rw,noatime,prjquota'; fi
   else exit 91
   fi ;;
  wipefs) if [[ "${FAIL:-}" == signature || ( "${FAIL:-}" == partial-signature && "${@: -1}" == *p1 ) ]]; then echo '{"signatures":[{"type":"ext4","offset":"0x1"}]}'; else echo '{"signatures":[]}'; fi ;;

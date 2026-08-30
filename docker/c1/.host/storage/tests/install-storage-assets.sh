@@ -44,10 +44,18 @@ run apply
 run check
 run apply
 grep -Fx 'daemon-reload' "$SYSTEMCTL_LOG" >/dev/null
-grep -Fx 'enable c1-librefs-storage.service c1-applications-storage.service librefs-c1.service' \
+grep -Fx 'enable c1-librefs-storage.service c1-applications-storage.service c1-forgejo-quotas.service c1-edge-state.service librefs-c1.service forgejo-backup.timer' \
     "$SYSTEMCTL_LOG" >/dev/null
 [[ -x "$work/sbin/manage-c1-librefs" ]]
 [[ -f "$work/systemd/librefs-c1.service" ]]
+[[ -x "$work/sbin/ensure-forgejo-quotas" ]]
+[[ -x "$work/sbin/ensure-c1-edge-state" ]]
+[[ -f "$work/systemd/c1-forgejo-quotas.service" ]]
+[[ -f "$work/systemd/c1-edge-state.service" ]]
+[[ -x "$work/sbin/backup-c1-forgejo" ]]
+[[ -x "$work/sbin/haproxy-runtime-c1-forgejo.py" ]]
+[[ -f "$work/systemd/forgejo-backup.service" ]]
+[[ -f "$work/systemd/forgejo-backup.timer" ]]
 printf '%s\n' 'changed' >"$work/systemd/c1-applications-storage.service"
 must_fail apply
 [[ "$(cat "$work/systemd/c1-applications-storage.service")" == changed ]]

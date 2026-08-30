@@ -140,6 +140,8 @@ _PATH_LEAVES = frozenset(
         "default-policy",
         "description",
         "destination-address",
+        "destination-nat",
+        "destination-port",
         "dhcp",
         "dhcp-attributes",
         "domain-name",
@@ -179,6 +181,7 @@ _PATH_LEAVES = frozenset(
         "pool",
         "prefer",
         "policy-statement",
+        "port",
         "protocol",
         "protocol-version",
         "range",
@@ -516,14 +519,40 @@ def render_routing(data: dict[str, Any]) -> list[str]:
 
 def render_nat(data: dict[str, Any]) -> list[str]:
     out: list[str] = []
-    for ruleset in data["nat"].get("source_rules", []):
+    nat = data["nat"]
+    for ruleset in nat.get("source_rules", []):
         base = ("security", "nat", "source", "rule-set", ruleset["name"])
         zones = ruleset["from_zone"] if isinstance(ruleset["from_zone"], list) else [ruleset["from_zone"]]
         out += [cmd(*base, "from", "zone", zone) for zone in zones]
         out.append(cmd(*base, "to", "zone", ruleset["to_zone"]))
         for rule in ruleset["rules"]:
             rb = (*base, "rule", rule["name"])
-            out.extend([cmd(*rb, "match", "source-address", rule["source"]), cmd(*rb, "match", "destination-address", rule["destination"]), cmd(*rb, "then", "source-nat", rule["action"])])
+            out.extend([
+                cmd(*rb, "match", "source-address", rule["source"]),
+                cmd(*rb, "match", "destination-address", rule["destination"]),
+                cmd(*rb, "then", "source-nat", rule["action"]),
+            ])
+    if any(ruleset.get("enabled", True) for ruleset in nat.get("destination_rules", [])):
+        for pool in nat.get("destination_pools", []):
+            out.append(
+                cmd(
+                    "security", "nat", "destination", "pool", pool["name"],
+                    "address", pool["address"], "port", pool["port"],
+                )
+            )
+    for ruleset in nat.get("destination_rules", []):
+        if not ruleset.get("enabled", True):
+            continue
+        base = ("security", "nat", "destination", "rule-set", ruleset["name"])
+        out.append(cmd(*base, "from", "zone", ruleset["from_zone"]))
+        for rule in ruleset["rules"]:
+            rb = (*base, "rule", rule["name"])
+            out.extend([
+                cmd(*rb, "match", "destination-address", rule["destination"]),
+                cmd(*rb, "match", "destination-port", rule["destination_port"]),
+                cmd(*rb, "match", "protocol", rule["protocol"]),
+                cmd(*rb, "then", "destination-nat", "pool", rule["pool"]),
+            ])
     return out
 
 
@@ -540,12 +569,21 @@ def render_security(data: dict[str, Any]) -> list[str]:
     if flow.get("tcp_mss"):
         mss = flow["tcp_mss"]
         out.append(cmd("security", "flow", "tcp-mss", mss.get("scope", "all-tcp"), "mss", mss["value"]))
+    for profile in security.get("pki_ca_profiles", []):
+        out.append(
+            cmd(
+                "security", "pki", "ca-profile", profile["name"],
+                "ca-identity", profile["ca_identity"],
+            )
+        )
     for zone in security["zones"]:
         base = ("security", "zones", "security-zone", zone["name"])
         if zone.get("screen"):
             out.append(cmd(*base, "screen", zone["screen"]))
         for interface in zone["interfaces"]:
             interface_base = (*base, "interfaces", interface)
+            if not zone.get("services") and not zone.get("protocols"):
+                out.append(cmd(*interface_base))
             out += [
                 cmd(*interface_base, "host-inbound-traffic", "system-services", service)
                 for service in zone.get("services", [])
@@ -555,6 +593,8 @@ def render_security(data: dict[str, Any]) -> list[str]:
                 for protocol in zone.get("protocols", [])
             ]
     for policy in security["policies"]:
+        if not policy.get("enabled", True):
+            continue
         base = ("security", "policies", "from-zone", policy["from"], "to-zone", policy["to"], "policy", policy["name"])
         out += [cmd(*base, "match", "source-address", item) for item in policy["source"]]
         out += [cmd(*base, "match", "destination-address", item) for item in policy["destination"]]
@@ -588,6 +628,9 @@ def parse_address(value: Any, label: str) -> ipaddress._BaseAddress:
 def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], refs: set[str] | None = None) -> None:
     refs = refs or set()
     unsafe_refs = sorted(ref for ref in refs if "blocky" in ref.lower())
+    synthetic_topology = parse_address(
+        topology["management_address"], "management_address"
+    ) in ipaddress.ip_network("203.0.113.0/24")
     if unsafe_refs:
         raise IntentError(f"DNS topology must use the managed resolver field, not Blocky: {', '.join(unsafe_refs)}")
     if not {"dns.internal", "dns.internal_cidr"}.issubset(refs):
@@ -642,6 +685,61 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
     c0_units = c0.get("units", [])
     if len(c0_units) != 1 or c0_units[0].get("mode") != "trunk" or set(c0_units[0].get("vlans", [])) != {"VLAN-MGMT", "VLAN-DEV"}:
         raise IntentError("ge-0/0/2 trunk must carry exactly VLAN-MGMT and VLAN-DEV")
+    edge_vlan = next((vlan for vlan in vlans if vlan["name"] == "VLAN-EDGE"), None)
+    if edge_vlan != {
+        "name": "VLAN-EDGE",
+        "id": 2515,
+        "irb_unit": 2515,
+        "description": "Edge DMZ VLAN",
+    }:
+        raise IntentError("VLAN-EDGE must retain ID and IRB unit 2515")
+    for tor_name in ("xe-0/0/18", "xe-0/0/19"):
+        tor = next((item for item in interfaces if item["name"] == tor_name), None)
+        if not tor or tor.get("native_vlan") != 2510:
+            raise IntentError(f"{tor_name}: TOR trunk and native VLAN 2510 are required")
+        tor_units = tor.get("units", [])
+        expected_tor_vlans = {"VLAN-MGMT", "VLAN-PROD", "VLAN-HOME", "VLAN-DEV", "VLAN-EDGE"}
+        if (
+            len(tor_units) != 1
+            or tor_units[0].get("mode") != "trunk"
+            or set(tor_units[0].get("vlans", [])) != expected_tor_vlans
+        ):
+            raise IntentError(f"{tor_name}: must carry the four internal VLANs and VLAN-EDGE")
+    edge_irb = next(
+        (
+            unit
+            for interface in interfaces
+            if interface["name"] == "irb"
+            for unit in interface["units"]
+            if unit["unit"] == 2515
+        ),
+        None,
+    )
+    expected_edge_gateway = "198.18.1.1/24" if synthetic_topology else "10.25.15.1/24"
+    if (
+        edge_irb is None
+        or edge_irb.get("family") != "inet"
+        or edge_irb.get("mtu") != 1496
+        or edge_irb.get("address") != expected_edge_gateway
+    ):
+        raise IntentError("irb.2515 must be the reviewed EDGE gateway with MTU 1496")
+    expected_edge_network = parse_network(
+        "198.18.1.0/24" if synthetic_topology else "10.25.15.0/24",
+        "approved EDGE subnet",
+    )
+    edge_network = parse_network(dotted(topology, "networks.edge.subnet"), "EDGE subnet")
+    edge_gateway = parse_address(dotted(topology, "networks.edge.gateway"), "EDGE gateway")
+    edge_haproxy = parse_address(dotted(topology, "networks.edge.haproxy"), "EDGE HAProxy")
+    if (
+        edge_network != expected_edge_network
+        or edge_gateway != parse_address(expected_edge_gateway, "approved EDGE gateway")
+        or edge_haproxy != parse_address(
+            "198.18.1.10" if synthetic_topology else "10.25.15.10",
+            "approved EDGE HAProxy",
+        )
+        or edge_haproxy not in edge_network
+    ):
+        raise IntentError("EDGE topology must retain the reviewed subnet, gateway, and HAProxy")
 
     pools = intent["dhcp"]["dhcp"]["pools"]
     unique(pools, "name", "DHCP pool")
@@ -706,12 +804,50 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
     prod_zone = next(zone for zone in zones if zone["name"] == "PROD")
     if prod_zone["interfaces"] != ["irb.2511"]:
         raise IntentError("PROD BGP host-inbound must terminate only on irb.2511")
+    edge_zone = next((zone for zone in zones if zone["name"] == "EDGE"), None)
+    if edge_zone != {"name": "EDGE", "interfaces": ["irb.2515"]}:
+        raise IntentError("EDGE must contain only irb.2515 with no host-inbound services")
     screens = intent["security"]["security"].get("screens", [])
     unique(screens, "name", "screen")
     screen_names = {screen["name"] for screen in screens}
     for zone in zones:
         if zone.get("screen") and zone["screen"] not in screen_names:
             raise IntentError(f"zone {zone['name']}: undefined screen")
+    expected_vector_address = "198.18.2.37" if synthetic_topology else "10.25.13.37"
+    expected_vector_host = (
+        "logs-ingest.example.invalid" if synthetic_topology else "logs-ingest.monosense.io"
+    )
+    expected_ca_profile = "SYNTHETIC-ISRG-ROOT-X1" if synthetic_topology else "LE-ISRG-ROOT-X1"
+    if (
+        dotted(topology, "monitoring.vector_address") != expected_vector_address
+        or dotted(topology, "monitoring.vector_host") != expected_vector_host
+        or dotted(topology, "monitoring.syslog_ca_profile") != expected_ca_profile
+    ):
+        raise IntentError("Vector syslog target and exact CA profile must retain the reviewed contract")
+    if intent["security"]["security"].get("pki_ca_profiles") != [
+        {"name": expected_ca_profile, "ca_identity": expected_ca_profile}
+    ]:
+        raise IntentError("SRX syslog CA profile must retain the reviewed identity")
+    expected_remote_syslog = [
+        ["host", expected_vector_host, "any", "any"],
+        ["host", expected_vector_host, "port", 6514],
+        ["host", expected_vector_host, "transport", "tls"],
+        ["host", expected_vector_host, "source-address", dotted(topology, "networks.dev.gateway")],
+        [
+            "host",
+            expected_vector_host,
+            "tlsdetails",
+            "trusted-ca-group",
+            "EDGE-SYSLOG-CA",
+            "ca-profiles",
+            expected_ca_profile,
+        ],
+    ]
+    syslog_rows = intent["system"]["system"].get("syslog", [])
+    if any(row not in syslog_rows for row in expected_remote_syslog):
+        raise IntentError("SRX syslog must use exact TLS target, source, port, and CA profile")
+    if any("trusted-ca" in str(token) and token == "all" for row in syslog_rows for token in row):
+        raise IntentError("SRX syslog cannot trust every CA")
     addresses = intent["security"]["security"].get("address_books", [])
     unique(addresses, "name", "global address-book entry")
     address_names = {address["name"] for address in addresses}
@@ -719,9 +855,21 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
     expected_dns_cidr = parse_network(f"{dns_internal}/32", "dns.internal")
     if len(dns_entries) != 1 or parse_network(dns_entries[0]["value"], "MGMT-DNS") != expected_dns_cidr:
         raise IntentError("global MGMT-DNS address must match dns.internal as an exact /32")
+    expected_addresses = {
+        "EDGE-HAPROXY": "198.18.1.10/32" if synthetic_topology else "10.25.15.10/32",
+        "C0-GATUS": "198.18.2.36/32" if synthetic_topology else "10.25.13.36/32",
+        "C0-VECTOR": "198.18.2.37/32" if synthetic_topology else "10.25.13.37/32",
+    }
+    for name, expected in expected_addresses.items():
+        entries = [address for address in addresses if address["name"] == name]
+        if len(entries) != 1 or parse_network(entries[0]["value"], name) != parse_network(expected, name):
+            raise IntentError(f"global {name} address must remain the reviewed exact /32")
 
     policies = intent["security"]["security"]["policies"]
     unique(policies, "name", "security policy")
+    public_enabled = dotted(topology, "edge.public_enabled")
+    if not isinstance(public_enabled, bool):
+        raise IntentError("edge.public_enabled must be a boolean deployment gate")
     for policy in policies:
         if policy["from"] not in zone_names or policy["to"] not in zone_names:
             raise IntentError(f"policy {policy['name']}: undefined zone")
@@ -733,6 +881,49 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
             raise IntentError(f"policy {policy['name']}: undefined address-book reference")
         if any(event not in {"session-init", "session-close"} for event in policy.get("log", [])):
             raise IntentError(f"policy {policy['name']}: unsupported log event")
+        if "enabled" in policy and not isinstance(policy["enabled"], bool):
+            raise IntentError(f"policy {policy['name']}: enabled must resolve to a boolean")
+    public_policy = next((policy for policy in policies if policy["name"] == "WAN-EDGE-PUBLIC"), None)
+    if (
+        public_policy is None
+        or public_policy.get("enabled") is not public_enabled
+        or public_policy["from"] != "WAN-MYREP"
+        or public_policy["to"] != "EDGE"
+        or public_policy["source"] != ["any"]
+        or public_policy["destination"] != ["EDGE-HAPROXY"]
+        or public_policy["applications"] != ["junos-ssh", "junos-http", "junos-https"]
+        or public_policy["action"] != "permit"
+        or public_policy["log"] != ["session-init", "session-close"]
+    ):
+        raise IntentError("WAN to EDGE policy must retain the exact gated public contract")
+    expected_internal_edge = {"MGMT-EDGE", "PROD-EDGE", "HOME-EDGE", "DEV-EDGE"}
+    actual_internal_edge = {
+        policy["name"]
+        for policy in policies
+        if policy["to"] == "EDGE" and policy["from"] in {"MGMT", "PROD", "HOME", "DEV"}
+    }
+    if actual_internal_edge != expected_internal_edge:
+        raise IntentError("all four internal zones require one exact HAProxy-only EDGE policy")
+    for policy in policies:
+        if policy["name"] in expected_internal_edge and (
+            policy["source"] != ["any"]
+            or policy["destination"] != ["EDGE-HAPROXY"]
+            or policy["applications"] != ["junos-ssh", "junos-http", "junos-https"]
+            or policy["action"] != "permit"
+        ):
+            raise IntentError(f"policy {policy['name']}: EDGE access must be HAProxy 22/80/443 only")
+    if any(policy["from"] == "EDGE" and policy["action"] == "permit" for policy in policies):
+        raise IntentError("EDGE must not have an internal permit policy")
+    gatus_policy = next((policy for policy in policies if policy["name"] == "HOME-TO-GATUS"), None)
+    if (
+        gatus_policy is None
+        or gatus_policy["from"] != "HOME"
+        or gatus_policy["to"] != "DEV"
+        or gatus_policy["destination"] != ["C0-GATUS"]
+        or gatus_policy["applications"] != ["junos-https"]
+        or gatus_policy["action"] != "permit"
+    ):
+        raise IntentError("HOME to Gatus must remain exact HTTPS-only access")
     if intent["security"]["security"].get("default_policy") != "deny-all":
         raise IntentError("security default policy must remain deny-all")
 
@@ -873,7 +1064,8 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
         name = rstp_interface if isinstance(rstp_interface, str) else rstp_interface["name"]
         if name not in interface_names:
             raise IntentError(f"RSTP: undefined interface {name}")
-    rulesets = intent["nat"]["nat"].get("source_rules", [])
+    nat = intent["nat"]["nat"]
+    rulesets = nat.get("source_rules", [])
     unique(rulesets, "name", "NAT rule-set")
     expected_nat = {
         "HOME-TO-XLSATU": ({"HOME"}, "WAN-XLSATU"),
@@ -893,9 +1085,53 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
                 raise IntentError(f"NAT rule {rule['name']}: only interface source NAT is managed")
     if actual_nat != expected_nat:
         raise IntentError("WAN source NAT rule-sets must retain their reviewed zone coupling")
-    forbidden_nat = sorted(set(intent["nat"]["nat"]) - {"source_rules"})
-    if forbidden_nat:
-        raise IntentError(f"destination/static NAT and proxy ARP are not managed: {', '.join(forbidden_nat)}")
+
+    if set(nat) != {"source_rules", "destination_pools", "destination_rules"}:
+        raise IntentError("only reviewed source and destination NAT resources are managed")
+    destination_pools = nat["destination_pools"]
+    destination_rulesets = nat["destination_rules"]
+    unique(destination_pools, "name", "destination NAT pool")
+    unique(destination_pools, "port", "destination NAT pool port")
+    unique(destination_rulesets, "name", "destination NAT rule-set")
+    expected_ports = {22, 80, 443}
+    expected_haproxy = parse_network(
+        "198.18.1.10/32" if synthetic_topology else "10.25.15.10/32",
+        "EDGE HAProxy",
+    )
+    if (
+        {pool["name"] for pool in destination_pools}
+        != {"EDGE-SSH", "EDGE-HTTP", "EDGE-HTTPS"}
+        or {int(pool["port"]) for pool in destination_pools} != expected_ports
+        or any(parse_network(pool["address"], pool["name"]) != expected_haproxy for pool in destination_pools)
+    ):
+        raise IntentError("destination NAT pools must map exactly TCP 22/80/443 to EDGE HAProxy")
+    if len(destination_rulesets) != 1:
+        raise IntentError("exactly one WAN-MYREP destination NAT rule-set is required")
+    destination_ruleset = destination_rulesets[0]
+    if (
+        destination_ruleset["name"] != "WAN-MYREP-TO-EDGE"
+        or destination_ruleset["from_zone"] != "WAN-MYREP"
+        or destination_ruleset.get("enabled") is not public_enabled
+    ):
+        raise IntentError("destination NAT rule-set must use the protected public deployment gate")
+    destination_rules = destination_ruleset["rules"]
+    unique(destination_rules, "name", "destination NAT rule")
+    unique(destination_rules, "destination_port", "destination NAT public port")
+    public_network = parse_network(
+        dotted(topology, "wan.secondary_public_cidr"), "wan.secondary_public_cidr"
+    )
+    if public_network.prefixlen != 32:
+        raise IntentError("wan.secondary_public_cidr must be an exact IPv4 /32")
+    if public_enabled and not synthetic_topology and not public_network.network_address.is_global:
+        raise IntentError("wan.secondary_public_cidr must be globally routable before public EDGE is enabled")
+    pools_by_port = {int(pool["port"]): pool["name"] for pool in destination_pools}
+    if (
+        {int(rule["destination_port"]) for rule in destination_rules} != expected_ports
+        or any(rule.get("protocol") != "tcp" for rule in destination_rules)
+        or any(parse_network(rule["destination"], rule["name"]) != public_network for rule in destination_rules)
+        or any(rule.get("pool") != pools_by_port[int(rule["destination_port"])] for rule in destination_rules)
+    ):
+        raise IntentError("destination NAT rules must match the exact public /32 and TCP 22/80/443")
 
     assignments = interface_ips + reservation_ips
     seen: dict[str, str] = {}
@@ -906,7 +1142,12 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
         seen[key] = label
 
     unused = leaves(topology) - used
-    allowed_unused = {"management_address"}
+    allowed_unused = {
+        "management_address",
+        "networks.edge.subnet",
+        "networks.edge.gateway",
+        "networks.edge.haproxy",
+    }
     unexpected = sorted(unused - allowed_unused)
     if unexpected:
         raise IntentError(f"unused topology keys: {', '.join(unexpected)}")
@@ -915,6 +1156,11 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
 def build(intent_dir: Path, topology_path: Path, group: str = GROUP) -> tuple[list[str], set[str]]:
     raw = {domain: load_yaml(intent_dir / f"{domain}.yml") for domain in DOMAINS}
     topology = load_yaml(topology_path)
+    if dotted(topology, "edge.public_enabled") is False:
+        wan = topology.setdefault("wan", {})
+        if not isinstance(wan, dict):
+            raise IntentError("wan topology must be a mapping")
+        wan.setdefault("secondary_public_cidr", "192.0.2.200/32")
     reject_unsafe_keys(raw)
     refs: set[str] = set()
     collect_refs(raw, refs)

@@ -5,8 +5,8 @@ Status: mission live gates complete; final status `OPERATIONAL_WITHOUT_DURABILIT
 no off-host libreFS backup target/restore exists on c1 (no durability claim). User approved
 controlled c1 reboot; outage and SSH recovery observed. Post-reboot verification passed: both
 XFS noatime mounts and assertion units, Docker, c1 SERVICES network/shim, exact management
-default route, bond/VLAN/LACP two 10 Gb members with zero link-failure counts, Doco/OpenBao
-token/controller canaries, healthy pinned `librefs-c1` at `.65` with no host ports and
+default route, active-backup bond/VLAN with two 10 Gb members and zero link-failure counts,
+Doco/OpenBao token/controller canaries, healthy pinned `librefs-c1` at `.65` with no host ports and
 credential files UID/GID 1000 mode 0400. Exact-value leakage and writable-root containment
 scans passed again after reboot. Scoped S3 ready/upload/stat/download/checksum/delete/denial
 passed again after reboot; 512 MiB observed 542,280,200 B/s upload and 2,014,577,014 B/s download
@@ -20,7 +20,7 @@ failover; record intentionally not exercised, not a blocker. PR8 merged at
 567,957,345 B/s, download 1,863,741,635 B/s (local bridge + storage + application evidence,
 not external 10 Gb/s proof); workstation-to-c1 SERVICES TCP baseline over the actual routed
 path — sender 113,948,113 bit/s, receiver 112,622,607 bit/s for 256 MiB (path and workstation
-limited, not LACP capacity); off-host libreFS backup verified as unconfigured and unproven
+limited, not bond-capacity evidence); off-host libreFS backup verified as unconfigured and unproven
 (Doco manages only `doco-cd-c1` and `librefs-c1`; only Debian `dpkg-db-backup` units exist
 on c1; no restore was possible). User explicitly skipped optional bond-member failover.
 
@@ -38,8 +38,8 @@ supplies the single 1 TB identity only as a protected shell variable on c1.
 
 ## Read-only host checkpoints
 
-Capture output into a root-only operator record. Verify management, routing, DNS, VLAN, and LACP
-state before and after every network action:
+Capture output into a root-only operator record. Verify management, routing, DNS, VLAN,
+active-backup mode, and active member before and after every network action:
 
 ```sh
 sudo ip -brief address show eno1 bond0 bond0.2512 bond0.2513
@@ -199,6 +199,108 @@ exactly zero before the shim unit is stopped. The shim link is never deleted bef
 endpoint guard passes, and the shim unit is never stopped before the network is removed. Each
 step requires its own outage/removal approval; an aborted guard leaves the network, the shim
 unit, and the shim link in place for re-inspection.
+
+## EDGE, Forgejo, wildcard, and monitoring checkpoint
+
+The c1 uplink bond is active-backup across TOR1/TOR2, not LACP. Do not change the bond. Before
+installation, capture read-only switch evidence that VLAN 2515 `EDGE` is tagged on both SRX TOR
+trunks and the c1 uplinks. Missing membership blocks all host and SRX mutation.
+
+Install the additive `bond0.2515` stanza and EDGE network assets without starting them:
+
+```sh
+sudo docker/c1/.host/networks/edge/install.sh apply
+sudo docker/c1/.host/storage/install-storage-assets.sh apply
+sudo docker/c1/.host/openbao/install-wildcard-assets.sh
+```
+
+Provision the reviewed OpenBao records and named publisher/reader tokens through
+`scripts/with-openbao-runtime.sh`; write token files directly as root, mode `0600`, without
+printing them. Required paths are:
+
+- `/opt/edge/secrets/wildcard-publisher.token` on c1;
+- `/opt/edge/secrets/wildcard-reader-c1.token` on c1;
+- `/opt/monitoring/secrets/wildcard-reader-c0.token` on c0.
+
+Install c0 wildcard assets with
+`sudo docker/c0/.host/openbao/install-wildcard-assets.sh`. Materialize the four monitoring values
+and the c1 backup heartbeat token only through the 15-minute `monosense-infra` runtime:
+
+```sh
+sudo scripts/with-openbao-runtime.sh \
+  docker/c0/.host/openbao/materialize-monitoring-secrets.sh
+sudo scripts/with-openbao-runtime.sh \
+  docker/c1/.host/openbao/materialize-forgejo-backup-heartbeat.sh
+```
+
+The first command writes `/var/lib/monosense-monitoring/monitoring.env`; the second writes
+`/opt/forgejo/secrets/backup-heartbeat.token`. Both are root-owned mode `0600` and never print
+values. Doco must recreate monitoring after its environment file changes. Wildcard reader timers
+are enabled but not started by their installers. Run each reader service once only after Certbot has
+published a validated wildcard record; a failed read or validation retains the previous
+generation.
+
+Activate private infrastructure in this order:
+
+1. publish the reviewed commit to `origin/main`;
+2. enable/start `c1-edge-networks.service`, then prove `bond0` remains active-backup and
+   `bond0.2515` is UP, MTU 1496, VLAN 2515, with no host address;
+3. run `ensure-c1-edge-state check`, `ensure-forgejo-quotas check`, and
+   `ensure-c1-forgejo-egress check`; verify `c1-forgejo-egress.service` is active;
+4. let Doco deploy edge and Forgejo with WAN destination NAT absent;
+5. after Certbot publishes the wildcard, run both wildcard reader services and recreate
+   libreFS/c0 monitoring;
+6. create and verify administrator `trosvald`, then remove both bootstrap config projections from
+   `docker/c1/forgejo/compose.yml`, publish, and prove the old values absent;
+7. run `configure-mirror.py` and prove `trosvald/infrastructure` refreshes from public GitHub while
+   GitHub remains authoritative;
+8. install/enable `forgejo-backup.timer`, run `forgejo-backup.service` once, and prove the
+   `Backups/Forgejo backup` Gatus heartbeat is current; restore the Forgejo plus PostgreSQL dumps
+   into an isolated target before claiming the 24-hour RPO/4-hour restore objective.
+
+Candidate A is `edge.public_enabled: false`. Deploy it through the existing commit-confirmed
+workflow and prove: `irb.2515` at `10.25.15.1/24`; no WAN-to-EDGE policy or destination NAT;
+internal access only to HAProxy TCP 22/80/443; HOME access to Gatus HTTPS; and no EDGE-initiated
+MGMT/PROD/HOME/DEV sessions. Prove HAProxy approved SNI, missing/unlisted SNI rejection, forged
+forwarding-header replacement, 20-current/60-per-10-second connection limits,
+300-requests-per-10-second limiting, generic AppSec denial, SPOA-only bypass, country denial,
+PROXYv2 SSH, and the 10 GiB upload boundary.
+
+Candidate B requires all prior evidence plus the stable MYREP IPv4 from OpenBao, external
+reachability of TCP 22/80/443, an active CrowdSec/AppSec path, healthy Vector/Gatus evidence, and a
+verified backup. Set `edge.public_enabled: true`, deploy commit-confirmed, then publish only
+proxied Cloudflare `git` A/AAAA records after direct-origin tests pass. Never publish `edge-test`;
+remove its echo backend and DNS record after acceptance. If any public check fails, roll back
+Candidate B first, remove public DNS, and retain the private deployment.
+
+The Kopia repository at `https://s3.monosense.io` uses a scoped non-root identity, retains 30 daily
+and 12 monthly snapshots, and deletes staging only after snapshot verification. It is on the same
+c1 host and physical 1 TB device as the source. It does not survive host or disk loss and is not
+off-host durability.
+
+## Forgejo front-page customization recommendation
+
+Keep `LANDING_PAGE = home` and the configured `APP_NAME` for initial acceptance. Do not customize
+the login template or replace Forgejo's embedded assets before the private web, Git, mail, mirror,
+backup, and restore checks pass.
+
+For a later branded landing page, use one Git-owned, read-only custom directory mounted at
+`/var/lib/gitea/custom`. Pin `templates/home.tmpl` to the exact Forgejo release and keep any CSS in
+`public/assets/css/`; do not edit files inside the image, inject remote JavaScript, use a CDN, or
+make the custom directory application-writable. The page should contain only:
+
+- a short monosense identity and purpose statement;
+- sign-in and public-repository links;
+- the public status-page link;
+- no private repository names, recent activity, service topology, software versions, internal
+  hostnames, monitoring details, or operator email.
+
+Template overrides are an unsupported, upgrade-coupled Forgejo surface. On every Forgejo patch,
+compare the pinned upstream `home.tmpl`, render the anonymous and authenticated home pages at mobile
+and desktop widths in both themes, verify login and public-repository navigation, and reject the
+upgrade if the override produces template errors or omits security/navigation controls. Prefer
+supported `app.ini` branding and a small CSS override when they meet the requirement; use a full
+`home.tmpl` only when custom page structure is necessary.
 
 ## OpenBao token lifecycle
 

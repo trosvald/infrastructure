@@ -415,6 +415,9 @@ assert_mount() {
     options="${source#*xfs }"
     [[ ",$options," == *,rw,* && ",$options," == *,noatime,* ]] \
         || fail "$target must be read-write with noatime"
+    if [[ "$target" == /srv/applications && ",$options," != *,prjquota,* ]]; then
+        fail "$target must be mounted with prjquota"
+    fi
     "$XFS_INFO_BIN" "$target" | grep -Eq 'ftype=1' || fail "$target XFS lacks ftype=1"
 }
 
@@ -431,6 +434,9 @@ converge_mount_options() {
         "$MOUNT_BIN" -o remount,noatime "$target" \
             || fail "failed to remount $target with noatime"
     fi
+    if [[ "$target" == /srv/applications && ",$options," != *,prjquota,* ]]; then
+        fail "$target requires an offline unmount or reboot after adding prjquota"
+    fi
     assert_mount "$target" "$uuid"
 }
 
@@ -441,7 +447,8 @@ import os,sys,tempfile
 path,mount,uuid=sys.argv[1:]
 old=open(path).readlines() if os.path.exists(path) else []
 lines=[x for x in old if not (x.strip() and not x.lstrip().startswith("#") and len(x.split())>1 and x.split()[1]==mount)]
-lines.append(f"UUID={uuid} {mount} xfs defaults,noatime 0 2\n")
+options="defaults,noatime,prjquota" if mount=="/srv/applications" else "defaults,noatime"
+lines.append(f"UUID={uuid} {mount} xfs {options} 0 2\n")
 fd,tmp=tempfile.mkstemp(prefix=".c1-fstab-",dir=os.path.dirname(path) or ".",text=True)
 try:
  with os.fdopen(fd,"w") as f: f.writelines(lines); f.flush(); os.fsync(f.fileno())
@@ -466,7 +473,8 @@ for line in open(path):
  if not s or s.startswith("#"): continue
  fields=s.split()
  if len(fields)>1 and fields[1]==mount: rows.append(fields)
-ok=(len(rows)==1 and rows[0][0]==f"UUID={uuid}" and rows[0][2]=="xfs" and rows[0][3]=="defaults,noatime" and rows[0][4:6]==["0","2"])
+expected_options="defaults,noatime,prjquota" if mount=="/srv/applications" else "defaults,noatime"
+ok=(len(rows)==1 and rows[0][0]==f"UUID={uuid}" and rows[0][2]=="xfs" and rows[0][3]==expected_options and rows[0][4:6]==["0","2"])
 raise SystemExit(0 if ok else 1)
 PY
 }
@@ -485,7 +493,9 @@ finish_pending() {
         || fail "$state_label pending filesystem identity changed"
     "$INSTALL_BIN" -d -m 0755 "$mount_path"
     if ! "$MOUNTPOINT_BIN" -q "$mount_path"; then
-        "$MOUNT_BIN" -o noatime "$part" "$mount_path" || fail "failed to mount $state_label filesystem"
+        mount_options=noatime
+        [[ "$mount_path" != /srv/applications ]] || mount_options=noatime,prjquota
+        "$MOUNT_BIN" -o "$mount_options" "$part" "$mount_path" || fail "failed to mount $state_label filesystem"
     fi
     assert_mount "$mount_path" "$uuid"
     commit_fstab "$mount_path" "$uuid"
@@ -540,6 +550,8 @@ verify_installed() {
         || fail 'applications fstab entry verification failed'
     [[ "$("$STAT_BIN" -c '%u:%g:%a' /srv/librefs/data)" == 1000:1000:750 ]] \
         || fail 'libreFS data directory state mismatch'
+    [[ "$("$STAT_BIN" -c '%u:%g:%a' /srv/librefs/certs)" == 0:0:755 ]] \
+        || fail 'libreFS certificate directory state mismatch'
     [[ "$("$STAT_BIN" -c '%u:%g:%a' /srv/applications)" == 0:0:755 ]] \
         || fail 'applications mount root state mismatch'
     root_source="$("$FINDMNT_BIN" -n -o SOURCE --target /)" \
@@ -593,6 +605,7 @@ ACKNOWLEDGE_WIPE=ERASE APPROVED 1TB TARGET ONLY"
     provision_partition "$device" 1 c1_librefs c1_librefs /srv/librefs
     provision_partition "$device" 2 c1_applications c1_apps /srv/applications
     "$INSTALL_BIN" -d -m 0750 -o 1000 -g 1000 /srv/librefs/data
+    "$INSTALL_BIN" -d -m 0755 -o root -g root /srv/librefs/certs
     "$INSTALL_BIN" -d -m 0755 -o root -g root /srv/applications
     verify_installed >/dev/null
     "$SYSTEMCTL_BIN" enable --now fstrim.timer

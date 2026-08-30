@@ -8,17 +8,20 @@ blocks = re.findall(r'path\s+"([^"]+)"\s*\{\s*capabilities\s*=\s*\[([^]]*)\]\s*\
 parsed = {path: re.findall(r'"([^"]+)"', capabilities) for path, capabilities in blocks}
 expected = {
     "kv/data/docker/c1/librefs": ["read"],
+    "kv/data/docker/c1/edge": ["read"],
+    "kv/data/docker/c1/forgejo": ["read"],
     "auth/token/lookup-self": ["read"],
     "auth/token/renew-self": ["update"],
 }
 assert parsed == expected
-assert len(blocks) == 3
+assert len(blocks) == len(expected)
 assert "*" not in text and "+" not in text
 
 allowed = {(path, capability) for path, capabilities in expected.items() for capability in capabilities}
 denied_paths = [
     "kv/data/docker/c1", "kv/data/docker/c1/librefs/child", "kv/metadata/docker/c1/librefs",
-    "kv/data/docker/c1/mattermost", "kv/data/docker/c1/forgejo", "kv/data/docker/c1/haproxy-crowdsec",
+    "kv/data/docker/c1/mattermost", "kv/data/docker/c1/edge/child",
+    "kv/metadata/docker/c1/edge", "kv/metadata/docker/c1/forgejo",
     "kv/data/docker/c0/openbao", "kv/data/junos", "kv/data/global", "sys/policies/acl/doco-c1",
     "auth/token/create", "auth/token/revoke-self", "identity/entity/id/canary", "pki/issue/canary",
 ]

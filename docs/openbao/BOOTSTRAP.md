@@ -740,19 +740,18 @@ shell retains the initial root token.
 
 ## 11. Manual unseal
 
-Unseal runs interactively inside the OpenBao container's `/bin/sh`.
-Invoke `bao operator unseal` **without arguments** twice. Each invocation
-prompts for one share; type the share at OpenBao's own hidden prompt.
-The share never enters argv, a shell variable, a here-document, a pipe,
-a file, Git, SOPS, logs, or chat.
-
-`c0-ct#`
+Initialization remains in the interactive OpenBao container shell because the next bootstrap step
+must capture the initial root token there. Invoke `bao operator unseal` without arguments twice.
+Each invocation prompts for one share; type a distinct share at OpenBao's own hidden prompt.
 
 ```sh
 bao operator unseal
 bao operator unseal
 bao status
 ```
+
+The shares never enter argv, a shell variable, a here-document, a pipe, a file, Git, SOPS, logs, or
+chat. After initialization is complete, later restart recovery uses `just openbao-unseal`.
 
 `bao status` must show `initialized=true sealed=false` and exactly one
 Raft leader with `node_id=c0-openbao-1`. HTTP `200` follows. A

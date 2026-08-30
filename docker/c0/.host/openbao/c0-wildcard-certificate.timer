@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh shared wildcard certificate on c0
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=6h
+Persistent=true
+RandomizedDelaySec=10min
+Unit=c0-wildcard-certificate.service
+
+[Install]
+WantedBy=timers.target

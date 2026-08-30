@@ -1,0 +1,9 @@
+[Unit]
+Description=Fetch and validate shared wildcard certificate on c1
+After=network-online.target c1-applications-storage.service c1-librefs-storage.service
+Wants=network-online.target
+Requires=c1-applications-storage.service c1-librefs-storage.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/update-c1-wildcard-certificate

@@ -1,0 +1,221 @@
+---
+# yamllint disable rule:braces
+name: forgejo-c1
+
+services:
+  forgejo:
+    image: codeberg.org/forgejo/forgejo:16.0.3-rootless@sha256:727608279c44f32a18fdc3dc8050f55367f2708cf9edfee8cc61e05b2a6e034e
+    platform: linux/amd64
+    container_name: forgejo-c1
+    user: "1000:1000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    configs:
+      - { source: forgejo_config, target: /etc/gitea/app.ini, uid: "1000", gid: "1000", mode: 0400 }
+      - { source: bootstrap_admin_password, target: /run/secrets/bootstrap_admin_password, uid: "1000", gid: "1000", mode: 0400 }
+      - { source: bootstrap_admin_email, target: /run/secrets/bootstrap_admin_email, uid: "1000", gid: "1000", mode: 0400 }
+    volumes:
+      - { type: bind, source: /srv/applications/apps/forgejo/app/repositories, target: /var/lib/gitea/git/repositories, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/app/lfs, target: /var/lib/gitea/data/lfs, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/app/packages, target: /var/lib/gitea/data/packages, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/app/attachments, target: /var/lib/gitea/data/attachments, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/app/avatars, target: /var/lib/gitea/data/avatars, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/app/archives, target: /var/lib/gitea/data/repo-archive, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/app/sessions, target: /var/lib/gitea/data/sessions, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/app/queues, target: /var/lib/gitea/data/queues, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/app/ssh, target: /var/lib/gitea/.ssh, bind: { create_host_path: false } }
+      - type: bind
+        source: /srv/applications/apps/forgejo/logs/forgejo
+        target: /var/log/gitea
+        bind: { create_host_path: false }
+      - { type: bind, source: /srv/applications/apps/forgejo/staging, target: /staging, bind: { create_host_path: false } }
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=256m,mode=1777
+      - /var/run:rw,nosuid,nodev,noexec,size=16m,mode=0755
+    networks:
+      frontend: {}
+      database: {}
+      outbound: { ipv4_address: 172.30.15.66 }
+    depends_on: { postgres: { condition: service_healthy } }
+    healthcheck:
+      test: [CMD, wget, --spider, --quiet, http://127.0.0.1:3000/api/healthz]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    cpus: 4.0
+    mem_limit: 8g
+    memswap_limit: 8g
+    pids_limit: 512
+    ulimits: { nofile: { soft: 65536, hard: 65536 } }
+    stop_grace_period: 90s
+    logging: &bounded_logs
+      driver: json-file
+      options: { max-size: 10m, max-file: "3" }
+
+  postgres:
+    image: docker.io/library/postgres:18.3-alpine@sha256:1b13c640ae11f2f165d1e89667e5862b0017baf4c80fec2fb7377d86319859ba
+    platform: linux/amd64
+    container_name: forgejo-postgres-c1
+    user: "70:70"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      POSTGRES_DB: forgejo
+      POSTGRES_USER: forgejo
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    configs:
+      - { source: postgres_password, target: /run/secrets/postgres_password, uid: "70", gid: "70", mode: 0400 }
+    volumes:
+      - type: bind
+        source: /srv/applications/apps/forgejo/postgres
+        target: /var/lib/postgresql/data
+        bind: { create_host_path: false }
+      - type: bind
+        source: /srv/applications/apps/forgejo/logs/postgres
+        target: /var/log/postgresql
+        bind: { create_host_path: false }
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777
+      - /run/postgresql:rw,nosuid,nodev,noexec,size=16m,mode=0770,uid=70,gid=70
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U forgejo -d forgejo]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    cpus: 2.0
+    mem_limit: 4g
+    memswap_limit: 4g
+    pids_limit: 256
+    stop_grace_period: 90s
+    logging: *bounded_logs
+
+  kopia:
+    image: docker.io/kopia/kopia:0.23.1@sha256:83d8bc7bce313dd8b2c17771b5f3f804e18e79ad7d7cc6bc994ff5872374794d
+    platform: linux/amd64
+    container_name: kopia-forgejo-c1
+    restart: unless-stopped
+    entrypoint: [/bin/sh, -ceu]
+    command: ["while :; do sleep 86400; done"]
+    user: "1000:1000"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      KOPIA_PASSWORD_FILE: /run/secrets/kopia_password
+    configs:
+      - { source: kopia_password, target: /run/secrets/kopia_password, uid: "1000", gid: "1000", mode: 0400 }
+      - { source: librefs_access_key, target: /run/secrets/librefs_access_key, uid: "1000", gid: "1000", mode: 0400 }
+      - { source: librefs_secret_key, target: /run/secrets/librefs_secret_key, uid: "1000", gid: "1000", mode: 0400 }
+    volumes:
+      - { type: bind, source: /srv/applications/apps/forgejo/staging, target: /staging, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/app, target: /source/forgejo, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/logs/backup, target: /logs, bind: { create_host_path: false } }
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=256m,mode=1777
+      - /app/config:rw,nosuid,nodev,noexec,size=16m,mode=0700,uid=1000,gid=1000
+      - /app/cache:rw,nosuid,nodev,noexec,size=256m,mode=0700,uid=1000,gid=1000
+    networks:
+      outbound: { ipv4_address: 172.30.15.67 }
+    cpus: 2.0
+    mem_limit: 2g
+    memswap_limit: 2g
+    pids_limit: 256
+    logging: *bounded_logs
+
+configs:
+  postgres_password: { content: "${FORGEJO_POSTGRES_PASSWORD:?required}\n" }
+  kopia_password: { content: "${FORGEJO_KOPIA_REPOSITORY_PASSWORD:?required}\n" }
+  librefs_access_key: { content: "${FORGEJO_LIBREFS_ACCESS_KEY:?required}\n" }
+  librefs_secret_key: { content: "${FORGEJO_LIBREFS_SECRET_KEY:?required}\n" }
+  bootstrap_admin_password: { content: "${FORGEJO_BOOTSTRAP_ADMIN_PASSWORD:?required}\n" }
+  bootstrap_admin_email: { content: "${FORGEJO_BOOTSTRAP_ADMIN_EMAIL:?required}\n" }
+  forgejo_config:
+    content: |
+      APP_NAME = monosense Forgejo
+      RUN_MODE = prod
+      RUN_USER = git
+      [server]
+      DOMAIN = git.monosense.io
+      ROOT_URL = https://git.monosense.io/
+      HTTP_ADDR = 0.0.0.0
+      HTTP_PORT = 3000
+      PROTOCOL = http
+      SSH_DOMAIN = git.monosense.io
+      START_SSH_SERVER = true
+      SSH_LISTEN_HOST = 0.0.0.0
+      SSH_LISTEN_PORT = 2222
+      SSH_PORT = 22
+      SSH_SERVER_USE_PROXY_PROTOCOL = true
+      OFFLINE_MODE = true
+      LFS_START_SERVER = true
+      LFS_JWT_SECRET = ${FORGEJO_LFS_JWT_SECRET:?required}
+      [database]
+      DB_TYPE = postgres
+      HOST = forgejo-postgres-c1:5432
+      NAME = forgejo
+      USER = forgejo
+      PASSWD = ${FORGEJO_POSTGRES_PASSWORD:?required}
+      SSL_MODE = disable
+      [security]
+      INSTALL_LOCK = true
+      SECRET_KEY = ${FORGEJO_SECRET_KEY:?required}
+      INTERNAL_TOKEN = ${FORGEJO_INTERNAL_TOKEN:?required}
+      [oauth2]
+      JWT_SECRET = ${FORGEJO_JWT_SECRET:?required}
+      [service]
+      DISABLE_REGISTRATION = true
+      REQUIRE_SIGNIN_VIEW = false
+      DEFAULT_USER_VISIBILITY = private
+      [repository]
+      DEFAULT_PRIVATE = private
+      ENABLE_PUSH_CREATE_USER = false
+      [federation]
+      ENABLED = false
+      [session]
+      PROVIDER = file
+      PROVIDER_CONFIG = /var/lib/gitea/data/sessions
+      [queue]
+      TYPE = level
+      CONN_STR = /var/lib/gitea/data/queues
+      [actions]
+      ENABLED = true
+      DEFAULT_ACTIONS_URL = github
+      [mailer]
+      ENABLED = true
+      PROTOCOL = smtp+starttls
+      SMTP_ADDR = smtp.zoho.com
+      SMTP_PORT = 587
+      USER = ${FORGEJO_ZOHO_USERNAME:?required}
+      PASSWD = ${FORGEJO_ZOHO_PASSWORD:?required}
+      FROM = info@monosense.io
+      FORCE_TRUST_SERVER_CERT = false
+      [webhook]
+      ALLOWED_HOST_LIST = external
+      SKIP_TLS_VERIFY = false
+      [attachment]
+      MAX_SIZE = 10240
+      [repository.upload]
+      FILE_MAX_SIZE = 10240
+      [lfs]
+      MAX_FILE_SIZE = 10737418240
+      [packages]
+      LIMIT_SIZE_CONTAINER = 10737418240
+      [log]
+      MODE = file
+      LEVEL = info
+      ROOT_PATH = /var/log/gitea
+
+networks:
+  frontend: { external: true, name: c1_forgejo_frontend }
+  database: { internal: true, name: forgejo-c1-database }
+  outbound:
+    name: forgejo-c1-outbound
+    ipam: { config: [{ subnet: 172.30.15.64/28 }] }

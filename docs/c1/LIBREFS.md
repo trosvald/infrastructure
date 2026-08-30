@@ -7,8 +7,8 @@ Status: design; service not deployed; storage boundary revised to single 1 TB de
 ## Service boundary
 
 libreFS is an internal S3-compatible service on one server and one data disk. It has no storage
-redundancy and no high-availability claim. LACP improves link capacity and single-member survival;
-it does not protect object data.
+redundancy and no high-availability claim. The active-backup bond provides single-link failover;
+it does not aggregate throughput or protect object data.
 
 Until an off-host backup and isolated restore pass, the maximum final status is
 `OPERATIONAL_WITHOUT_DURABILITY`.
@@ -27,12 +27,13 @@ latest release shown by upstream on 2026-08-26. The image was pulled and exercis
 Verified image behavior:
 
 - entrypoint: `/usr/bin/docker-entrypoint.sh`;
-- command: `server /data --console-address :9001`;
-- S3 API 9000 and console 9001;
+- server accepts explicit `--address`, `--console-address`, and native `--certs-dir`;
+- default S3 API port is 9000 and console port is 9001; this deployment overrides the TLS API to
+  443 and leaves the internal console on 9001;
 - persistent path `/data`;
 - `MINIO_ROOT_USER_FILE` and `MINIO_ROOT_PASSWORD_FILE` work;
-- readiness and liveness endpoints work on port 9000;
-- image contains Bash but no curl or wget;
+- readiness and liveness endpoints work over TLS on the overridden API port;
+- image contains Bash and OpenSSL but no curl or wget;
 - image declares neither a healthcheck nor a non-root user;
 - UID/GID 1000, read-only root, dropped capabilities, `no-new-privileges`, writable `/data`, and a
   hardened `/tmp` tmpfs passed an offline startup/readiness probe.
@@ -153,23 +154,27 @@ persistence, and logs must pass that document's canary leakage gate before real 
 
 ## Network and TLS
 
-This mission exposes no host port and creates no public DNS, certificate, DNAT, or SRX policy.
-However, IPvlan on a routed SERVICES VLAN is not private by definition.
+libreFS publishes no host port. It remains on static SERVICES address `10.25.13.65`; the console
+is internal and must never become an edge backend. The server uses its verified native
+`--certs-dir /certs/current` option. `/srv/librefs/certs/current` is an atomic, root-owned
+generation populated only by the c1 `wildcard-reader-c1` token. The generation exposes
+`public.crt` mode `0644` and `private.key` mode `0600`, owned by UID/GID `1000`, while retaining
+the prior validated generation for rollback.
 
-The initial cleartext boundary permits only clients sourced from management `10.25.10.0/24` and
-SERVICES `10.25.13.0/24`. Every other routed source and the public internet are denied; port 9001 is
-administrative and receives the same or a narrower boundary.
+The shared `*.monosense.io` certificate covers `s3.monosense.io`; it does not expand SRX access.
+Only the already reviewed management and SERVICES sources may reach the S3 listener. Every other
+routed source and the public internet remain denied; port 9001 is administrative and receives the
+same or a narrower boundary.
 
-The required matrix tests both ports from: one approved management client; the c1 SERVICES shim;
-one denied client in `10.25.11.0/24`; one denied client in `10.25.12.0/24`; and one external/public
-vantage point. Record the actual source address and pass/fail only. This mission authorizes no SSH
-or execution on those denied clients, so missing operator-provided vantage points are an explicit
-blocker, not a skipped test. If every denied case cannot be proven, or any unapproved source
-succeeds, use only non-secret canaries and disposable data. Real credentials/data then require
-tested TLS or an enforceable reviewed control that does not depend on an unavailable SRX change.
+Before activation, `update-c1-wildcard-certificate` proves the OpenBao record has exactly
+`certificate`, `fullchain`, `private_key`, `serial`, and `not_after`; parses the chain/key; proves
+the key match and wildcard SAN; requires at least 14 days remaining; then atomically switches the
+generation. Failure rolls back the generation and does not delete `/srv/librefs/data`.
 
-Any future untrusted or public use requires reviewed TLS, certificate rotation, client trust, and
-firewall/SRX policy. The console remains internal and must never be a public frontend.
+The required matrix tests TLS and both ports from one approved management client, the c1 SERVICES
+shim, one denied client in `10.25.11.0/24`, one denied client in `10.25.12.0/24`, and one
+external/public vantage point. Record source address, certificate identity/expiry, and pass/fail
+only. Missing operator-provided vantage points block real backup credentials; they are not skipped.
 
 ## Functional acceptance
 

@@ -4,3 +4,4 @@ vlans:
   - { name: VLAN-PROD, id: 2511, irb_unit: 2511, description: "Server/K8S PROD VLAN - tagged on TP-Link trunks" }
   - { name: VLAN-HOME, id: 2512, irb_unit: 2512, description: "Home and IoT VLAN - tagged on TP-Link trunks" }
   - { name: VLAN-DEV, id: 2513, irb_unit: 2513, description: "DEV/ARGO VLAN - tagged on TP-Link trunks" }
+  - { name: VLAN-EDGE, id: 2515, irb_unit: 2515, description: "Edge DMZ VLAN" }
