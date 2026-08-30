@@ -53,17 +53,20 @@ No c0 SOPS age identity is copied to c1.
 OpenBao Shamir shares are never requested, handled, automated, copied, or stored by this mission.
 If OpenBao is sealed, mutation stops and the existing unseal runbook applies.
 
-## Current application record
+## Application records
 
 | Consumer | Logical KV v2 path | API policy path | Keys | Creation authority |
 |---|---|---|---|---|
 | libreFS root administration | `kv/docker/c1/librefs` | `kv/data/docker/c1/librefs` | `root_user`, `root_password` | Approved OpenBao administrator procedure |
+| c1 edge | `kv/docker/c1/edge` | `kv/data/docker/c1/edge` | `acme_email`, `cloudflare_dns_token`, `maxmind_account_id`, `maxmind_license_key`, `crowdsec_lapi_key`, `crowdsec_bouncer_key`, `vector_ingest_token` | `monosense-infra` userpass identity |
+| Forgejo | `kv/docker/c1/forgejo` | `kv/data/docker/c1/forgejo` | `postgres_password`, `forgejo_secret_key`, `forgejo_internal_token`, `forgejo_jwt_secret`, `forgejo_lfs_jwt_secret`, `bootstrap_admin_password`, `bootstrap_admin_email`, `zoho_username`, `zoho_password`, `kopia_repository_password`, `librefs_access_key`, `librefs_secret_key` | `monosense-infra` userpass identity |
+| c0 monitoring | `kv/docker/c0/monitoring` | `kv/data/docker/c0/monitoring` | `telegram_bot_token`, `telegram_chat_id`, `vector_ingest_token`, `backup_heartbeat_token` | `monosense-infra` userpass identity |
+| wildcard TLS | `kv/platform/tls/monosense-wildcard` | `kv/data/platform/tls/monosense-wildcard` | `certificate`, `fullchain`, `private_key`, `serial`, `not_after` | named `wildcard-publisher` service token |
 
-`root_user` contains at least 128 bits of CSPRNG entropy encoded without whitespace. `root_password`
-contains at least 256 bits. Neither is a hostname, repository string, default, reused value, or
-human-selected password. The values are generated directly into a protected input stream and sent
-to OpenBao without being printed or placed in argv, shell history, environment, or a permissive
-temporary file.
+Generated passwords, tokens, and keys contain at least 256 bits of CSPRNG entropy encoded without
+whitespace unless the consuming service defines a stricter format. User-selected email, username,
+and Zoho password values remain operator supplied. Values are sent to OpenBao through protected
+stdin or a mode-0600 temporary file and never through argv, shell history, or logs.
 
 Doco 0.111.0 mappings are:
 
@@ -106,21 +109,25 @@ absent from every location while the current pair existed only in the two approv
 
 ## Doco policy
 
-The initial `doco-c1` policy is deliberately limited to the current service:
+The `doco-c1` policy grants read only to `kv/data/docker/c1/librefs`,
+`kv/data/docker/c1/edge`, and `kv/data/docker/c1/forgejo`, plus self lookup and renewal. It grants
+no metadata access, child-path access, write capability, or generic token creation. The
+`monosense-infra` operator policy owns the exact data and metadata records above, can create tokens
+only through the named `wildcard-publisher`, `wildcard-reader-c0`, and `wildcard-reader-c1` roles,
+and has `read, update` only on the exact Junos topology data path. That update capability is used
+only by `scripts/provision-junos-edge-topology.sh`, which accepts no arguments, preserves unrelated
+fields, permits only the reviewed AdGuard-to-Blocky transition or absent-to-exact EDGE/monitoring
+fields, and writes with the current KV version as CAS.
 
-```hcl
-path "kv/data/docker/c1/librefs" {
-  capabilities = ["read"]
-}
+Wildcard certificate publisher and reader policies are separate from Doco. The publisher can
+create/read/update/patch only the wildcard data record. Each host reader can read only that data
+and metadata record. All three service policies have self lookup and renewal only; no role uses a
+path wildcard.
+The three wildcard roles issue orphan periodic 24-hour tokens without an explicit maximum TTL.
+Each 12-hour publisher or reader run renews its own token through `renew-self` before accessing the
+certificate record and fails closed unless OpenBao returns a positive renewable lease. A token that
+misses its period requires the documented capability-tested replacement and old-accessor revocation.
 
-path "auth/token/lookup-self" {
-  capabilities = ["read"]
-}
-
-path "auth/token/renew-self" {
-  capabilities = ["update"]
-}
-```
 
 No wildcard path is permitted. In particular, the token has no capability for:
 
@@ -179,19 +186,19 @@ The Doco token cannot create or rotate itself. An immortal broad token is prohib
 | Doco API secret | suspected disclosure or scheduled operator rotation | generate at least 256 CSPRNG bits, atomic root-only install, restart the systemd-owned controller, require controller poll canary | controller recreation only | regenerate on loss; no backup |
 | Doco OpenBao token | before period/lifecycle policy change, suspected disclosure, scheduled rotation, or expiry | replacement/test/atomic install/systemd restart/provider-canary/revoke-by-accessor sequence above | controller recreation; apps continue | accessor recorded; token value never recorded or backed up |
 | libreFS root user/password | suspected disclosure, administrator rotation, or initial bootstrap | stop the systemd service, write a new KV version with CAS, then run the fail-closed rematerialize helper (`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh`) which removes only the stateless container, invokes an isolated local-only Git custom target through Doco to recreate with the new pair, normalizes provenance to remote `main`, restarts/checks the systemd gate, and cleans both the temporary source tree and the cache | libreFS container recreation only; `/data` and named volumes preserved | OpenBao KV history and approved encrypted OpenBao backup |
-| future application values | only after exact image/version and consumer format are reviewed | service-specific procedure below | service-specific redeploy | OpenBao plus approved off-host backup policy |
+| c1 edge record | issuance credential, MaxMind credential, CrowdSec key, or ingestion token rotation | write with CAS through `monosense-infra`, run the root-owned c1 application-secret materializer, then recreate only the edge project and verify old-value absence | affected edge helper or security service recreation; HAProxy remains on its prior valid configuration where possible | OpenBao KV history and encrypted OpenBao backup |
+| Forgejo record | database/application/bootstrap/SMTP/Kopia/libreFS credential rotation | write with CAS through `monosense-infra`, drain Forgejo, run the root-owned c1 application-secret materializer, recreate the exact project, and verify health plus old-value absence | Forgejo/PostgreSQL or backup interruption according to the changed key | OpenBao KV history and encrypted OpenBao backup; same-host Kopia is not secret custody |
+| c0 monitoring record | Telegram, ingestion, or backup heartbeat token rotation | write with CAS through `monosense-infra`, rematerialize c0 monitoring and the c1 heartbeat file, verify authenticated ingest, heartbeat, and alert delivery | Gatus/Vector recreation and c1 backup timer | OpenBao KV history and encrypted OpenBao backup |
+| wildcard TLS record and service tokens | certificate renewal, short validity, key compromise, token disclosure, or role-policy change | publisher validates and writes all five fields atomically; host reader validates a new local generation before atomic activation; token replacement is capability-tested before old accessor revocation | consumer reload only after validation; failed fetch/install retains prior generation | OpenBao KV history and encrypted OpenBao backup |
 
-Doco 0.111.0 resolves ordinary KV values before it hashes the rendered Compose project. Live proof
-under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) showed that an ordinary KV value
-change alone does NOT redeploy or rematerialize the container when the Git source is
-unchanged: Doco and the existing `librefs-c1` container continue to hold the prior pair.
-Rotation is therefore gated by the fail-closed rematerialize helper, which stops the systemd
-service, removes only the stateless container (never `/data` or named volumes), invokes an
-isolated local-only Git custom target through Doco to recreate with current provider values,
-normalizes provenance to remote `main`, restarts/checks the systemd gate, and cleans both the
-temporary source tree and the cache. The initial canary must reproduce the helper's outcome.
-Rollback reverses the rotation by restoring the prior KV version through CAS and re-running
-helper; no sequence assumes that a KV update waits for a separate manual redeploy.
+Doco 0.111.0 does not receive the c1 edge or Forgejo values. Before the controller starts, the
+root-owned `/usr/local/sbin/materialize-c1-app-secrets` helper uses the protected c1 OpenBao token
+to read exactly those two records, validates their complete key sets, renders repository-owned
+templates, and atomically installs mode-0400 files below the applications mount. Compose contains
+only `create_host_path: false` bind paths. Rotation therefore requires rerunning the materializer
+and recreating only the affected project; rollback restores the prior KV version with CAS, reruns
+the materializer, and recreates that project. The existing libreFS pair remains on its separate
+fail-closed Doco rematerialization path because that already-proven service predates this contract.
 
 ## Leakage gates
 
@@ -209,42 +216,31 @@ A value in Git, container environment, ordinary logs, labels, inspect output, Do
 or world-readable storage is release-blocking. The test must delete the canary deployment and
 protected material after recording only pass/fail evidence.
 
-## Future records
+## Exact materialization contract
 
-These logical paths are reservations, not current grants:
+The root-owned c1 materializer maps the edge and Forgejo records to protected host files before Doco
+starts. Secret values are bind-mounted under `/run/secrets` or, for generated application
+configuration, at the exact owner-readable configuration path with `create_host_path: false` and
+mode `0400`. PostgreSQL receives its password through `POSTGRES_PASSWORD_FILE`; Forgejo receives a
+rendered owner-readable `app.ini`; Certbot receives a Cloudflare credentials file; CrowdSec uses
+its supported `/run/secrets/bouncer_key_spoa` bootstrap path; SPOA, GeoIP, and Vector receive only
+their own files. The Forgejo bootstrap password/email projection is removed after the `trosvald`
+administrator is verified. No resolved value may remain in environment, inspect metadata, Doco
+worktrees, ordinary logs, or backup staging.
 
-- `kv/docker/c1/librefs-backup`
-- `kv/docker/c1/haproxy-crowdsec`
-- `kv/docker/c1/mattermost`
-- `kv/docker/c1/forgejo`
+The wildcard host installers write root-owned mode-0600 generation files. HAProxy and c0 Vector
+receive a read-only combined PEM generated from validated `fullchain` plus `private_key`; libreFS
+receives its native certificate/key filenames. `certificate`, `serial`, and `not_after` are checked
+against the parsed full chain before activation. A mismatched, stale, missing, short-validity, or
+partial record never replaces the active generation.
 
-### libreFS backup
+The approved exact versions are Forgejo `16.0.3-rootless`, PostgreSQL `18.3-alpine`, HAProxy
+`3.2.23-alpine`, CrowdSec `1.7.8`, SPOA bouncer `0.3.1`, Certbot DNS Cloudflare `5.7.0`, Vector
+`0.58.0-alpine`, Gatus `5.36.0`, and Kopia `0.23.1`, each pinned to its linux/amd64 manifest in
+Compose. The scoped libreFS credentials provide access only to the Forgejo Kopia bucket. This
+same-c1 repository is intentionally not off-host durability.
 
-Status: `BLOCKED_BY_DESIGN`. Create only after an off-host target, protocol, pinned backup client,
-scoped service identity, retention, and restore procedure are approved. Required values depend on
-that target. A same-host credential or copy does not provide durability.
-
-### HAProxy and CrowdSec
-
-Status: `BLOCKED_BY_DESIGN`. CrowdSec LAPI/bouncer and SPOA/AppSec credentials are issued by the
-selected pinned CrowdSec stack, not invented now. DNS-provider, public-certificate, and PKI values
-remain `OPERATOR_SUPPLIED` until the certificate architecture is approved.
-
-### Mattermost Community Edition
-
-Status: `BLOCKED_BY_VERSION`. Before creation, pin and inspect the exact Mattermost and PostgreSQL
-images and verify file-secret support and required lengths. Candidate categories are PostgreSQL
-password, at-rest encryption key, required salts/signing values, and application session/signing
-material. SMTP and OIDC values are `OPERATOR_SUPPLIED`. S3 keys are blocked until libreFS has TLS,
-off-host durability, and a scoped non-root service account.
-
-### Forgejo
-
-Status: `BLOCKED_BY_VERSION`. Before creation, pin and inspect the exact Forgejo and PostgreSQL
-images and verify the application secret key, internal token, JWT secret, LFS JWT secret, database
-password, and file-secret formats. SMTP and OAuth values are `OPERATOR_SUPPLIED`. S3 keys have the
-same libreFS gates as Mattermost.
-
-No placeholder external credential is generated. Every future value requires an owner, exact
-consumer version, entropy/format rule, OpenBao key, target file, rotation trigger, redeploy effect,
-and backup/custody procedure before creation.
+No placeholder external credential is generated. Before provisioning real values, use unique
+non-secret canaries through every materialization path and apply the leakage gates above. Real
+value provisioning is an explicit operator checkpoint through `scripts/with-openbao-runtime.sh`;
+repository validation never attempts it.

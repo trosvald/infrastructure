@@ -1,0 +1,4 @@
+---
+name: forgejo-c1
+compose_files:
+  - compose.yml

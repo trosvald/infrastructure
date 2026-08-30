@@ -97,8 +97,28 @@ class IntentTests(unittest.TestCase):
         self.assertNotIn("system services dhcp-local-server delete-binding-on-renegotiation", text)
         for ruleset in ("HOME-TO-XLSATU", "MGMT-TO-MYREP", "PROD-TO-MYREP", "DEV-TO-MYREP"):
             self.assertIn(f"security nat source rule-set {ruleset}", text)
-        self.assertNotIn("destination-nat", text)
+        for port, name in ((22, "EDGE-SSH"), (80, "EDGE-HTTP"), (443, "EDGE-HTTPS")):
+            self.assertIn(
+                f"security nat destination pool {name} address 198.18.1.10/32 port {port}",
+                text,
+            )
+            self.assertIn(
+                f"security nat destination rule-set WAN-MYREP-TO-EDGE rule {name} "
+                f"match destination-port {port}",
+                text,
+            )
         self.assertNotIn("proxy-arp", text)
+
+    def test_public_edge_gate_omits_wan_policy_and_destination_nat(self):
+        def disable_without_public_address(value):
+            value["edge"]["public_enabled"] = False
+            del value["wan"]["secondary_public_cidr"]
+
+        candidate_a = self.with_topology(disable_without_public_address)
+        text = "\n".join(self.build(topology=candidate_a))
+        self.assertNotIn("security nat destination", text)
+        self.assertNotIn("policy WAN-EDGE-PUBLIC", text)
+        self.assertIn("policy MGMT-EDGE", text)
     def test_cilium_bgp_contract_is_rendered_once_and_in_order(self):
         first, second = self.build(), self.build()
         self.assertEqual(first, second)
@@ -354,7 +374,7 @@ class IntentTests(unittest.TestCase):
             self.build(intent_dir=bad_routing)
         bad_zone = self.with_intent(
             "security",
-            lambda value: value["security"]["zones"][4].update(interfaces=["ge-0/0/1.0"]),
+            lambda value: value["security"]["zones"][5].update(interfaces=["ge-0/0/1.0"]),
         )
         with self.assertRaisesRegex(module.IntentError, "WAN zones"):
             self.build(intent_dir=bad_zone)
@@ -445,8 +465,8 @@ class IntentTests(unittest.TestCase):
         bad_auth = self.with_intent("system", lambda value: value["system"].update({"root-authentication": "no"}))
         with self.assertRaisesRegex(module.IntentError, "device-local"):
             self.build(intent_dir=bad_auth)
-        bad_nat = self.with_intent("nat", lambda value: value["nat"].update(destination_rules=[]))
-        with self.assertRaisesRegex(module.IntentError, "not managed"):
+        bad_nat = self.with_intent("nat", lambda value: value["nat"].update(proxy_arp=[]))
+        with self.assertRaisesRegex(module.IntentError, "only reviewed"):
             self.build(intent_dir=bad_nat)
 
 

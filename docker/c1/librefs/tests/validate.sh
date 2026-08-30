@@ -31,16 +31,19 @@ assert r["name"] == "librefs-c1" and set(r["services"]) == {"librefs"}
 s=r["services"]["librefs"]
 assert s["image"] == "ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab"
 assert s["platform"] == "linux/amd64" and s["container_name"] == "librefs-c1"
-assert s["command"] == ["server","/data","--console-address",":9001"] and s["user"] == "1000:1000"
+assert s["command"] == ["server","/data","--address",":443","--console-address",":9001","--certs-dir","/certs/current"] and s["user"] == "1000:1000"
 assert s.get("read_only",False) is False and s["restart"] == "no"
-assert "read_only: true" not in source
 assert s["environment"] == {"HOME":"/tmp","MINIO_ROOT_PASSWORD_FILE":"/run/secrets/librefs_root_password","MINIO_ROOT_USER_FILE":"/run/secrets/librefs_root_user"}
 assert s["cap_drop"] == ["ALL"] and s["security_opt"] == ["no-new-privileges:true"]
+assert s["sysctls"] == {"net.ipv4.ip_unprivileged_port_start":"443"}
 assert s["tmpfs"] == ["/tmp:rw,nosuid,nodev,noexec,mode=1777"]
-volume=s["volumes"][0]
-assert volume["type"]=="bind" and volume["source"]=="/srv/librefs/data" and volume["target"]=="/data"
-assert volume.get("bind",{}).get("create_host_path",False) is False
-assert "create_host_path: false" in source
+volumes={volume["target"]:volume for volume in s["volumes"]}
+data=volumes["/data"]
+assert data["type"]=="bind" and data["source"]=="/srv/librefs/data"
+assert data.get("bind",{}).get("create_host_path",False) is False
+certs=volumes["/certs"]
+assert certs["type"]=="bind" and certs["source"]=="/srv/librefs/certs" and certs["read_only"] is True
+assert certs.get("bind",{}).get("create_host_path",False) is False
 assert s["networks"] == {"c1_services":{"ipv4_address":"10.25.13.65"}}
 network=r["networks"]["c1_services"]
 assert network["name"] == "c1_services" and network["external"] is True
@@ -66,8 +69,10 @@ assert s["logging"] == {"driver":"json-file","options":{"max-file":"3","max-size
 h=s["healthcheck"]; assert h["interval"] == "30s" and h["timeout"] == "5s" and h["retries"] == 3 and h["start_period"] == "1m0s"
 assert h["test"][:3] == ["CMD","/usr/bin/bash","-ceu"]
 command=h["test"][3]
-assert "/dev/tcp/127.0.0.1/9000" in command
-assert "GET /minio/health/ready HTTP/1.0" in command and "Host: localhost" in command
+assert "openssl s_client -connect 127.0.0.1:443" in command
+assert "-verify_hostname s3.monosense.io" in command
+assert "-CAfile /certs/current/public.crt" in command
+assert "GET /minio/health/ready HTTP/1.0" in command and "Host: s3.monosense.io" in command
 assert ('[[ "$status" == *" 200 "* ]]' in command
         or '[[ "$$status" == *" 200 "* ]]' in command)
 redacted=json.loads(json.dumps(r))
@@ -88,6 +93,12 @@ docker run --rm --platform linux/amd64 --network none --user 0:0 \
     --entrypoint /bin/sh \
     ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab \
     -ec 'chown 1000:1000 /data; chmod 0750 /data'
+mkdir -p "$work/certs/current"
+openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+    -subj /CN=s3.monosense.io -addext 'subjectAltName=DNS:s3.monosense.io' \
+    -keyout "$work/certs/current/private.key" -out "$work/certs/current/public.crt" \
+    >/dev/null 2>&1
+chmod 0644 "$work/certs/current/private.key" "$work/certs/current/public.crt"
 override="$work/override.yml"
 cat >"$override" <<'YAML'
 ---
@@ -101,6 +112,12 @@ services:
         target: /data
         volume:
           nocopy: true
+      - type: bind
+        source: ${LIBREFS_TEST_CERTS:?required}
+        target: /certs
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       c1_services:
         ipv4_address: ${LIBREFS_TEST_IP:?required}
@@ -118,6 +135,7 @@ LIBREFS_TEST_CONTAINER="$test_container" \
 LIBREFS_TEST_IP="$test_ip" \
 LIBREFS_TEST_NETWORK="$test_network" \
 LIBREFS_TEST_VOLUME="$test_volume" \
+LIBREFS_TEST_CERTS="$work/certs" \
     docker compose -f "$COMPOSE" -f "$override" up -d --pull always >/dev/null
 ready=false
 for _ in $(seq 1 60); do

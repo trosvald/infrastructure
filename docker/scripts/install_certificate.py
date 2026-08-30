@@ -150,11 +150,22 @@ def _verify_existing_generation(
     key_pem: bytes,
     uid: int,
     gid: int,
+    combined: bool,
+    minio: bool,
 ) -> None:
-    expected = (
+    expected = [
         (generation / "fullchain.pem", cert_pem, 0o644),
         (generation / "privkey.pem", key_pem, 0o600),
-    )
+    ]
+    if combined:
+        expected.append((generation / "combined.pem", cert_pem + key_pem, 0o600))
+    if minio:
+        expected.extend(
+            [
+                (generation / "public.crt", cert_pem, 0o644),
+                (generation / "private.key", key_pem, 0o600),
+            ]
+        )
     if generation.is_symlink() or not generation.is_dir():
         raise CertificateError("existing certificate generation is invalid")
     generation_stat = generation.stat()
@@ -179,6 +190,8 @@ def install_pair(
     target_dir: pathlib.Path,
     uid: int = 100,
     gid: int = 1000,
+    combined: bool = False,
+    minio: bool = False,
 ) -> str:
     if re.fullmatch(r"[0-9a-f]+", serial) is None:
         raise CertificateError("certificate serial is not lowercase hexadecimal")
@@ -189,7 +202,9 @@ def install_pair(
     generation = releases / serial
 
     if generation.exists() or generation.is_symlink():
-        _verify_existing_generation(generation, cert_pem, key_pem, uid, gid)
+        _verify_existing_generation(
+            generation, cert_pem, key_pem, uid, gid, combined, minio
+        )
     else:
         temporary = pathlib.Path(tempfile.mkdtemp(prefix=f".{serial}.", dir=releases))
         try:
@@ -197,6 +212,11 @@ def install_pair(
             os.chmod(temporary, 0o755)
             _write_file(temporary / "fullchain.pem", cert_pem, 0o644, uid, gid)
             _write_file(temporary / "privkey.pem", key_pem, 0o600, uid, gid)
+            if combined:
+                _write_file(temporary / "combined.pem", cert_pem + key_pem, 0o600, uid, gid)
+            if minio:
+                _write_file(temporary / "public.crt", cert_pem, 0o644, uid, gid)
+                _write_file(temporary / "private.key", key_pem, 0o600, uid, gid)
             _fsync_directory(temporary)
             os.rename(temporary, generation)
             _fsync_directory(releases)
@@ -228,6 +248,10 @@ def _parser() -> argparse.ArgumentParser:
     install.add_argument("--target", required=True, type=pathlib.Path)
     install.add_argument("--hostname", required=True)
     install.add_argument("--min-valid-days", type=int, default=0)
+    install.add_argument("--combined", action="store_true")
+    install.add_argument("--minio", action="store_true")
+    install.add_argument("--uid", type=int, default=100)
+    install.add_argument("--gid", type=int, default=1000)
     install.add_argument("--reload-pid", type=int)
 
     check = subparsers.add_parser("check")
@@ -252,7 +276,16 @@ def main() -> int:
                 arguments.hostname,
                 arguments.min_valid_days,
             )
-            install_pair(cert_pem, key_pem, serial, arguments.target)
+            install_pair(
+                cert_pem,
+                key_pem,
+                serial,
+                arguments.target,
+                uid=arguments.uid,
+                gid=arguments.gid,
+                combined=arguments.combined,
+                minio=arguments.minio,
+            )
             if arguments.reload_pid is not None:
                 os.kill(arguments.reload_pid, signal.SIGHUP)
         elif arguments.command == "check":

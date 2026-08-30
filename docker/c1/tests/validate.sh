@@ -2,29 +2,54 @@
 set -euo pipefail
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
-yamllint docker/c1/.doco-cd.yaml docker/c1/.doco-cd/docker-compose.app.yaml docker/c1/.doco-cd/poll-config.yml docker/c1/librefs/.doco-cd.yaml docker/c1/librefs/compose.yml
+yamllint docker/c1/.doco-cd.yaml docker/c1/.doco-cd/docker-compose.app.yaml docker/c1/.doco-cd/poll-config.yml \
+  docker/c1/librefs/.doco-cd.yaml docker/c1/librefs/compose.yml \
+  docker/c1/edge/.doco-cd.yaml docker/c1/edge/compose.yml \
+  docker/c1/forgejo/.doco-cd.yaml docker/c1/forgejo/compose.yml
 bash -n docker/c1/.host/networks/services/ensure.sh docker/c1/.host/networks/services/ensure-shim.sh \
   docker/c1/.host/networks/services/tests/ensure.sh docker/c1/.host/networks/services/tests/ensure-shim.sh \
   docker/c1/.host/storage/ensure.sh docker/c1/.host/storage/assert-mount.sh \
   docker/c1/.host/storage/install-storage-assets.sh docker/c1/.host/storage/tests/ensure.sh \
   docker/c1/.host/storage/tests/install-storage-assets.sh \
+  docker/c1/.host/storage/ensure-forgejo-quotas.sh \
+  docker/c1/.host/storage/ensure-edge-state.sh \
   docker/c1/.host/systemd/manage-librefs.sh docker/c1/.host/systemd/tests/manage-librefs.sh \
   docker/c1/.host/openbao/renew-token.sh docker/c1/.host/openbao/check-token-ttl.sh \
   docker/c1/.host/openbao/check-doco-controller.sh docker/c1/.host/openbao/install-token.sh \
   docker/c1/.host/openbao/install-api-secret.sh \
   docker/c1/.host/openbao/rematerialize-librefs-credentials.sh \
   docker/c1/.host/openbao/tests/helpers.sh docker/c1/.host/openbao/tests/controller.sh \
-  docker/c1/.host/openbao/tests/rematerialize.sh docker/c1/librefs/tests/validate.sh
+  docker/c1/.host/openbao/tests/rematerialize.sh docker/c1/librefs/tests/validate.sh \
+  docker/c1/edge/tests/validate.sh docker/c1/edge/tests/haproxy-config.sh \
+  docker/c1/forgejo/tests/validate.sh docker/c1/forgejo/scripts/backup.sh \
+  docker/c1/forgejo/scripts/bootstrap-admin.sh \
+  docker/c1/.host/networks/edge/ensure.sh docker/c1/.host/networks/edge/install.sh \
+  docker/c1/.host/networks/edge/tests/ensure.sh \
+  docker/c1/.host/networks/edge/ensure-forgejo-egress.sh \
+  docker/c1/.host/networks/edge/tests/ensure-forgejo-egress.sh \
+  docker/c1/.host/openbao/update-wildcard-certificate.sh \
+  docker/c1/.host/openbao/materialize-forgejo-backup-heartbeat.sh \
+  docker/c1/.host/openbao/install-wildcard-assets.sh
+python3 -m py_compile docker/scripts/install_certificate.py \
+  docker/scripts/fetch_wildcard_certificate.py docker/scripts/materialize_c1_app_secrets.py \
+  docker/c1/edge/scripts/publish-wildcard.py docker/c1/forgejo/scripts/haproxy-runtime.py \
+  docker/c1/forgejo/scripts/configure-mirror.py
 python3 docker/c0/openbao/policies/tests/test_doco_c1_policy.py
 docker/c1/.host/networks/services/tests/ensure.sh
 docker/c1/.host/networks/services/tests/ensure-shim.sh
 docker/c1/.host/storage/tests/ensure.sh
 docker/c1/.host/storage/tests/install-storage-assets.sh
+docker/c1/.host/storage/tests/ensure-forgejo-quotas.sh
+docker/c1/.host/networks/edge/tests/ensure.sh
+docker/c1/.host/networks/edge/tests/ensure-forgejo-egress.sh
 docker/c1/.host/systemd/tests/manage-librefs.sh
 docker/c1/.host/openbao/tests/helpers.sh
 docker/c1/.host/openbao/tests/controller.sh
 docker/c1/.host/openbao/tests/rematerialize.sh
 docker/c1/librefs/tests/validate.sh
+docker/c1/edge/tests/validate.sh
+docker/c1/edge/tests/haproxy-config.sh
+docker/c1/forgejo/tests/validate.sh
 DOCO_CD_API_SECRET_FILE=/dev/null DOCO_CD_OPENBAO_TOKEN_FILE=/dev/null docker compose -f docker/c1/.doco-cd/docker-compose.app.yaml config --quiet
 python3 - <<'PY'
 from pathlib import Path
@@ -65,6 +90,7 @@ assert 'restart "$SERVICE"' in installer
 assert 'env REQUIRE_PROVIDER_CANARY=true "$CONTROLLER_GATE"' in api_installer
 assert 'os.fsync' in api_installer and 'os.replace' in api_installer
 assert 'ExecStartPre=/usr/local/sbin/check-c1-openbao-token' in controller_unit
+assert 'ExecStartPre=/usr/local/sbin/materialize-c1-app-secrets' in controller_unit
 network_unit=(root/".host/networks/services/c1-services-network.service").read_text()
 assert 'c1-services-shim.service' in network_unit
 assert 'ExecStart=/usr/local/sbin/ensure-c1-services-network apply' in network_unit
@@ -97,15 +123,27 @@ for boundary in (root/".doco-cd",root/".host"):
  offenders=sorted(p for p in boundary.rglob("*") if p.name in recognized)
  assert not offenders, f"recognized Compose file below bootstrap boundary: {offenders}"
 # Every declared c1 SERVICES attachment has exactly one reviewed static endpoint.
-expected={"librefs-c1":"10.25.13.65"}; seen={}
+expected_services={"librefs-c1":"10.25.13.65"}; seen_services={}
+expected_edge={"haproxy-c1":"10.25.15.10"}; seen_edge={}
+projects=[]
 for compose in root.glob("*/compose.yml"):
  data=yaml(compose)
+ projects.append(compose.parent.name)
  for service in data.get("services",{}).values():
-  network=service.get("networks",{}).get("c1_services")
+  name=service.get("container_name")
+  networks=service.get("networks",{})
+  network=networks.get("c1_services") if isinstance(networks,dict) else None
   if network is not None:
-   name=service.get("container_name"); ip=network.get("ipv4_address") if isinstance(network,dict) else None
-   assert name in expected and ip==expected[name] and name not in seen
-   seen[name]=ip
-assert seen==expected
+   ip=network.get("ipv4_address") if isinstance(network,dict) else None
+   assert name in expected_services and ip==expected_services[name] and name not in seen_services
+   seen_services[name]=ip
+  edge=networks.get("c1_edge") if isinstance(networks,dict) else None
+  if edge is not None:
+   ip=edge.get("ipv4_address") if isinstance(edge,dict) else None
+   assert name in expected_edge and ip==expected_edge[name] and name not in seen_edge
+   seen_edge[name]=ip
+assert seen_services==expected_services
+assert seen_edge==expected_edge
+assert sorted(projects)==["edge","forgejo","librefs"]
 PY
 printf 'c1 aggregate repository validation passed\n'

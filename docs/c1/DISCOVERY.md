@@ -6,6 +6,9 @@ Repository base: `50290c242a9ded1890124c633614c6780df8ca90`
 This document contains sanitized findings only. It excludes MAC addresses, machine UUIDs, full disk
 serials, WWNs, filesystem UUIDs, stable by-id paths, credentials, tokens, and raw command dumps.
 Exact destructive device identities remain an operator checkpoint and are not repository data.
+Correction: c1 `bond0` is active-backup and has never been LACP. Every later 802.3ad, aggregator,
+hash-policy, or aggregate-capacity statement in this historical capture is invalid and must not be
+used for operations or design.
 
 ## Status
 

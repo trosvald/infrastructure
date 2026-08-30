@@ -47,6 +47,11 @@ bao auth list -format=json | jq -e 'has("userpass/")' >/dev/null || {
 
 credentials_source="$repo_dir/encrypted/monosense-infra.env"
 policy_source="$repo_dir/docker/c0/openbao/policies/monosense-infra.hcl"
+service_policies=(
+    wildcard-publisher
+    wildcard-reader-c0
+    wildcard-reader-c1
+)
 [[ -f "$credentials_source" && ! -L "$credentials_source" ]] || {
     echo "Tracked encrypted monosense-infra credentials are missing or unsafe" >&2
     exit 1
@@ -55,6 +60,13 @@ policy_source="$repo_dir/docker/c0/openbao/policies/monosense-infra.hcl"
     echo "Tracked monosense-infra policy is missing or unsafe" >&2
     exit 1
 }
+for policy in "${service_policies[@]}"; do
+    service_policy_source="$repo_dir/docker/c0/openbao/policies/$policy.hcl"
+    [[ -f "$service_policy_source" && ! -L "$service_policy_source" ]] || {
+        echo "Tracked $policy policy is missing or unsafe" >&2
+        exit 1
+    }
+done
 
 umask 077
 runtime_dir="$(mktemp -d "${TMPDIR:-/tmp}/monosense-infra-provision.XXXXXX")"
@@ -91,6 +103,15 @@ jq -e '
 }
 
 bao policy write monosense-infra "$policy_source" >/dev/null
+for policy in "${service_policies[@]}"; do
+    bao policy write "$policy" "$repo_dir/docker/c0/openbao/policies/$policy.hcl" >/dev/null
+    bao write "auth/token/roles/$policy" \
+        "allowed_policies=$policy" \
+        orphan=true \
+        renewable=true \
+        token_period=24h \
+        token_type=service >/dev/null
+done
 jq '{
     password: .BAO_PASSWORD,
     token_policies: ["monosense-infra"],
@@ -109,8 +130,8 @@ infra_token="$(jq '{password: .BAO_PASSWORD}' "$credentials_json" |
 }
 
 allowed_paths=(
-    kv/data/network/junos/srx1500/topology
     kv/data/network/junos/srx1500/netconf
+    kv/data/network/junos/srx1500/admin
     kv/data/network/bgp/cilium-srx1500
     kv/data/platform/talos/bsd/topology
     kv/data/platform/talos/bsd/secrets
@@ -121,11 +142,44 @@ for path in "${allowed_paths[@]}"; do
         exit 1
     }
 done
+[[ "$(BAO_TOKEN="$infra_token" bao token capabilities \
+    kv/data/network/junos/srx1500/topology)" == "read, update" ]] || {
+    echo "monosense-infra lacks exact CAS migration capability on Junos topology" >&2
+    exit 1
+}
+managed_records=(
+    docker/c1/edge
+    docker/c1/forgejo
+    docker/c0/monitoring
+    platform/tls/monosense-wildcard
+)
+for record in "${managed_records[@]}"; do
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "kv/data/$record")" == \
+        "create, delete, patch, read, update" ]] || {
+        echo "monosense-infra does not have exact data management capability on $record" >&2
+        exit 1
+    }
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "kv/metadata/$record")" == \
+        "delete, read" ]] || {
+        echo "monosense-infra does not have exact metadata capability on $record" >&2
+        exit 1
+    }
+done
+for role in "${service_policies[@]}"; do
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "auth/token/create/$role")" == \
+        "update" ]] || {
+        echo "monosense-infra cannot create the exact $role service token" >&2
+        exit 1
+    }
+done
 for path in \
     kv/data/network/bgp/not-approved \
     kv/metadata/network/bgp/cilium-srx1500 \
+    kv/data/docker/c1/not-approved \
+    kv/metadata/docker/c1/not-approved \
     auth/userpass/users/monosense-infra \
     auth/token/create \
+    auth/token/create/not-approved \
     sys/policies/acl/monosense-infra; do
     [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "$path")" == "deny" ]] || {
         echo "monosense-infra unexpectedly has capability on $path" >&2

@@ -1,0 +1,16 @@
+log_mode: stdout
+log_level: info
+update_frequency: 10s
+api_url: http://crowdsec-c1:8080/
+api_key: @@crowdsec_bouncer_key@@
+insecure_skip_verify: false
+listen_tcp: 0.0.0.0:9000
+asn_database_path: /var/lib/crowdsec/data/GeoLite2-ASN.mmdb
+city_database_path: /var/lib/crowdsec/data/GeoLite2-City.mmdb
+appsec_url: http://crowdsec-c1:7422
+appsec_timeout: 200ms
+hosts:
+  - { host: git.monosense.io, appsec: { always_send: false, timeout: 200ms } }
+  - { host: edge-test.monosense.io, appsec: { always_send: false, timeout: 200ms } }
+prometheus:
+  enabled: false

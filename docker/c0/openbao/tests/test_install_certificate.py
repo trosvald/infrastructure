@@ -17,7 +17,10 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
-sys.path.insert(0, str(pathlib.Path(__file__).parents[1] / "scripts"))
+shared_scripts = pathlib.Path("/scripts")
+if not shared_scripts.is_dir():
+    shared_scripts = pathlib.Path(__file__).parents[3] / "scripts"
+sys.path.insert(0, str(shared_scripts))
 import install_certificate as installer  # noqa: E402
 
 
@@ -127,6 +130,34 @@ class CertificateInstallerTests(unittest.TestCase):
                 os._exit(1)
         _, status = os.waitpid(child, 0)
         self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+
+    def test_optional_haproxy_and_minio_outputs_are_generation_atomic(self) -> None:
+        cert_pem, key_pem, serial = self.validate(make_pair(0xA2))
+        installer.install_pair(
+            cert_pem,
+            key_pem,
+            serial,
+            self.target,
+            uid=99,
+            gid=99,
+            combined=True,
+            minio=True,
+        )
+        generation = self.target / "releases" / serial
+        expected = {
+            "combined.pem": (cert_pem + key_pem, 0o600),
+            "public.crt": (cert_pem, 0o644),
+            "private.key": (key_pem, 0o600),
+        }
+        for name, (content, mode) in expected.items():
+            path = generation / name
+            self.assertEqual(path.read_bytes(), content)
+            metadata = path.stat()
+            self.assertEqual(
+                (metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode)),
+                (99, 99, mode),
+            )
+        self.assert_current(0xA2)
 
     def test_mismatched_private_key_is_rejected(self) -> None:
         certificate, _ = make_pair(1)

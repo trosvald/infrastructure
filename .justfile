@@ -38,6 +38,11 @@ toolchain-install:
     mise install --locked
 
 [group: 'OpenBao']
+[doc('Unseal c0 OpenBao with two hidden interactive share prompts')]
+openbao-unseal:
+    scripts/unseal-openbao.sh
+
+[group: 'OpenBao']
 [doc('Authenticate the local Bao CLI for an explicit administrator operation')]
 openbao-admin-login:
     BAO_ADDR=https://vault.monosense.io:8200 bao login -method=userpass -no-print username=monosense-admin

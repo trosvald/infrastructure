@@ -17,7 +17,7 @@ for zone_file in "$project_dir"/zones/*.zone; do
         forward_zone=$zone
     fi
 done
-[[ "${#managed_zones[@]}" == 5 && -n "$forward_zone" ]]
+[[ "${#managed_zones[@]}" == 6 && -n "$forward_zone" ]]
 host_uid="$(id -u)"
 host_gid="$(id -g)"
 case "$(uname -s)" in
@@ -176,7 +176,11 @@ while IFS='|' read -r name address; do
         printf '%s\n' "A record is outside the managed reverse zones: $name -> $address" >&2
         exit 1
     fi
-    [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$reverse_zone' AND r.name='$host.$reverse_zone' AND r.type='PTR' AND r.content='$name';")" == 1 ]]
+    if [[ "$address" == 10.25.15.10 && "$name" =~ ^(edge-test|git)\.monosense\.io$ ]]; then
+        [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$reverse_zone' AND r.name='$host.$reverse_zone' AND r.type='PTR' AND r.content='edge.monosense.io';")" == 1 ]]
+    else
+        [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$reverse_zone' AND r.name='$host.$reverse_zone' AND r.type='PTR' AND r.content='$name';")" == 1 ]]
+    fi
 done <<<"$a_inventory"
 
 ptr_inventory="$(sqlite "$data_dir" "SELECT name || '|' || content FROM records WHERE type='PTR' ORDER BY name;")"

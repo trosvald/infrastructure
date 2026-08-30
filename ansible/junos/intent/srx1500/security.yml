@@ -2,6 +2,9 @@
 security:
   address_books:
     - { name: MGMT-DNS, value: { topology: dns.internal_cidr } }
+    - { name: EDGE-HAPROXY, value: { topology: networks.edge.haproxy_cidr } }
+    - { name: C0-GATUS, value: { topology: monitoring.gatus_cidr } }
+    - { name: C0-VECTOR, value: { topology: monitoring.vector_cidr } }
   screens:
     - name: WAN-SCREEN
       options:
@@ -18,14 +21,22 @@ security:
     mode: event
   flow:
     tcp_mss: { scope: all-tcp, value: 1456 }
+  pki_ca_profiles:
+    - { name: { topology: monitoring.syslog_ca_profile }, ca_identity: { topology: monitoring.syslog_ca_profile } }
   zones:
     - { name: MGMT, interfaces: [irb.2510], services: [dhcp, ping, ssh, https, netconf] }
     - { name: PROD, interfaces: [irb.2511], services: [dhcp, ping], protocols: [bgp] }
     - { name: HOME, interfaces: [irb.2512], services: [dhcp, ping] }
     - { name: DEV, interfaces: [irb.2513], services: [dhcp, ping] }
+    - { name: EDGE, interfaces: [irb.2515] }
     - { name: WAN-XLSATU, interfaces: [ge-0/0/0.0], screen: WAN-SCREEN, services: [dhcp] }
     - { name: WAN-MYREP, interfaces: [ge-0/0/1.0], screen: WAN-SCREEN, services: [dhcp] }
   policies:
+    - { from: WAN-MYREP, to: EDGE, name: WAN-EDGE-PUBLIC, enabled: { topology: edge.public_enabled }, source: [any], destination: [EDGE-HAPROXY], applications: [junos-ssh, junos-http, junos-https], action: permit, log: [session-init, session-close] }
+    - { from: MGMT, to: EDGE, name: MGMT-EDGE, source: [any], destination: [EDGE-HAPROXY], applications: [junos-ssh, junos-http, junos-https], action: permit, log: [session-close] }
+    - { from: PROD, to: EDGE, name: PROD-EDGE, source: [any], destination: [EDGE-HAPROXY], applications: [junos-ssh, junos-http, junos-https], action: permit, log: [session-close] }
+    - { from: HOME, to: EDGE, name: HOME-EDGE, source: [any], destination: [EDGE-HAPROXY], applications: [junos-ssh, junos-http, junos-https], action: permit, log: [session-close] }
+    - { from: DEV, to: EDGE, name: DEV-EDGE, source: [any], destination: [EDGE-HAPROXY], applications: [junos-ssh, junos-http, junos-https], action: permit, log: [session-close] }
     - { from: HOME, to: WAN-XLSATU, name: HOME-INTERNET, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
     - { from: MGMT, to: WAN-MYREP, name: MGMT-INTERNET, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
     - { from: PROD, to: WAN-MYREP, name: PROD-INTERNET, source: [any], destination: [any], applications: [any], action: permit, log: [session-init, session-close] }
@@ -40,6 +51,7 @@ security:
     - { from: HOME, to: MGMT, name: HOME-TO-DNS, source: [any], destination: [MGMT-DNS], applications: [junos-dns-udp, junos-dns-tcp], action: permit, log: [session-close] }
     - { from: HOME, to: MGMT, name: HOME-BLOCK-MGMT, source: [any], destination: [any], applications: [any], action: deny, log: [session-init] }
     - { from: HOME, to: PROD, name: HOME-BLOCK-PROD, source: [any], destination: [any], applications: [any], action: deny, log: [session-init] }
+    - { from: HOME, to: DEV, name: HOME-TO-GATUS, source: [any], destination: [C0-GATUS], applications: [junos-https], action: permit, log: [session-close] }
     - { from: HOME, to: DEV, name: HOME-BLOCK-DEV, source: [any], destination: [any], applications: [any], action: deny, log: [session-init] }
     - { from: PROD, to: HOME, name: PROD-BLOCK-HOME, source: [any], destination: [any], applications: [any], action: deny, log: [session-init] }
     - { from: DEV, to: HOME, name: DEV-BLOCK-HOME, source: [any], destination: [any], applications: [any], action: deny, log: [session-init] }

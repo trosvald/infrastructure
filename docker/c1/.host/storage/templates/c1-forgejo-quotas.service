@@ -1,0 +1,14 @@
+[Unit]
+Description=Ensure c1 Forgejo bind sources and XFS project quotas
+Requires=c1-applications-storage.service
+After=c1-applications-storage.service
+RequiresMountsFor=/srv/applications
+Before=doco-cd-c1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ensure-forgejo-quotas apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -28,10 +28,23 @@ refuse_conflict() {
 }
 verify_all() {
     verify_file "$HERE/assert-mount.sh" "$LOCAL_SBIN/assert-c1-mount"
+    verify_file "$HERE/ensure-forgejo-quotas.sh" "$LOCAL_SBIN/ensure-forgejo-quotas"
+    verify_file "$HERE/ensure-edge-state.sh" "$LOCAL_SBIN/ensure-c1-edge-state"
     verify_file "$HERE/templates/c1-librefs-storage.service" \
         "$SYSTEMD_ROOT/c1-librefs-storage.service"
     verify_file "$HERE/templates/c1-applications-storage.service" \
         "$SYSTEMD_ROOT/c1-applications-storage.service"
+    verify_file "$HERE/templates/c1-forgejo-quotas.service" \
+        "$SYSTEMD_ROOT/c1-forgejo-quotas.service"
+    verify_file "$HERE/templates/c1-edge-state.service" \
+        "$SYSTEMD_ROOT/c1-edge-state.service"
+    verify_file "$HERE/../../forgejo/scripts/backup.sh" "$LOCAL_SBIN/backup-c1-forgejo"
+    verify_file "$HERE/../../forgejo/scripts/haproxy-runtime.py" \
+        "$LOCAL_SBIN/haproxy-runtime-c1-forgejo.py"
+    verify_file "$HERE/../systemd/forgejo-backup.service" \
+        "$SYSTEMD_ROOT/forgejo-backup.service"
+    verify_file "$HERE/../systemd/forgejo-backup.timer" \
+        "$SYSTEMD_ROOT/forgejo-backup.timer"
     verify_file "$HERE/../systemd/manage-librefs.sh" "$LOCAL_SBIN/manage-c1-librefs"
     verify_file "$HERE/../systemd/librefs-c1.service" "$SYSTEMD_ROOT/librefs-c1.service"
     printf 'c1 storage assertion assets match reviewed sources\n'
@@ -39,19 +52,48 @@ verify_all() {
 apply_all() {
     [[ "$($ID_BIN -u)" == 0 ]] || fail 'storage asset installation requires root'
     refuse_conflict "$HERE/assert-mount.sh" "$LOCAL_SBIN/assert-c1-mount"
+    refuse_conflict "$HERE/ensure-forgejo-quotas.sh" "$LOCAL_SBIN/ensure-forgejo-quotas"
+    refuse_conflict "$HERE/ensure-edge-state.sh" "$LOCAL_SBIN/ensure-c1-edge-state"
     refuse_conflict "$HERE/templates/c1-librefs-storage.service" \
         "$SYSTEMD_ROOT/c1-librefs-storage.service"
     refuse_conflict "$HERE/templates/c1-applications-storage.service" \
         "$SYSTEMD_ROOT/c1-applications-storage.service"
+    refuse_conflict "$HERE/templates/c1-forgejo-quotas.service" \
+        "$SYSTEMD_ROOT/c1-forgejo-quotas.service"
+    refuse_conflict "$HERE/templates/c1-edge-state.service" \
+        "$SYSTEMD_ROOT/c1-edge-state.service"
+    refuse_conflict "$HERE/../../forgejo/scripts/backup.sh" "$LOCAL_SBIN/backup-c1-forgejo"
+    refuse_conflict "$HERE/../../forgejo/scripts/haproxy-runtime.py" \
+        "$LOCAL_SBIN/haproxy-runtime-c1-forgejo.py"
+    refuse_conflict "$HERE/../systemd/forgejo-backup.service" \
+        "$SYSTEMD_ROOT/forgejo-backup.service"
+    refuse_conflict "$HERE/../systemd/forgejo-backup.timer" \
+        "$SYSTEMD_ROOT/forgejo-backup.timer"
     refuse_conflict "$HERE/../systemd/manage-librefs.sh" "$LOCAL_SBIN/manage-c1-librefs"
     refuse_conflict "$HERE/../systemd/librefs-c1.service" "$SYSTEMD_ROOT/librefs-c1.service"
     "$INSTALL_BIN" -d -o root -g root -m 0755 "$LOCAL_SBIN" "$SYSTEMD_ROOT"
     "$INSTALL_BIN" -o root -g root -m 0755 "$HERE/assert-mount.sh" \
         "$LOCAL_SBIN/assert-c1-mount"
+    "$INSTALL_BIN" -o root -g root -m 0755 "$HERE/ensure-forgejo-quotas.sh" \
+        "$LOCAL_SBIN/ensure-forgejo-quotas"
+    "$INSTALL_BIN" -o root -g root -m 0755 "$HERE/ensure-edge-state.sh" \
+        "$LOCAL_SBIN/ensure-c1-edge-state"
     "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/templates/c1-librefs-storage.service" \
         "$SYSTEMD_ROOT/c1-librefs-storage.service"
     "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/templates/c1-applications-storage.service" \
         "$SYSTEMD_ROOT/c1-applications-storage.service"
+    "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/templates/c1-forgejo-quotas.service" \
+        "$SYSTEMD_ROOT/c1-forgejo-quotas.service"
+    "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/templates/c1-edge-state.service" \
+        "$SYSTEMD_ROOT/c1-edge-state.service"
+    "$INSTALL_BIN" -o root -g root -m 0755 "$HERE/../../forgejo/scripts/backup.sh" \
+        "$LOCAL_SBIN/backup-c1-forgejo"
+    "$INSTALL_BIN" -o root -g root -m 0755 "$HERE/../../forgejo/scripts/haproxy-runtime.py" \
+        "$LOCAL_SBIN/haproxy-runtime-c1-forgejo.py"
+    "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/../systemd/forgejo-backup.service" \
+        "$SYSTEMD_ROOT/forgejo-backup.service"
+    "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/../systemd/forgejo-backup.timer" \
+        "$SYSTEMD_ROOT/forgejo-backup.timer"
     "$INSTALL_BIN" -o root -g root -m 0755 "$HERE/../systemd/manage-librefs.sh" \
         "$LOCAL_SBIN/manage-c1-librefs"
     "$INSTALL_BIN" -o root -g root -m 0644 "$HERE/../systemd/librefs-c1.service" \
@@ -59,7 +101,8 @@ apply_all() {
     verify_all >/dev/null
     "$SYSTEMCTL_BIN" daemon-reload
     "$SYSTEMCTL_BIN" enable c1-librefs-storage.service c1-applications-storage.service \
-        librefs-c1.service
+        c1-forgejo-quotas.service c1-edge-state.service librefs-c1.service \
+        forgejo-backup.timer
     printf 'c1 storage and libreFS startup assets installed; services were not started\n'
 }
 

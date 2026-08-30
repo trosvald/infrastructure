@@ -8,13 +8,16 @@ dns:
   internal: 192.0.2.53
   internal_cidr: 192.0.2.53/32
 ntp: { preferred: 192.0.2.123, secondary: 198.51.100.123 }
-wan: { primary_mac: "02:00:00:00:00:01", secondary_mac: "02:00:00:00:00:02" }
+wan: { primary_mac: "02:00:00:00:00:01", secondary_mac: "02:00:00:00:00:02", secondary_public_cidr: 192.0.2.200/32 }
 dhcp: { option_138: 192.0.2.2 }
+edge: { public_enabled: true }
+monitoring: { gatus_cidr: 198.18.2.36/32, vector_address: 198.18.2.37, vector_cidr: 198.18.2.37/32, vector_host: logs-ingest.example.invalid, syslog_ca_profile: SYNTHETIC-ISRG-ROOT-X1 }
 networks:
   mgmt: { subnet: 192.0.2.0/27, gateway: 192.0.2.1, gateway_cidr: 192.0.2.1/27, dhcp_low: 192.0.2.10, dhcp_high: 192.0.2.20 }
   prod: { subnet: 198.51.100.0/24, gateway: 198.51.100.1, gateway_cidr: 198.51.100.1/24, dhcp_low: 198.51.100.100, dhcp_high: 198.51.100.200 }
   home: { subnet: 203.0.113.0/27, gateway: 203.0.113.1, gateway_cidr: 203.0.113.1/27, dhcp_low: 203.0.113.10, dhcp_high: 203.0.113.20 }
   dev: { subnet: 192.0.2.32/27, gateway: 192.0.2.33, gateway_cidr: 192.0.2.33/27, dhcp_low: 192.0.2.40, dhcp_high: 192.0.2.50 }
+  edge: { subnet: 198.18.1.0/24, gateway: 198.18.1.1, gateway_cidr: 198.18.1.1/24, haproxy: 198.18.1.10, haproxy_cidr: 198.18.1.10/32 }
 bgp:
   router_id: 198.51.100.1
   local_address: 198.51.100.1

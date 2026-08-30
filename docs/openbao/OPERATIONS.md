@@ -231,21 +231,22 @@ HTTP, or JSON tooling must run on the operator workstation, on
 c0, or on c1, not inside the OpenBao container. The examples
 below follow that boundary.
 
-## Manual unseal after a restart
+## Unseal after a restart
 
-After any c0 restart, OpenBao comes up sealed. Verify the state, then
-submit two distinct shares. **OpenBao supplies its own hidden
-prompt; the share is never an argv argument, an environment variable,
-or a file path.** Two interactive `bao operator unseal` commands are
-sufficient; each one reads the share into its own prompt buffer:
+After any c0 restart, OpenBao comes up sealed. From an interactive workstation shell, run:
 
 ```sh
-bao operator init -status
-bao status
-bao operator unseal
-bao operator unseal
-bao status
+just openbao-unseal
 ```
+
+The recipe verifies HTTP `503`, resolves exactly one running Compose-owned OpenBao container, and
+opens two consecutive hidden `bao operator unseal` prompts over SSH. Enter one distinct offline
+share at each prompt. It then requires the public readiness endpoint to return HTTP `200`.
+
+The shares remain manual custody inputs: the recipe never accepts a share argument, environment
+variable, pipe, or file. It never places a share in SSH arguments, process metadata, shell history,
+Git, SOPS, or logs. If OpenBao already returns HTTP `200`, the recipe exits successfully without
+opening a prompt.
 
 The terminal hides the input at each prompt. The third share stays
 offline in its own custody. The OpenBao process never logs a share
@@ -908,8 +909,8 @@ unseal-after-restart contract.
     EOF
     ```
 
-5. Unseal interactively with two distinct shares (see
-   [Manual unseal after a restart](#manual-unseal-after-a-restart)).
+5. Run `just openbao-unseal` and enter two distinct shares at its hidden prompts (see
+   [Unseal after a restart](#unseal-after-a-restart)).
 6. Confirm HTTP `200`, Raft leader, named logins, and renewer
    health:
 

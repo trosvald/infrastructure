@@ -223,8 +223,8 @@ link created on `bond0.2513` is `c1-svc-shim` (11 chars, fits Linux IFNAMSIZ = 1
 unit never adds an address or default route to `bond0` or the VLAN.
 
 Before and after application, assert the unchanged management interface/address/default route/DNS,
-LACP membership/aggregator, VLANs, and MTUs. OpenBao `.34` remains outside the shim `/27` and uses
-the existing management default route.
+active-backup mode and active member, VLANs, and MTUs. OpenBao `.34` remains outside the shim `/27`
+and uses the existing management default route.
 
 `.65` and `.66` need conclusive duplicate-address detection before network creation. `.65` becomes
 libreFS; `.66` remains unassigned for future HAProxy. The current network cannot reserve `.66` as an
@@ -480,7 +480,7 @@ weaken it.
 8. provision/mount 1 TB partitions (libreFS and applications) on the approved single NVMe, verify UUID/XFS/RW/fstab assertions for both;
 9. Docker/containerd roots remain on the OS disk; prove libreFS and affected bind-mounted applications fail closed if either partition is missing;
 10. conclusive `.65/.66` collision checks;
-11. apply shim/network and prove management/LACP/VLAN state;
+11. apply shim/network and prove management/active-backup/VLAN state;
 12. separate OpenBao approval, policy/KV/token/audit/backup work;
 13. bootstrap c1 Doco and pass boundary/provider/leakage canary checks;
 14. explicit branch push approval, PR/CI/review, explicit merge approval, verify main;
@@ -520,8 +520,8 @@ concern, or any OS/root relationship.
 Separate explicit approvals are required for OpenBao writes, push, merge, reboot, and deliberate
 bond-member failure. No force push, auto-approve, yolo mode, c0/SRX SSH, or Junos mutation.
 
-Immediate stops also include management-route/interface/DNS change, unhealthy LACP aggregator, IP
-collision/inconclusive final probe, OpenBao sealed/TLS failure, excess policy privilege, secret
+Immediate stops also include management-route/interface/DNS change, unhealthy active-backup bond,
+IP collision/inconclusive final probe, OpenBao sealed/TLS failure, excess policy privilege, secret
 leakage, unpinned/unverified image, any 512 GB device reference, mission-caused CI/Gitleaks failure,
 unresolved CRITICAL/HIGH review finding, required SRX mutation, or claimed backup without restore.
 
@@ -539,8 +539,8 @@ unresolved CRITICAL/HIGH review finding, required SRX mutation, or claimed backu
 | HIGH | HTTP reachability broader than intended | live source-boundary test or reviewed TLS/firewall before real data |
 | HIGH | no off-host restore | status cap `OPERATIONAL_WITHOUT_DURABILITY` |
 | HIGH | libreFS maturity/provenance gaps | immutable digest, tested runtime, internal-only boundary, backup, monitored upgrades |
-| MEDIUM | LACP overclaim or harmful tuning | evidence matrix, one-variable changes, revert non-beneficial changes |
-| MEDIUM | historical link failures/min-links zero | preserve configuration, baseline counters, optional separately approved failover |
+| MEDIUM | bond failover overclaim or harmful tuning | active-backup evidence, one-variable changes, revert non-beneficial changes |
+| MEDIUM | historical link failures | preserve configuration, baseline counters, optional separately approved failover |
 | MEDIUM | pre-existing c0 validation failure | diagnose separately; never mask in c1 validation |
 
 ## Acceptance

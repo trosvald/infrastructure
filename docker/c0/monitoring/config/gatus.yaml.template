@@ -1,0 +1,99 @@
+metrics: false
+web:
+  port: 443
+  tls:
+    certificate-file: /run/tls/current/fullchain.pem
+    private-key-file: /run/tls/current/privkey.pem
+  description: Service availability
+  header: monosense status
+  dark-mode: true
+alerting:
+  telegram:
+    token: @@telegram_bot_token@@
+    id: @@telegram_chat_id@@
+    default-alert:
+      enabled: true
+      failure-threshold: 3
+      success-threshold: 2
+external-endpoints:
+  - name: Forgejo backup
+    group: Backups
+    token: @@backup_heartbeat_token@@
+    heartbeat: { interval: 26h }
+    alerts: [{ type: telegram }]
+endpoints:
+  - &dns
+    name: DNS resolver
+    group: Core
+    url: udp://10.25.13.35:53
+    dns: { query-name: monosense.io, query-type: A }
+    conditions: ["[DNS_RCODE] == NOERROR", "[RESPONSE_TIME] < 3000"]
+    ui: &private { hide-url: true, hide-hostname: true, hide-port: true, hide-conditions: true, hide-errors: true }
+  - name: Authoritative DNS
+    group: Core
+    url: tcp://10.25.13.33:53
+    conditions: ["[CONNECTED] == true", "[RESPONSE_TIME] < 3000"]
+    ui: *private
+  - name: Secrets
+    group: Core
+    url: https://vault.monosense.io:8200/v1/sys/health
+    conditions: ["[STATUS] == any(200, 429, 472, 473, 501, 503)", "[CERTIFICATE_EXPIRATION] > 168h"]
+    ui: *private
+  - name: c0 host
+    group: Hosts
+    url: tcp://10.25.13.10:22
+    conditions: ["[CONNECTED] == true"]
+    ui: *private
+  - name: c1 host
+    group: Hosts
+    url: tcp://10.25.13.11:22
+    conditions: ["[CONNECTED] == true"]
+    ui: *private
+  - name: Edge HTTP
+    group: Edge
+    url: tcp://10.25.15.10:80
+    conditions: ["[CONNECTED] == true"]
+    ui: *private
+  - name: Edge HTTPS
+    group: Edge
+    url: https://edge-test.monosense.io/
+    conditions: ["[STATUS] == 200", "[CERTIFICATE_EXPIRATION] > 168h"]
+    ui: *private
+  - name: Edge SSH
+    group: Edge
+    url: tcp://10.25.15.10:22
+    conditions: ["[CONNECTED] == true"]
+    ui: *private
+  - name: Edge security
+    group: Edge
+    url: https://edge-test.monosense.io/.env
+    conditions: ["[STATUS] == 403"]
+    ui: *private
+  - name: Forgejo web
+    group: Forgejo
+    url: https://git.monosense.io/
+    conditions: ["[STATUS] == 200", "[CERTIFICATE_EXPIRATION] > 168h"]
+    ui: *private
+  - name: Forgejo API
+    group: Forgejo
+    url: https://git.monosense.io/api/healthz
+    conditions: ["[STATUS] == 200"]
+    ui: *private
+  - name: Forgejo SSH
+    group: Forgejo
+    url: tcp://10.25.15.10:22
+    conditions: ["[CONNECTED] == true"]
+    ui: *private
+  - name: Object storage TLS
+    group: Backups
+    url: https://s3.monosense.io/
+    conditions: ["[STATUS] < 500", "[CERTIFICATE_EXPIRATION] > 168h"]
+    ui: *private
+  - name: Log ingestion
+    group: Evidence
+    url: https://logs-ingest.monosense.io:8686/
+    method: POST
+    headers: { Authorization: "Bearer @@vector_ingest_token@@" }
+    body: '{}'
+    conditions: ["[STATUS] == 200"]
+    ui: *private

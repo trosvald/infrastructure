@@ -71,7 +71,7 @@ services:
     volumes:
       - openbao-acme:/etc/letsencrypt
       - openbao-tls:/openbao/tls
-      - ./scripts/install_certificate.py:/usr/local/bin/install_certificate.py:ro
+      - ../../scripts/install_certificate.py:/usr/local/bin/install_certificate.py:ro
 
   openbao:
     # yamllint disable-line rule:line-length
@@ -175,7 +175,7 @@ services:
     volumes:
       - openbao-acme:/etc/letsencrypt
       - openbao-tls:/openbao/tls
-      - ./scripts/install_certificate.py:/usr/local/bin/install_certificate.py:ro
+      - ../../scripts/install_certificate.py:/usr/local/bin/install_certificate.py:ro
       - ./scripts/renew_certificate.sh:/usr/local/bin/renew_certificate.sh:ro
     restart: unless-stopped
     healthcheck:

@@ -5,7 +5,8 @@ managed_zones='monosense.io
 10.25.10.in-addr.arpa
 11.25.10.in-addr.arpa
 12.25.10.in-addr.arpa
-13.25.10.in-addr.arpa'
+13.25.10.in-addr.arpa
+15.25.10.in-addr.arpa'
 
 managed_zone_count=0
 for zone in $managed_zones; do

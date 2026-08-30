@@ -1,0 +1,4 @@
+---
+name: edge-c1
+compose_files:
+  - compose.yml
