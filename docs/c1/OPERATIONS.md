@@ -223,22 +223,21 @@ printing them. Required paths are:
 - `/opt/monitoring/secrets/wildcard-reader-c0.token` on c0.
 
 Install c0 wildcard assets with
-`sudo docker/c0/.host/openbao/install-wildcard-assets.sh`. Materialize the four monitoring values
-and the c1 backup heartbeat token only through the 15-minute `monosense-infra` runtime:
+`sudo docker/c0/.host/openbao/install-wildcard-assets.sh`. Provision the named tokens, four
+monitoring values, and c1 application secrets only through the 15-minute `monosense-infra`
+runtime:
 
 ```sh
-sudo scripts/with-openbao-runtime.sh \
-  docker/c0/.host/openbao/materialize-monitoring-secrets.sh
-sudo scripts/with-openbao-runtime.sh \
-  docker/c1/.host/openbao/materialize-forgejo-backup-heartbeat.sh
+scripts/with-openbao-runtime.sh scripts/provision-edge-runtime.sh
 ```
 
-The monitoring materializer writes protected `gatus.yaml` and `vector.yaml` files below
-`/var/lib/monosense-monitoring/secrets`; the c1 materializer writes
-`/opt/forgejo/secrets/backup-heartbeat.token`. Values are never printed or placed in container
-environment metadata. Wildcard reader timers are enabled but not started by their installers. Run
-each reader service once only after Certbot has published a validated wildcard record; a failed
-read or validation retains the previous generation.
+The provisioner writes protected `gatus.yaml` and `vector.yaml` files below
+`/var/lib/monosense-monitoring/secrets`; it writes the c1 backup heartbeat token to
+`/opt/forgejo/secrets/backup-heartbeat.token` and materializes the protected c1 application
+files. Values are never printed or placed in container environment metadata. Wildcard reader
+timers are enabled but not started by their installers. Run each reader service once only after
+Certbot has published a validated wildcard record; a failed read or validation retains the
+previous generation.
 
 Activate private infrastructure in this order:
 

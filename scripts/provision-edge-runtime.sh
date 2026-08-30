@@ -64,7 +64,8 @@ PY
 
 install_remote() {
     local host="$1" destination="$2" uid="$3" gid="$4" mode="$5" source="$6"
-    ssh -T "$host" sudo /bin/sh -ceu '
+    local remote_script remote_command
+    remote_script='
         destination=$1 uid=$2 gid=$3 mode=$4
         directory=$(dirname "$destination")
         install -d -o root -g root -m 0755 "$directory"
@@ -76,7 +77,10 @@ install_remote() {
         sync -f "$temporary"
         mv -f "$temporary" "$destination"
         trap - EXIT HUP INT TERM
-    ' sh "$destination" "$uid" "$gid" "$mode" <"$source"
+    '
+    printf -v remote_command '%q ' sudo /bin/sh -ceu "$remote_script" sh \
+        "$destination" "$uid" "$gid" "$mode"
+    ssh -T "$host" "$remote_command" <"$source"
 }
 
 install_token() {
