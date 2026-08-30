@@ -233,12 +233,12 @@ sudo scripts/with-openbao-runtime.sh \
   docker/c1/.host/openbao/materialize-forgejo-backup-heartbeat.sh
 ```
 
-The first command writes `/var/lib/monosense-monitoring/monitoring.env`; the second writes
-`/opt/forgejo/secrets/backup-heartbeat.token`. Both are root-owned mode `0600` and never print
-values. Doco must recreate monitoring after its environment file changes. Wildcard reader timers
-are enabled but not started by their installers. Run each reader service once only after Certbot has
-published a validated wildcard record; a failed read or validation retains the previous
-generation.
+The monitoring materializer writes protected `gatus.yaml` and `vector.yaml` files below
+`/var/lib/monosense-monitoring/secrets`; the c1 materializer writes
+`/opt/forgejo/secrets/backup-heartbeat.token`. Values are never printed or placed in container
+environment metadata. Wildcard reader timers are enabled but not started by their installers. Run
+each reader service once only after Certbot has published a validated wildcard record; a failed
+read or validation retains the previous generation.
 
 Activate private infrastructure in this order:
 

@@ -22,6 +22,12 @@ case "$1" in
             exit 2
         }
         ;;
+    scripts/provision-edge-runtime.sh)
+        [[ $# == 1 ]] || {
+            echo "EDGE runtime provisioner accepts no arguments" >&2
+            exit 2
+        }
+        ;;
     talos/scripts/render.sh)
         [[ "${2:-}" == "--authenticated" ]] || {
             echo "Talos runtime must use the authenticated internal entry point" >&2

@@ -4,3 +4,5 @@ auto bond0.2515
 iface bond0.2515 inet manual
     vlan-raw-device bond0
     mtu 1496
+    pre-up /usr/sbin/sysctl -q -w net.ipv6.conf.$IFACE.disable_ipv6=1
+    post-up /usr/sbin/ip -6 address flush dev $IFACE scope link

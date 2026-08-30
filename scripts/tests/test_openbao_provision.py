@@ -39,4 +39,12 @@ assert "openbao-admin-login:" in justfile
 assert "provision-openbao-infra:" in justfile
 assert "bao login -method=userpass -no-print username=monosense-admin" in justfile
 assert "scripts/provision-openbao-infra.sh" in justfile
+assert "scripts/provision-edge-runtime.sh)" in runtime
+edge_runtime = (root / "scripts/provision-edge-runtime.sh").read_text(encoding="utf-8")
+assert "bao token create -role=" in edge_runtime
+assert "install_remote" in edge_runtime
+assert "kv/docker/c1/edge" in edge_runtime
+assert "kv/docker/c1/forgejo" in edge_runtime
+assert "kv/docker/c0/monitoring" in edge_runtime
+assert "printf '%s\\n' \"$token\"" not in edge_runtime
 print("OpenBao provisioner keeps password material off argv and verifies exact capabilities")
