@@ -40,6 +40,20 @@ def main() -> int:
         token = args.token_file.read_text(encoding="utf-8").strip()
         if not token or re.search(r"\s", token):
             raise FetchError("reader token is invalid")
+        renew_request = urllib.request.Request(
+            args.url.rstrip("/") + "/v1/auth/token/renew-self",
+            data=b"",
+            method="POST",
+            headers={"X-Vault-Token": token},
+        )
+        with urllib.request.urlopen(
+            renew_request, context=ssl.create_default_context(), timeout=15
+        ) as response:
+            renewed = json.load(response)["auth"]
+        if renewed.get("renewable") is not True or not isinstance(
+            renewed.get("lease_duration"), int
+        ) or renewed["lease_duration"] <= 0:
+            raise FetchError("reader token did not renew as a periodic credential")
         request = urllib.request.Request(
             args.url.rstrip("/") + "/v1/kv/data/platform/tls/monosense-wildcard",
             headers={"X-Vault-Token": token},

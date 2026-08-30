@@ -123,6 +123,11 @@ Wildcard certificate publisher and reader policies are separate from Doco. The p
 create/read/update/patch only the wildcard data record. Each host reader can read only that data
 and metadata record. All three service policies have self lookup and renewal only; no role uses a
 path wildcard.
+The three wildcard roles issue orphan periodic 24-hour tokens without an explicit maximum TTL.
+Each 12-hour publisher or reader run renews its own token through `renew-self` before accessing the
+certificate record and fails closed unless OpenBao returns a positive renewable lease. A token that
+misses its period requires the documented capability-tested replacement and old-accessor revocation.
+
 
 No wildcard path is permitted. In particular, the token has no capability for:
 
@@ -181,22 +186,19 @@ The Doco token cannot create or rotate itself. An immortal broad token is prohib
 | Doco API secret | suspected disclosure or scheduled operator rotation | generate at least 256 CSPRNG bits, atomic root-only install, restart the systemd-owned controller, require controller poll canary | controller recreation only | regenerate on loss; no backup |
 | Doco OpenBao token | before period/lifecycle policy change, suspected disclosure, scheduled rotation, or expiry | replacement/test/atomic install/systemd restart/provider-canary/revoke-by-accessor sequence above | controller recreation; apps continue | accessor recorded; token value never recorded or backed up |
 | libreFS root user/password | suspected disclosure, administrator rotation, or initial bootstrap | stop the systemd service, write a new KV version with CAS, then run the fail-closed rematerialize helper (`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh`) which removes only the stateless container, invokes an isolated local-only Git custom target through Doco to recreate with the new pair, normalizes provenance to remote `main`, restarts/checks the systemd gate, and cleans both the temporary source tree and the cache | libreFS container recreation only; `/data` and named volumes preserved | OpenBao KV history and approved encrypted OpenBao backup |
-| c1 edge record | issuance credential, MaxMind credential, CrowdSec key, or ingestion token rotation | write with CAS through `monosense-infra`, then force the exact Doco project rematerialization and verify old-value absence | affected edge helper or security service recreation; HAProxy remains on its prior valid configuration where possible | OpenBao KV history and encrypted OpenBao backup |
-| Forgejo record | database/application/bootstrap/SMTP/Kopia/libreFS credential rotation | write with CAS through `monosense-infra`, drain Forgejo, rematerialize the exact project, verify health and old-value absence | Forgejo/PostgreSQL or backup interruption according to the changed key | OpenBao KV history and encrypted OpenBao backup; same-host Kopia is not secret custody |
+| c1 edge record | issuance credential, MaxMind credential, CrowdSec key, or ingestion token rotation | write with CAS through `monosense-infra`, run the root-owned c1 application-secret materializer, then recreate only the edge project and verify old-value absence | affected edge helper or security service recreation; HAProxy remains on its prior valid configuration where possible | OpenBao KV history and encrypted OpenBao backup |
+| Forgejo record | database/application/bootstrap/SMTP/Kopia/libreFS credential rotation | write with CAS through `monosense-infra`, drain Forgejo, run the root-owned c1 application-secret materializer, recreate the exact project, and verify health plus old-value absence | Forgejo/PostgreSQL or backup interruption according to the changed key | OpenBao KV history and encrypted OpenBao backup; same-host Kopia is not secret custody |
 | c0 monitoring record | Telegram, ingestion, or backup heartbeat token rotation | write with CAS through `monosense-infra`, rematerialize c0 monitoring and the c1 heartbeat file, verify authenticated ingest, heartbeat, and alert delivery | Gatus/Vector recreation and c1 backup timer | OpenBao KV history and encrypted OpenBao backup |
 | wildcard TLS record and service tokens | certificate renewal, short validity, key compromise, token disclosure, or role-policy change | publisher validates and writes all five fields atomically; host reader validates a new local generation before atomic activation; token replacement is capability-tested before old accessor revocation | consumer reload only after validation; failed fetch/install retains prior generation | OpenBao KV history and encrypted OpenBao backup |
 
-Doco 0.111.0 resolves ordinary KV values before it hashes the rendered Compose project. Live proof
-under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) showed that an ordinary KV value
-change alone does NOT redeploy or rematerialize the container when the Git source is
-unchanged: Doco and the existing `librefs-c1` container continue to hold the prior pair.
-Rotation is therefore gated by the fail-closed rematerialize helper, which stops the systemd
-service, removes only the stateless container (never `/data` or named volumes), invokes an
-isolated local-only Git custom target through Doco to recreate with current provider values,
-normalizes provenance to remote `main`, restarts/checks the systemd gate, and cleans both the
-temporary source tree and the cache. The initial canary must reproduce the helper's outcome.
-Rollback reverses the rotation by restoring the prior KV version through CAS and re-running
-helper; no sequence assumes that a KV update waits for a separate manual redeploy.
+Doco 0.111.0 does not receive the c1 edge or Forgejo values. Before the controller starts, the
+root-owned `/usr/local/sbin/materialize-c1-app-secrets` helper uses the protected c1 OpenBao token
+to read exactly those two records, validates their complete key sets, renders repository-owned
+templates, and atomically installs mode-0400 files below the applications mount. Compose contains
+only `create_host_path: false` bind paths. Rotation therefore requires rerunning the materializer
+and recreating only the affected project; rollback restores the prior KV version with CAS, reruns
+the materializer, and recreates that project. The existing libreFS pair remains on its separate
+fail-closed Doco rematerialization path because that already-proven service predates this contract.
 
 ## Leakage gates
 
@@ -216,13 +218,15 @@ protected material after recording only pass/fail evidence.
 
 ## Exact materialization contract
 
-Doco maps the c1 edge and Forgejo records to top-level Compose configs. Secret values are mounted
-under `/run/secrets` with `create_host_path: false`, mode `0400`, and the narrow service UID/GID.
-PostgreSQL receives its password through `POSTGRES_PASSWORD_FILE`; Forgejo is rendered an
-owner-readable `app.ini`; Certbot receives a Cloudflare credentials file; CrowdSec/SPOA and Vector
-receive only their own key files. The Forgejo bootstrap password/email projection is removed after
-the `trosvald` administrator is verified. No resolved value may remain in environment, inspect
-metadata, Doco worktrees, ordinary logs, or backup staging.
+The root-owned c1 materializer maps the edge and Forgejo records to protected host files before Doco
+starts. Secret values are bind-mounted under `/run/secrets` or, for generated application
+configuration, at the exact owner-readable configuration path with `create_host_path: false` and
+mode `0400`. PostgreSQL receives its password through `POSTGRES_PASSWORD_FILE`; Forgejo receives a
+rendered owner-readable `app.ini`; Certbot receives a Cloudflare credentials file; CrowdSec uses
+its supported `/run/secrets/bouncer_key_spoa` bootstrap path; SPOA, GeoIP, and Vector receive only
+their own files. The Forgejo bootstrap password/email projection is removed after the `trosvald`
+administrator is verified. No resolved value may remain in environment, inspect metadata, Doco
+worktrees, ordinary logs, or backup staging.
 
 The wildcard host installers write root-owned mode-0600 generation files. HAProxy and c0 Vector
 receive a read-only combined PEM generated from validated `fullchain` plus `private_key`; libreFS

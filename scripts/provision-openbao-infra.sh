@@ -109,8 +109,7 @@ for policy in "${service_policies[@]}"; do
         "allowed_policies=$policy" \
         orphan=true \
         renewable=true \
-        token_ttl=24h \
-        token_max_ttl=72h \
+        token_period=24h \
         token_type=service >/dev/null
 done
 jq '{

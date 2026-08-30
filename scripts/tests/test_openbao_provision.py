@@ -18,8 +18,8 @@ for policy in ("wildcard-publisher", "wildcard-reader-c0", "wildcard-reader-c1")
     assert f"auth/token/roles/{policy}" not in provision
 assert provision.count('bao write "auth/token/roles/$policy"') == 1
 assert 'auth/token/create/$role' in provision
-assert "token_ttl=24h" in provision
-assert "token_max_ttl=72h" in provision
+assert "token_period=24h" in provision
+assert "token_max_ttl=" not in provision
 assert provision.count("kv/data/") >= 6
 assert "kv/metadata/network/bgp/cilium-srx1500" in provision
 assert "auth/token/create" in provision

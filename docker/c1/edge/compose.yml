@@ -19,7 +19,7 @@ services:
       - { source: crowdsec_agent, target: /usr/local/etc/haproxy/crowdsec.cfg, uid: "99", gid: "99", mode: 0440 }
     volumes:
       - type: bind
-        source: /srv/applications/apps/edge/tls/current
+        source: /srv/applications/apps/edge/tls
         target: /run/tls
         read_only: true
         bind: { create_host_path: false }
@@ -62,10 +62,9 @@ services:
     environment:
       COLLECTIONS: crowdsecurity/haproxy
       AGENT_USERNAME: edge-c1
-      AGENT_PASSWORD: ${EDGE_CROWDSEC_LAPI_KEY:?required}
       DISABLE_ONLINE_API: "true"
-      BOUNCER_KEY_spoa: ${EDGE_CROWDSEC_BOUNCER_KEY:?required}
       DISABLE_AGENT: "false"
+    secrets: [bouncer_key_spoa]
     configs:
       - { source: crowdsec_acquis, target: /etc/crowdsec/acquis.yaml, uid: "1000", gid: "1000", mode: 0440 }
       - { source: crowdsec_appsec, target: /etc/crowdsec/acquis.d/appsec.yaml, uid: "1000", gid: "1000", mode: 0440 }
@@ -108,9 +107,8 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     command: [-c, /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml]
-    configs:
-      - { source: spoa_config, target: /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml, uid: "1000", gid: "1000", mode: 0400 }
     volumes:
+      - { type: bind, source: /srv/applications/apps/edge/secrets/spoa.yaml, target: /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml, read_only: true, bind: { create_host_path: false } }
       - type: bind
         source: /srv/applications/apps/edge/geolite
         target: /var/lib/crowdsec/data
@@ -151,11 +149,9 @@ services:
         --target /run/edge-tls --token-file /run/secrets/wildcard-publisher.token;
         sleep 43200;
         done
-    configs:
-      - { source: cloudflare_credentials, target: /run/secrets/cloudflare.ini, uid: "0", gid: "0", mode: 0400 }
-      - { source: acme_email, target: /run/secrets/acme_email, uid: "0", gid: "0", mode: 0400 }
-    extra_hosts: [vault.monosense.io:10.25.13.34]
     volumes:
+      - { type: bind, source: /srv/applications/apps/edge/secrets/cloudflare.ini, target: /run/secrets/cloudflare.ini, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/edge/secrets/acme_email, target: /run/secrets/acme_email, read_only: true, bind: { create_host_path: false } }
       - type: bind
         source: /srv/applications/apps/edge/letsencrypt
         target: /etc/letsencrypt
@@ -171,6 +167,7 @@ services:
         target: /run/secrets/wildcard-publisher.token
         read_only: true
         bind: { create_host_path: false }
+    extra_hosts: [vault.monosense.io:10.25.13.34]
     tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777, /var/log/letsencrypt:rw,nosuid,nodev,noexec,size=32m,mode=0750]
     networks: [outbound]
     cpus: 0.5
@@ -190,9 +187,8 @@ services:
     security_opt: [no-new-privileges:true]
     command: [-f, /run/secrets/GeoIP.conf]
     environment: { GEOIPUPDATE_FREQUENCY: "24" }
-    configs:
-      - { source: maxmind_config, target: /run/secrets/GeoIP.conf, uid: "1000", gid: "1000", mode: 0400 }
     volumes:
+      - { type: bind, source: /srv/applications/apps/edge/secrets/GeoIP.conf, target: /run/secrets/GeoIP.conf, read_only: true, bind: { create_host_path: false } }
       - type: bind
         source: /srv/applications/apps/edge/geolite
         target: /usr/share/GeoIP
@@ -216,8 +212,8 @@ services:
     security_opt: [no-new-privileges:true]
     configs:
       - { source: vector_config, target: /etc/vector/vector.yaml, uid: "1000", gid: "1000", mode: 0440 }
-      - { source: vector_token, target: /run/secrets/vector_token, uid: "1000", gid: "1000", mode: 0400 }
     volumes:
+      - { type: bind, source: /srv/applications/apps/edge/secrets/vector_token, target: /run/secrets/vector_token, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/edge/logs, target: /var/log/edge, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/forgejo/logs, target: /var/log/forgejo-stack, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/edge/tls/current, target: /run/tls, read_only: true, bind: { create_host_path: false } }
@@ -256,35 +252,11 @@ configs:
   crowdsec_agent: { file: ./config/crowdsec.cfg }
   crowdsec_acquis: { file: ./config/acquis.yaml }
   crowdsec_appsec: { file: ./config/appsec.yaml }
-  spoa_config:
-    content: |
-      log_mode: stdout
-      log_level: info
-      update_frequency: 10s
-      api_url: http://crowdsec-c1:8080/
-      api_key: ${EDGE_CROWDSEC_BOUNCER_KEY:?required}
-      insecure_skip_verify: false
-      listen_tcp: 0.0.0.0:9000
-      asn_database_path: /var/lib/crowdsec/data/GeoLite2-ASN.mmdb
-      city_database_path: /var/lib/crowdsec/data/GeoLite2-City.mmdb
-      appsec_url: http://crowdsec-c1:7422
-      appsec_timeout: 200ms
-      hosts:
-        - { host: git.monosense.io, appsec: { always_send: false, timeout: 200ms } }
-        - { host: edge-test.monosense.io, appsec: { always_send: false, timeout: 200ms } }
-      prometheus:
-        enabled: false
-  cloudflare_credentials:
-    content: "dns_cloudflare_api_token = ${EDGE_CLOUDFLARE_DNS_TOKEN:?required}\n"
-  acme_email: { content: "${EDGE_ACME_EMAIL:?required}\n" }
-  maxmind_config:
-    content: |
-      AccountID ${EDGE_MAXMIND_ACCOUNT_ID:?required}
-      LicenseKey ${EDGE_MAXMIND_LICENSE_KEY:?required}
-      EditionIDs GeoLite2-ASN GeoLite2-City
-      DatabaseDirectory /usr/share/GeoIP
-  vector_token: { content: "${EDGE_VECTOR_INGEST_TOKEN:?required}\n" }
   vector_config: { file: ./config/vector.yaml }
+
+secrets:
+  bouncer_key_spoa:
+    file: /srv/applications/apps/edge/secrets/bouncer_key_spoa
 
 networks:
   c1_edge: { external: true, name: c1_edge }

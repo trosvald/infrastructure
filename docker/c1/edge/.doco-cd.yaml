@@ -1,10 +1,4 @@
 ---
 name: edge-c1
-external_secrets:
-  EDGE_ACME_EMAIL: kv:kv:docker/c1/edge:acme_email
-  EDGE_CLOUDFLARE_DNS_TOKEN: kv:kv:docker/c1/edge:cloudflare_dns_token
-  EDGE_MAXMIND_ACCOUNT_ID: kv:kv:docker/c1/edge:maxmind_account_id
-  EDGE_MAXMIND_LICENSE_KEY: kv:kv:docker/c1/edge:maxmind_license_key
-  EDGE_CROWDSEC_LAPI_KEY: kv:kv:docker/c1/edge:crowdsec_lapi_key
-  EDGE_CROWDSEC_BOUNCER_KEY: kv:kv:docker/c1/edge:crowdsec_bouncer_key
-  EDGE_VECTOR_INGEST_TOKEN: kv:kv:docker/c1/edge:vector_ingest_token
+compose_files:
+  - compose.yml

@@ -268,9 +268,11 @@ PROXYv2 SSH, and the 10 GiB upload boundary.
 
 Candidate B requires all prior evidence plus the stable MYREP IPv4 from OpenBao, external
 reachability of TCP 22/80/443, an active CrowdSec/AppSec path, healthy Vector/Gatus evidence, and a
-verified backup. Set `edge.public_enabled: true`, deploy commit-confirmed, then publish only
-proxied Cloudflare `git` A/AAAA records after direct-origin tests pass. Never publish `edge-test`;
-remove its echo backend and DNS record after acceptance. If any public check fails, roll back
+verified backup. Set `edge.public_enabled: true` and deploy commit-confirmed. After direct-origin
+tests pass, create DNS-only `edge.monosense.io A <MYREP IPv4>`, then
+`edge-test.monosense.io CNAME edge.monosense.io` and
+`git.monosense.io CNAME edge.monosense.io`, with `proxied=false` and no AAAA records. Remove the
+temporary `edge-test` record and echo backend after acceptance. If any public check fails, roll back
 Candidate B first, remove public DNS, and retain the private deployment.
 
 The Kopia repository at `https://s3.monosense.io` uses a scoped non-root identity, retains 30 daily

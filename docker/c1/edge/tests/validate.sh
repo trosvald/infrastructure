@@ -2,9 +2,6 @@
 set -euo pipefail
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 cd "$ROOT"
-export EDGE_CLOUDFLARE_DNS_TOKEN=x EDGE_ACME_EMAIL=x@example.invalid
-export EDGE_MAXMIND_ACCOUNT_ID=1 EDGE_MAXMIND_LICENSE_KEY=x
-export EDGE_CROWDSEC_BOUNCER_KEY=x EDGE_CROWDSEC_LAPI_KEY=x EDGE_VECTOR_INGEST_TOKEN=x
 rendered="$(mktemp)"
 trap 'rm -f "$rendered"' EXIT
 docker compose -f docker/c1/edge/compose.yml config --format json >"$rendered"
@@ -37,6 +34,10 @@ for value in ("maxconn 1000", "maxconn 500", "maxconn 100", "timeout connect 5s"
     assert value in cfg, value
 for header in ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP", "CF-Connecting-IP", "CF-IPCountry", "True-Client-IP"):
     assert f"del-header {header}" in cfg, header
+compose = Path("docker/c1/edge/compose.yml").read_text()
+assert "${EDGE_" not in compose
+assert "var(txn.crowdsec.remediation)" in cfg
+assert "var(txn.crowdsec.isocode)" in cfg
 assert "default_backend reject_unknown" in cfg
 assert "SPOA_BYPASS" in cfg and "200ms" in cfg
 PY

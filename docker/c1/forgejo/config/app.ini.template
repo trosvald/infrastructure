@@ -1,0 +1,73 @@
+APP_NAME = monosense Forgejo
+RUN_MODE = prod
+RUN_USER = git
+[server]
+DOMAIN = git.monosense.io
+ROOT_URL = https://git.monosense.io/
+HTTP_ADDR = 0.0.0.0
+HTTP_PORT = 3000
+PROTOCOL = http
+SSH_DOMAIN = git.monosense.io
+START_SSH_SERVER = true
+SSH_LISTEN_HOST = 0.0.0.0
+SSH_LISTEN_PORT = 2222
+SSH_PORT = 22
+SSH_SERVER_USE_PROXY_PROTOCOL = true
+OFFLINE_MODE = true
+LFS_START_SERVER = true
+LFS_JWT_SECRET = @@forgejo_lfs_jwt_secret@@
+[database]
+DB_TYPE = postgres
+HOST = forgejo-postgres-c1:5432
+NAME = forgejo
+USER = forgejo
+PASSWD = @@postgres_password@@
+SSL_MODE = disable
+[security]
+INSTALL_LOCK = true
+SECRET_KEY = @@forgejo_secret_key@@
+INTERNAL_TOKEN = @@forgejo_internal_token@@
+[oauth2]
+JWT_SECRET = @@forgejo_jwt_secret@@
+[service]
+DISABLE_REGISTRATION = true
+REQUIRE_SIGNIN_VIEW = false
+DEFAULT_USER_VISIBILITY = private
+[repository]
+DEFAULT_PRIVATE = private
+ENABLE_PUSH_CREATE_USER = false
+[federation]
+ENABLED = false
+[session]
+PROVIDER = file
+PROVIDER_CONFIG = /var/lib/gitea/data/sessions
+[queue]
+TYPE = level
+CONN_STR = /var/lib/gitea/data/queues
+[actions]
+ENABLED = true
+DEFAULT_ACTIONS_URL = github
+[mailer]
+ENABLED = true
+PROTOCOL = smtp+starttls
+SMTP_ADDR = smtp.zoho.com
+SMTP_PORT = 587
+USER = @@zoho_username@@
+PASSWD = @@zoho_password@@
+FROM = info@monosense.io
+FORCE_TRUST_SERVER_CERT = false
+[webhook]
+ALLOWED_HOST_LIST = external
+SKIP_TLS_VERIFY = false
+[attachment]
+MAX_SIZE = 10240
+[repository.upload]
+FILE_MAX_SIZE = 10240
+[lfs]
+MAX_FILE_SIZE = 10737418240
+[packages]
+LIMIT_SIZE_CONTAINER = 10737418240
+[log]
+MODE = file
+LEVEL = info
+ROOT_PATH = /var/log/gitea

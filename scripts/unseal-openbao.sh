@@ -33,7 +33,7 @@ container_id="$($SSH_BIN "$SSH_TARGET" 'sudo docker ps --filter label=com.docker
 printf '%s\n' 'Enter two distinct offline shares at the two hidden OpenBao prompts.'
 for share_number in 1 2; do
     printf 'Share %d of 2:\n' "$share_number"
-    "$SSH_BIN" -tt "$SSH_TARGET" "sudo docker exec -it $container_id bao operator unseal"
+    "$SSH_BIN" -tt "$SSH_TARGET" "sudo docker exec -it $container_id bao operator unseal" <"$TTY_DEVICE"
 done
 
 code="$(health_code)"

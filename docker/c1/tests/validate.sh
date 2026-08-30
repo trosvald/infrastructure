@@ -31,8 +31,9 @@ bash -n docker/c1/.host/networks/services/ensure.sh docker/c1/.host/networks/ser
   docker/c1/.host/openbao/materialize-forgejo-backup-heartbeat.sh \
   docker/c1/.host/openbao/install-wildcard-assets.sh
 python3 -m py_compile docker/scripts/install_certificate.py \
-  docker/scripts/fetch_wildcard_certificate.py docker/c1/edge/scripts/publish-wildcard.py \
-  docker/c1/forgejo/scripts/haproxy-runtime.py docker/c1/forgejo/scripts/configure-mirror.py
+  docker/scripts/fetch_wildcard_certificate.py docker/scripts/materialize_c1_app_secrets.py \
+  docker/c1/edge/scripts/publish-wildcard.py docker/c1/forgejo/scripts/haproxy-runtime.py \
+  docker/c1/forgejo/scripts/configure-mirror.py
 python3 docker/c0/openbao/policies/tests/test_doco_c1_policy.py
 docker/c1/.host/networks/services/tests/ensure.sh
 docker/c1/.host/networks/services/tests/ensure-shim.sh
@@ -89,6 +90,7 @@ assert 'restart "$SERVICE"' in installer
 assert 'env REQUIRE_PROVIDER_CANARY=true "$CONTROLLER_GATE"' in api_installer
 assert 'os.fsync' in api_installer and 'os.replace' in api_installer
 assert 'ExecStartPre=/usr/local/sbin/check-c1-openbao-token' in controller_unit
+assert 'ExecStartPre=/usr/local/sbin/materialize-c1-app-secrets' in controller_unit
 network_unit=(root/".host/networks/services/c1-services-network.service").read_text()
 assert 'c1-services-shim.service' in network_unit
 assert 'ExecStart=/usr/local/sbin/ensure-c1-services-network apply' in network_unit

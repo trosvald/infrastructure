@@ -1,0 +1,4 @@
+AccountID @@maxmind_account_id@@
+LicenseKey @@maxmind_license_key@@
+EditionIDs GeoLite2-ASN GeoLite2-City
+DatabaseDirectory /usr/share/GeoIP

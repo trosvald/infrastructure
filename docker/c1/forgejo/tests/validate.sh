@@ -2,11 +2,6 @@
 set -euo pipefail
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 cd "$ROOT"
-export FORGEJO_POSTGRES_PASSWORD=x FORGEJO_KOPIA_REPOSITORY_PASSWORD=x
-export FORGEJO_LIBREFS_ACCESS_KEY=x FORGEJO_LIBREFS_SECRET_KEY=x
-export FORGEJO_BOOTSTRAP_ADMIN_PASSWORD=x FORGEJO_BOOTSTRAP_ADMIN_EMAIL=x@example.invalid
-export FORGEJO_LFS_JWT_SECRET=x FORGEJO_SECRET_KEY=x FORGEJO_INTERNAL_TOKEN=x FORGEJO_JWT_SECRET=x
-export FORGEJO_ZOHO_USERNAME=x FORGEJO_ZOHO_PASSWORD=x
 rendered="$(mktemp)"
 trap 'rm -f "$rendered"' EXIT
 docker compose --profile backup -f docker/c1/forgejo/compose.yml config --format json >"$rendered"
@@ -30,13 +25,15 @@ jq -e '
   and ([.services | to_entries[] | select(.value.networks | has("database")) | .key] | sort) == ["forgejo","postgres"]
   and .services.forgejo.healthcheck.test == ["CMD","wget","--spider","--quiet","http://127.0.0.1:3000/api/healthz"]
   and .services.postgres.healthcheck.test == ["CMD-SHELL","pg_isready -U forgejo -d forgejo"]
-  and ([.services.forgejo.volumes[].source] | sort) == (["/srv/applications/apps/forgejo/app/archives","/srv/applications/apps/forgejo/app/attachments","/srv/applications/apps/forgejo/app/avatars","/srv/applications/apps/forgejo/app/lfs","/srv/applications/apps/forgejo/app/packages","/srv/applications/apps/forgejo/app/queues","/srv/applications/apps/forgejo/app/repositories","/srv/applications/apps/forgejo/app/sessions","/srv/applications/apps/forgejo/app/ssh","/srv/applications/apps/forgejo/logs/forgejo","/srv/applications/apps/forgejo/staging"] | sort)
+  and ([.services.forgejo.volumes[].source] | sort) == (["/srv/applications/apps/forgejo/app/archives","/srv/applications/apps/forgejo/app/attachments","/srv/applications/apps/forgejo/app/avatars","/srv/applications/apps/forgejo/app/lfs","/srv/applications/apps/forgejo/app/packages","/srv/applications/apps/forgejo/app/queues","/srv/applications/apps/forgejo/app/repositories","/srv/applications/apps/forgejo/app/sessions","/srv/applications/apps/forgejo/app/ssh","/srv/applications/apps/forgejo/logs/forgejo","/srv/applications/apps/forgejo/staging","/srv/applications/apps/forgejo/secrets/app.ini","/srv/applications/apps/forgejo/secrets/bootstrap_admin_email","/srv/applications/apps/forgejo/secrets/bootstrap_admin_password"] | sort)
 ' "$rendered" >/dev/null
 python3 - <<'PY'
 from pathlib import Path
 compose = Path("docker/c1/forgejo/compose.yml").read_text()
+template = Path("docker/c1/forgejo/config/app.ini.template").read_text()
+assert "${FORGEJO_" not in compose
 for value in ("ROOT_URL = https://git.monosense.io/", "SSH_SERVER_USE_PROXY_PROTOCOL = true", "SSH_PORT = 22", "DISABLE_REGISTRATION = true", "DEFAULT_PRIVATE = private", "ENABLED = false", "MAX_SIZE = 10240", "MAX_FILE_SIZE = 10737418240", "smtp+starttls", "smtp.zoho.com", "FORCE_TRUST_SERVER_CERT = false"):
-    assert value in compose, value
+    assert value in template, value
 bootstrap = Path("docker/c1/forgejo/scripts/bootstrap-admin.sh").read_text()
 assert 'username="trosvald"' in bootstrap
 assert '--must-change-password=false' in bootstrap

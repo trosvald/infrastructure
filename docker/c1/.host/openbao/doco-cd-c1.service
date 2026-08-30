@@ -8,6 +8,7 @@ Wants=network-online.target librefs-c1.service
 Type=simple
 WorkingDirectory=/opt/doco-cd
 ExecStartPre=/usr/local/sbin/check-c1-openbao-token
+ExecStartPre=/usr/local/sbin/materialize-c1-app-secrets
 ExecStart=/usr/bin/docker compose -f /opt/doco-cd/docker-compose.app.yaml up --force-recreate --no-deps doco-cd
 ExecStop=/usr/bin/docker compose -f /opt/doco-cd/docker-compose.app.yaml stop -t 60 doco-cd
 Restart=on-failure
