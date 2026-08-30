@@ -61,7 +61,6 @@ services:
     security_opt: [no-new-privileges:true]
     environment:
       COLLECTIONS: crowdsecurity/haproxy
-      AGENT_USERNAME: edge-c1
       DISABLE_ONLINE_API: "true"
       DISABLE_AGENT: "false"
     secrets: [bouncer_key_spoa]

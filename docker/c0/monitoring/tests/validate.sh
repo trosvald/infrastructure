@@ -2,9 +2,6 @@
 set -euo pipefail
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 cd "$ROOT"
-export MONITORING_WILDCARD_FULLCHAIN_PEM=x MONITORING_WILDCARD_PRIVATE_KEY_PEM=x
-export MONITORING_JUNOS_CA_PEM=x MONITORING_TELEGRAM_BOT_TOKEN=x
-export MONITORING_TELEGRAM_CHAT_ID=x MONITORING_VECTOR_INGEST_TOKEN=x
 rendered="$(mktemp)"
 trap 'rm -f "$rendered"' EXIT
 docker compose -f docker/c0/monitoring/compose.yml config --format json >"$rendered"
@@ -29,8 +26,12 @@ jq -e '
 python3 - <<'PY'
 from pathlib import Path
 compose = Path("docker/c0/monitoring/compose.yml").read_text()
-for value in ("metrics: false", "hide-url: true", "hide-hostname: true", "hide-conditions: true", "hide-errors: true", "MONITORING_TELEGRAM_BOT_TOKEN", "MONITORING_BACKUP_HEARTBEAT_TOKEN", "external-endpoints:", "heartbeat: { interval: 26h }", "0.0.0.0:8686", "strategy: custom", "Bearer \" + token", "0.0.0.0:6514", "-mtime +13", "authorization", "request_body"):
-    assert value in compose, value
+gatus = Path("docker/c0/monitoring/config/gatus.yaml.template").read_text()
+vector = Path("docker/c0/monitoring/config/vector.yaml.template").read_text()
+combined = compose + gatus + vector
+for value in ("metrics: false", "hide-url: true", "hide-hostname: true", "hide-conditions: true", "hide-errors: true", "@@telegram_bot_token@@", "@@backup_heartbeat_token@@", "external-endpoints:", "heartbeat: { interval: 26h }", "0.0.0.0:8686", "strategy: custom", "@@vector_ingest_token@@", "0.0.0.0:6514", "-mtime +13", "authorization", "request_body"):
+    assert value in combined, value
+assert "env_file" not in compose and "MONITORING_" not in compose
 for forbidden in ("victoriametrics", "victorialogs", "alertmanager", "/var/run/docker.sock"):
-    assert forbidden not in compose.lower(), forbidden
+    assert forbidden not in combined.lower(), forbidden
 PY

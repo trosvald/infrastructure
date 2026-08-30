@@ -38,6 +38,7 @@ bootstrap = Path("docker/c1/forgejo/scripts/bootstrap-admin.sh").read_text()
 assert 'username="trosvald"' in bootstrap
 assert '--must-change-password=false' in bootstrap
 backup = Path("docker/c1/forgejo/scripts/backup.sh").read_text()
-for value in ('python3 "$RUNTIME_HELPER" drain', 'docker stop --time 60 "$FORGEJO"', '--volumes-from "$FORGEJO"', 'docker exec "$POSTGRES" pg_dump', 'kopia snapshot verify', 'docker start "$FORGEJO"', 'backups_forgejo-backup/external?success=true', 'Authorization: Bearer $heartbeat_token'):
+for value in ('python3 "$RUNTIME_HELPER" drain', 'docker stop --time 60 "$FORGEJO"', '--volumes-from "$FORGEJO"', 'source=$FORGEJO_CONFIG,target=/run/forgejo-app.ini,readonly', '--config /run/forgejo-app.ini', 'docker exec "$POSTGRES" pg_dump', 'kopia snapshot verify', 'docker start "$FORGEJO"', 'backups_forgejo-backup/external?success=true', 'Authorization: Bearer $heartbeat_token'):
     assert value in backup, value
+assert 'docker cp "$FORGEJO:/etc/gitea/app.ini"' not in backup
 PY

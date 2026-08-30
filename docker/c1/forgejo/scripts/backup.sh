@@ -8,6 +8,7 @@ readonly CURL_BIN="${CURL_BIN:-curl}"
 readonly HEARTBEAT_URL="${HEARTBEAT_URL:-https://status.monosense.io/api/v1/endpoints/backups_forgejo-backup/external?success=true}"
 readonly HEARTBEAT_TOKEN_FILE="${HEARTBEAT_TOKEN_FILE:-/opt/forgejo/secrets/backup-heartbeat.token}"
 readonly LOG_DIR="${LOG_DIR:-/srv/applications/apps/forgejo/logs/backup}"
+readonly FORGEJO_CONFIG="${FORGEJO_CONFIG:-/srv/applications/apps/forgejo/secrets/app.ini}"
 readonly FORGEJO=forgejo-c1 POSTGRES=forgejo-postgres-c1 KOPIA=kopia-forgejo-c1
 readonly generation="$(date -u +%Y%m%dT%H%M%SZ)"
 readonly target="$STAGING/$generation"
@@ -37,18 +38,17 @@ install -d -o 1000 -g 1000 -m 0700 "$target"
 python3 "$RUNTIME_HELPER" drain
 drained=true
 sleep 2
-docker cp "$FORGEJO:/etc/gitea/app.ini" "$target/app.ini"
-chown 1000:1000 "$target/app.ini"
-chmod 0600 "$target/app.ini"
+[[ -f "$FORGEJO_CONFIG" && ! -L "$FORGEJO_CONFIG" ]] \
+    || fail "protected Forgejo configuration is missing or unsafe: $FORGEJO_CONFIG"
 docker stop --time 60 "$FORGEJO" >/dev/null
 app_stopped=true
 readonly forgejo_image="$(docker inspect "$FORGEJO" --format '{{.Config.Image}}')"
 docker run --rm --user 1000:1000 --network forgejo-c1-database \
     --volumes-from "$FORGEJO" --tmpfs /tmp:rw,nosuid,nodev,noexec,size=256m \
     --mount "type=bind,source=$target,target=/staging/$generation" \
-    --entrypoint forgejo "$forgejo_image" dump --config "/staging/$generation/app.ini" \
+    --mount "type=bind,source=$FORGEJO_CONFIG,target=/run/forgejo-app.ini,readonly" \
+    --entrypoint forgejo "$forgejo_image" dump --config /run/forgejo-app.ini \
     --file "/staging/$generation/forgejo-dump.zip" --tempdir /tmp
-rm -f "$target/app.ini"
 docker exec "$POSTGRES" pg_dump --format=custom --no-owner --no-privileges \
     --username forgejo --dbname forgejo >"$target/postgres.dump"
 chmod 0600 "$target/postgres.dump"

@@ -14,11 +14,8 @@ services:
     cap_drop: [ALL]
     sysctls: { net.ipv4.ip_unprivileged_port_start: "443" }
     security_opt: [no-new-privileges:true]
-    configs:
-      - { source: gatus_config, target: /config/config.yaml, uid: "65534", gid: "65534", mode: 0400 }
-    env_file:
-      - { path: /var/lib/monosense-monitoring/monitoring.env, required: false }
     volumes:
+      - { type: bind, source: /var/lib/monosense-monitoring/secrets/gatus.yaml, target: /config/config.yaml, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /var/lib/monosense-monitoring/tls, target: /run/tls, read_only: true, bind: { create_host_path: false } }
     tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777]
     networks:
@@ -46,11 +43,8 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    configs:
-      - { source: vector_config, target: /etc/vector/vector.yaml, uid: "65534", gid: "65534", mode: 0400 }
-    env_file:
-      - { path: /var/lib/monosense-monitoring/monitoring.env, required: false }
     volumes:
+      - { type: bind, source: /var/lib/monosense-monitoring/secrets/vector.yaml, target: /etc/vector/vector.yaml, read_only: true, bind: { create_host_path: false } }
       - vector-evidence:/var/lib/vector
       - { type: bind, source: /var/lib/monosense-monitoring/tls, target: /run/tls, read_only: true, bind: { create_host_path: false } }
     tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777]
@@ -86,160 +80,6 @@ services:
     memswap_limit: 32m
     pids_limit: 32
     logging: *bounded_logs
-
-configs:
-  gatus_config:
-    content: |
-      metrics: false
-      web:
-        port: 443
-        tls:
-          certificate-file: /run/tls/current/fullchain.pem
-          private-key-file: /run/tls/current/privkey.pem
-        description: Service availability
-        header: monosense status
-        dark-mode: true
-      alerting:
-        telegram:
-          token: $${MONITORING_TELEGRAM_BOT_TOKEN}
-          id: $${MONITORING_TELEGRAM_CHAT_ID}
-          default-alert:
-            enabled: true
-            failure-threshold: 3
-            success-threshold: 2
-      external-endpoints:
-        - name: Forgejo backup
-          group: Backups
-          token: $${MONITORING_BACKUP_HEARTBEAT_TOKEN}
-          heartbeat: { interval: 26h }
-          alerts: [{ type: telegram }]
-      endpoints:
-        - &dns
-          name: DNS resolver
-          group: Core
-          url: udp://10.25.13.35:53
-          dns: { query-name: monosense.io, query-type: A }
-          conditions: ["[DNS_RCODE] == NOERROR", "[RESPONSE_TIME] < 3000"]
-          ui: &private { hide-url: true, hide-hostname: true, hide-port: true, hide-conditions: true, hide-errors: true }
-        - name: Authoritative DNS
-          group: Core
-          url: tcp://10.25.13.33:53
-          conditions: ["[CONNECTED] == true", "[RESPONSE_TIME] < 3000"]
-          ui: *private
-        - name: Secrets
-          group: Core
-          url: https://vault.monosense.io:8200/v1/sys/health
-          conditions: ["[STATUS] == any(200, 429, 472, 473, 501, 503)", "[CERTIFICATE_EXPIRATION] > 168h"]
-          ui: *private
-        - name: c0 host
-          group: Hosts
-          url: tcp://10.25.13.10:22
-          conditions: ["[CONNECTED] == true"]
-          ui: *private
-        - name: c1 host
-          group: Hosts
-          url: tcp://10.25.13.11:22
-          conditions: ["[CONNECTED] == true"]
-          ui: *private
-        - name: Edge HTTP
-          group: Edge
-          url: tcp://10.25.15.10:80
-          conditions: ["[CONNECTED] == true"]
-          ui: *private
-        - name: Edge HTTPS
-          group: Edge
-          url: https://edge-test.monosense.io/
-          conditions: ["[STATUS] == 200", "[CERTIFICATE_EXPIRATION] > 168h"]
-          ui: *private
-        - name: Edge SSH
-          group: Edge
-          url: tcp://10.25.15.10:22
-          conditions: ["[CONNECTED] == true"]
-          ui: *private
-        - name: Edge security
-          group: Edge
-          url: https://edge-test.monosense.io/.env
-          conditions: ["[STATUS] == 403"]
-          ui: *private
-        - name: Forgejo web
-          group: Forgejo
-          url: https://git.monosense.io/
-          conditions: ["[STATUS] == 200", "[CERTIFICATE_EXPIRATION] > 168h"]
-          ui: *private
-        - name: Forgejo API
-          group: Forgejo
-          url: https://git.monosense.io/api/healthz
-          conditions: ["[STATUS] == 200"]
-          ui: *private
-        - name: Forgejo SSH
-          group: Forgejo
-          url: tcp://10.25.15.10:22
-          conditions: ["[CONNECTED] == true"]
-          ui: *private
-        - name: Object storage TLS
-          group: Backups
-          url: https://s3.monosense.io/
-          conditions: ["[STATUS] < 500", "[CERTIFICATE_EXPIRATION] > 168h"]
-          ui: *private
-        - name: Log ingestion
-          group: Evidence
-          url: https://logs-ingest.monosense.io:8686/
-          method: POST
-          headers: { Authorization: "Bearer $${MONITORING_VECTOR_INGEST_TOKEN}" }
-          body: '{}'
-          conditions: ["[STATUS] == 200"]
-          ui: *private
-  vector_config:
-    content: |
-      data_dir: /var/lib/vector
-      sources:
-        c1_https:
-          type: http_server
-          address: 0.0.0.0:8686
-          auth:
-            strategy: custom
-            source: |
-              token = get_env_var!("MONITORING_VECTOR_INGEST_TOKEN")
-              .headers.authorization == "Bearer " + token
-          tls: { enabled: true, crt_file: /run/tls/current/fullchain.pem, key_file: /run/tls/current/privkey.pem }
-          decoding: { codec: json }
-        srx_tls:
-          type: syslog
-          address: 0.0.0.0:6514
-          mode: tcp
-          tls:
-            enabled: true
-            crt_file: /run/tls/current/fullchain.pem
-            key_file: /run/tls/current/privkey.pem
-      transforms:
-        allow_redact:
-          type: remap
-          inputs: [c1_https, srx_tls]
-          drop_on_abort: true
-          drop_on_error: true
-          source: |
-            text = string!(.message)
-            allowed = contains(text, "haproxy") || contains(text, "forgejo") ||
-              contains(text, "crowdsec") || contains(text, "backup") ||
-              contains(text, "certificate") || contains(text, "RT_FLOW") ||
-              contains(text, "RT_SCREEN") || contains(text, "BGP") ||
-              contains(text, "UI_AUTH_EVENT") || contains(text, "UI_COMMIT")
-            if !allowed { abort }
-            del(.authorization)
-            del(.headers)
-            del(.cookies)
-            del(.password)
-            del(.token)
-            del(.request_body)
-            .message = redact(text, filters: [r'(?i)(authorization|cookie|password|token)=[^ ]+', r'https?://[^/@ ]+@'])
-      sinks:
-        evidence:
-          type: file
-          inputs: [allow_redact]
-          path: /var/lib/vector/evidence/%Y-%m-%d.jsonl
-          encoding: { codec: json }
-          compression: none
-          healthcheck: { enabled: true }
 
 volumes:
   vector-evidence:
