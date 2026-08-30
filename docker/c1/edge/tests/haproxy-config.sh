@@ -3,6 +3,7 @@ set -euo pipefail
 readonly ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 readonly IMAGE="docker.io/library/haproxy:3.2.23-alpine@sha256:0666a2c2f41d341084ed2da85392b48cdcd766adfa28231f31305724ed5c6ea5"
 tmp="$(mktemp -d)"
+chmod 0755 "$tmp"
 container="edge-haproxy-validation-$$"
 cleanup() {
     docker rm --force "$container" >/dev/null 2>&1 || true
