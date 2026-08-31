@@ -1,0 +1,93 @@
+---
+- name: Prepare c1 application prerequisites through Doco-CD
+  hosts: c1
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: prepare-applications
+    container_nodes_runtime_assets_secret_action: true
+    container_nodes_runtime_assets_controller_token: >-
+      {{ lookup(
+           'ansible.builtin.file',
+           lookup('ansible.builtin.env', 'CONTAINER_NODES_OPENBAO_TOKEN_FILE')
+         ) }}
+  tasks:
+    - name: Re-audit identity-critical state
+      ansible.builtin.include_role: {name: audit}
+
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+
+    - name: Refresh the scoped Doco token transactionally
+      ansible.builtin.include_role:
+        name: runtime_assets
+        tasks_from: prepare-doco-token.yml
+
+    - name: Refresh the libreFS prerequisite from published Git
+      block:
+        - name: Start the prerequisite-gated Doco controller
+          ansible.builtin.systemd_service:
+            name: doco-cd-c1.service
+            state: started
+
+        - name: Inspect existing libreFS certificate generation
+          ansible.builtin.stat:
+            path: /srv/librefs/certs/current/public.crt
+          register: container_nodes_existing_librefs_certificate
+        - name: Install the first wildcard certificate generation
+          ansible.builtin.systemd_service:
+            name: c1-wildcard-certificate.service
+            state: started
+          when: not (container_nodes_existing_librefs_certificate.stat.isreg | default(false))
+
+        - name: Require libreFS certificate generation
+          ansible.builtin.stat:
+            path: /srv/librefs/certs/current/public.crt
+          register: container_nodes_librefs_certificate
+
+        - name: Validate libreFS certificate generation
+          ansible.builtin.assert:
+            that:
+              - container_nodes_librefs_certificate.stat.isreg | default(false)
+
+        - name: Start the prerequisite-gated libreFS project
+          ansible.builtin.systemd_service:
+            name: doco-project-librefs-c1.service
+            state: started
+          register: container_nodes_librefs_gate
+          retries: 30
+          delay: 5
+          until: container_nodes_librefs_gate is succeeded
+
+        - name: Require Doco to deploy the current TLS libreFS contract
+          ansible.builtin.command:
+            argv:
+              - docker
+              - container
+              - inspect
+              - --format
+              - "{{ '{{json .Config.Cmd}}|{{json .Config.Healthcheck.Test}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' }}"
+              - librefs-c1
+          register: container_nodes_librefs_contract
+          changed_when: false
+          failed_when: false
+          retries: 40
+          delay: 10
+          until:
+            - container_nodes_librefs_contract.rc == 0
+            - "'\"--address\",\":443\"' in container_nodes_librefs_contract.stdout"
+            - "'127.0.0.1:443' in container_nodes_librefs_contract.stdout"
+            - container_nodes_librefs_contract.stdout.endswith('|healthy')
+      rescue:
+        - name: Stop Doco controller after failed prerequisite refresh
+          ansible.builtin.systemd_service:
+            name: doco-cd-c1.service
+            state: stopped
+          failed_when: false
+
+        - name: Abort failed prerequisite refresh without stopping libreFS
+          ansible.builtin.fail:
+            msg: Doco did not deploy the published TLS libreFS contract; the existing libreFS container and volumes were preserved

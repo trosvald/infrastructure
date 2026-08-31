@@ -14,15 +14,7 @@ services:
     security_opt: [no-new-privileges:true]
     volumes:
       - { type: bind, source: /srv/applications/apps/forgejo/secrets/app.ini, target: /etc/gitea/app.ini, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/app/repositories, target: /var/lib/gitea/git/repositories, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/app/lfs, target: /var/lib/gitea/data/lfs, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/app/packages, target: /var/lib/gitea/data/packages, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/app/attachments, target: /var/lib/gitea/data/attachments, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/app/avatars, target: /var/lib/gitea/data/avatars, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/app/archives, target: /var/lib/gitea/data/repo-archive, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/app/sessions, target: /var/lib/gitea/data/sessions, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/app/queues, target: /var/lib/gitea/data/queues, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/app/ssh, target: /var/lib/gitea/.ssh, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/app, target: /var/lib/gitea, bind: { create_host_path: false } }
       - type: bind
         source: /srv/applications/apps/forgejo/logs/forgejo
         target: /var/log/gitea
