@@ -28,6 +28,7 @@ jq -e '
   and .services.vector.tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
   and .services["vector-prune"].tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
   and .services["vector-evidence-init"].user == "0:0"
+  and .services["vector-evidence-init"].cap_add == ["CHOWN"]
   and .services.vector.depends_on["vector-evidence-init"].condition == "service_completed_successfully"
   and .services["vector-prune"].depends_on["vector-evidence-init"].condition == "service_completed_successfully"
 ' "$rendered" >/dev/null
