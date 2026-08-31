@@ -9,7 +9,7 @@ services:
     platform: linux/amd64
     container_name: haproxy-c1
     user: "99:99"
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
@@ -55,7 +55,7 @@ services:
     platform: linux/amd64
     container_name: crowdsec-c1
     user: "1000:1000"
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -81,7 +81,7 @@ services:
         target: /var/lib/crowdsec/geolite
         read_only: true
         bind: { create_host_path: false }
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777"]
     networks:
       security: { ipv4_address: 172.30.15.18 }
     healthcheck:
@@ -101,7 +101,7 @@ services:
     platform: linux/amd64
     container_name: crowdsec-spoa-c1
     user: "1000:1000"
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -113,7 +113,7 @@ services:
         target: /var/lib/crowdsec/data
         read_only: true
         bind: { create_host_path: false }
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
     networks:
       security: { ipv4_address: 172.30.15.19 }
     depends_on: { crowdsec: { condition: service_healthy } }
@@ -128,7 +128,7 @@ services:
     platform: linux/amd64
     container_name: certbot-edge-c1
     user: "0:0"
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -167,7 +167,7 @@ services:
         read_only: true
         bind: { create_host_path: false }
     extra_hosts: [vault.monosense.io:10.25.13.34]
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777, /var/log/letsencrypt:rw,nosuid,nodev,noexec,size=32m,mode=0750]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777", "/var/log/letsencrypt:rw,nosuid,nodev,noexec,size=32m,mode=0750"]
     networks: [outbound]
     cpus: 0.5
     mem_limit: 256m
@@ -180,7 +180,7 @@ services:
     platform: linux/amd64
     container_name: geoipupdate-c1
     user: "1000:1000"
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -192,7 +192,7 @@ services:
         source: /srv/applications/apps/edge/geolite
         target: /usr/share/GeoIP
         bind: { create_host_path: false }
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
     networks: [outbound]
     cpus: 0.25
     mem_limit: 128m
@@ -205,7 +205,7 @@ services:
     platform: linux/amd64
     container_name: vector-c1
     user: "1000:1000"
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -216,7 +216,7 @@ services:
       - { type: bind, source: /srv/applications/apps/edge/logs, target: /var/log/edge, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/forgejo/logs, target: /var/log/forgejo-stack, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/edge/tls/current, target: /run/tls, read_only: true, bind: { create_host_path: false } }
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777"]
     networks:
       outbound: {}
       telemetry: { ipv4_address: 172.30.15.34 }
@@ -232,12 +232,12 @@ services:
     platform: linux/amd64
     container_name: edge-echo-c1
     user: "1000:1000"
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     environment: { HTTP_PORT: "8080", LOG_WITHOUT_NEWLINE: "true" }
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
     networks:
       echo: { ipv4_address: 172.30.15.50 }
     cpus: 0.25
