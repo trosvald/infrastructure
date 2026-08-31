@@ -60,7 +60,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     environment:
-      COLLECTIONS: crowdsecurity/haproxy
+      COLLECTIONS: crowdsecurity/haproxy crowdsecurity/appsec-virtual-patching crowdsecurity/appsec-generic-rules
       DISABLE_ONLINE_API: "true"
       DISABLE_AGENT: "false"
     secrets: [bouncer_key_spoa]
@@ -132,6 +132,7 @@ services:
     restart: "no"
     read_only: true
     cap_drop: [ALL]
+    cap_add: [CHOWN]
     security_opt: [no-new-privileges:true]
     entrypoint: [/bin/sh, -ec]
     command:
@@ -185,10 +186,14 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    command: [-f, /run/secrets/GeoIP.conf]
-    environment: { GEOIPUPDATE_FREQUENCY: "24" }
+    environment:
+      GEOIPUPDATE_ACCOUNT_ID_FILE: /run/secrets/account_id
+      GEOIPUPDATE_LICENSE_KEY_FILE: /run/secrets/license_key
+      GEOIPUPDATE_EDITION_IDS: GeoLite2-ASN GeoLite2-City
+      GEOIPUPDATE_FREQUENCY: "24"
     volumes:
-      - { type: bind, source: /srv/applications/apps/edge/secrets/GeoIP.conf, target: /run/secrets/GeoIP.conf, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/edge/secrets/maxmind_account_id, target: /run/secrets/account_id, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/edge/secrets/maxmind_license_key, target: /run/secrets/license_key, read_only: true, bind: { create_host_path: false } }
       - type: bind
         source: /srv/applications/apps/edge/geolite
         target: /usr/share/GeoIP
@@ -217,7 +222,9 @@ services:
       - { type: bind, source: /srv/applications/apps/edge/logs, target: /var/log/edge, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/forgejo/logs, target: /var/log/forgejo-stack, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/edge/tls/current, target: /run/tls, read_only: true, bind: { create_host_path: false } }
-    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777"]
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777
+      - /var/lib/vector:rw,nosuid,nodev,noexec,size=32m,mode=0700,uid=1000,gid=1000
     networks:
       outbound: {}
       telemetry: { ipv4_address: 172.30.15.34 }
