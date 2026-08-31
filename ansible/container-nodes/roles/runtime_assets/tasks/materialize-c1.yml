@@ -1,0 +1,48 @@
+---
+- name: Transactionally materialize c1 protected consumers
+  ansible.builtin.include_tasks: materialize-consumers.yml
+  vars:
+    runtime_monitoring: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c0_monitoring') | first).json.data.data }}"
+    runtime_edge: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_edge') | first).json.data.data }}"
+    runtime_forgejo: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_forgejo') | first).json.data.data }}"
+    runtime_materials:
+      - {path: /srv/applications/apps/edge/secrets/bouncer_key_spoa, content: "{{ runtime_edge.crowdsec_bouncer_key }}\n", owner: '1000', group: '1000'}
+      - path: /srv/applications/apps/edge/secrets/spoa.yaml
+        content: "{{
+          lookup('ansible.builtin.file', role_path + '/templates/spoa.yaml.template')
+          | replace('@@crowdsec_bouncer_key@@', runtime_edge.crowdsec_bouncer_key) }}"
+        owner: '1000'
+        group: '1000'
+      - path: /srv/applications/apps/edge/secrets/cloudflare.ini
+        content: "dns_cloudflare_api_token = {{ runtime_edge.cloudflare_dns_token }}\n"
+        owner: root
+        group: root
+      - {path: /srv/applications/apps/edge/secrets/acme_email, content: "{{ runtime_edge.acme_email }}\n", owner: root, group: root}
+      - {path: /srv/applications/apps/edge/secrets/maxmind_account_id, content: "{{ runtime_edge.maxmind_account_id }}\n", owner: '1000', group: '1000'}
+      - {path: /srv/applications/apps/edge/secrets/maxmind_license_key, content: "{{ runtime_edge.maxmind_license_key }}\n", owner: '1000', group: '1000'}
+      - {path: /srv/applications/apps/edge/secrets/vector_token, content: "{{ runtime_edge.vector_ingest_token }}\n", owner: '1000', group: '1000'}
+      - path: /srv/applications/apps/forgejo/secrets/app.ini
+        content: >-
+          {{ lookup('ansible.builtin.file', role_path + '/templates/app.ini.template')
+             | replace('@@forgejo_lfs_jwt_secret@@', runtime_forgejo.forgejo_lfs_jwt_secret)
+             | replace('@@postgres_password@@', runtime_forgejo.postgres_password)
+             | replace('@@forgejo_secret_key@@', runtime_forgejo.forgejo_secret_key)
+             | replace('@@forgejo_internal_token@@', runtime_forgejo.forgejo_internal_token)
+             | replace('@@forgejo_jwt_secret@@', runtime_forgejo.forgejo_jwt_secret)
+             | replace('@@zoho_username@@', runtime_forgejo.zoho_username)
+             | replace('@@zoho_password@@', runtime_forgejo.zoho_password) }}
+        owner: '1000'
+        group: '1000'
+      - {path: /srv/applications/apps/forgejo/secrets/postgres_password, content: "{{ runtime_forgejo.postgres_password }}\n", owner: '70', group: '70'}
+      - path: /srv/applications/apps/forgejo/secrets/kopia_password
+        content: "{{ runtime_forgejo.kopia_repository_password }}\n"
+        owner: '1000'
+        group: '1000'
+      - {path: /srv/applications/apps/forgejo/secrets/librefs_access_key, content: "{{ runtime_forgejo.librefs_access_key }}\n", owner: '1000', group: '1000'}
+      - {path: /srv/applications/apps/forgejo/secrets/librefs_secret_key, content: "{{ runtime_forgejo.librefs_secret_key }}\n", owner: '1000', group: '1000'}
+      - path: /opt/forgejo/secrets/backup-heartbeat.token
+        content: "{{ runtime_monitoring.backup_heartbeat_token }}\n"
+        owner: root
+        group: root
+        mode: '0600'
+  no_log: true
