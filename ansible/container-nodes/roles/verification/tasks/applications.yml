@@ -1,0 +1,108 @@
+---
+- name: Require explicit application verification intent
+  ansible.builtin.assert:
+    that:
+      - container_node_verification_application_containers is defined
+      - container_node_verification_application_containers | length > 0
+      - container_node_verification_application_health_checks is defined
+      - container_node_verification_application_health_checks | length > 0
+    fail_msg: >-
+      Application verification was selected but its container and health contracts
+      are incomplete. This check never starts, deploys, or reconciles applications.
+
+- name: Read existing application container state
+  ansible.builtin.command:
+    argv:
+      - docker
+      - container
+      - inspect
+      - "{{ item.name }}"
+  changed_when: false
+  check_mode: false
+  loop: "{{ container_node_verification_application_containers }}"
+  loop_control:
+    label: "{{ item.name | default('invalid-container') }}"
+  register: container_node_verification_container_results
+
+- name: Verify Doco-created application containers
+  ansible.builtin.assert:
+    that:
+      - item.item.name is defined
+      - (item.stdout | from_json | first).Name | regex_replace('^/', '') == item.item.name
+      - (item.stdout | from_json | first).HostConfig.RestartPolicy.Name == 'no'
+      - (item.stdout | from_json | first).State.Status == item.item.state | default('running')
+      - >-
+        (item.stdout | from_json | first).State.Health is not defined or
+        (item.stdout | from_json | first).State.Health.Status == item.item.health | default('healthy')
+    fail_msg: "Application container {{ item.item.name | default('invalid-container') }} failed read-only verification"
+  loop: "{{ container_node_verification_container_results.results }}"
+  loop_control:
+    label: "{{ item.item.name | default('invalid-container') }}"
+
+- name: Probe application HTTP health contracts
+  ansible.builtin.uri:
+    url: "{{ item.url }}"
+    method: GET
+    follow_redirects: none
+    return_content: false
+    status_code: "{{ item.status | default(200) }}"
+    timeout: "{{ item.timeout | default(10) }}"
+    validate_certs: true
+  changed_when: false
+  check_mode: false
+  loop: "{{ container_node_verification_application_health_checks }}"
+  loop_control:
+    label: "{{ item.name | default(item.url | default('invalid-http-check')) }}"
+  when: item.type == 'http'
+
+- name: Probe host-isolated HTTPS health contracts
+  ansible.builtin.command:
+    argv:
+      - curl
+      - --fail
+      - --silent
+      - --show-error
+      - --output
+      - /dev/null
+      - --write-out
+      - '%{http_code}'
+      - --max-time
+      - "{{ item.timeout | default(10) | string }}"
+      - --resolve
+      - "{{ item.hostname }}:443:{{ item.address }}"
+      - --cacert
+      - "{{ item.ca_file }}"
+      - "https://{{ item.hostname }}{{ item.path }}"
+  register: container_node_verification_https_resolve_results
+  changed_when: false
+  check_mode: false
+  loop: "{{ container_node_verification_application_health_checks }}"
+  loop_control:
+    label: "{{ item.name | default('invalid-https-resolve-check') }}"
+  when: item.type == 'https-resolve'
+
+- name: Verify host-isolated HTTPS health contracts
+  ansible.builtin.assert:
+    that:
+      - item.stdout == (item.item.status | default(200) | string)
+    fail_msg: >-
+      Host-isolated HTTPS health contract
+      {{ item.item.name | default('invalid-https-resolve-check') }} failed
+  loop: "{{ container_node_verification_https_resolve_results.results }}"
+  loop_control:
+    label: "{{ item.item.name | default('invalid-https-resolve-check') }}"
+  when: not (item.skipped | default(false))
+
+- name: Probe application TCP health contracts
+  ansible.builtin.wait_for:
+    host: "{{ item.host }}"
+    port: "{{ item.port }}"
+    state: started
+    connect_timeout: "{{ item.timeout | default(5) }}"
+    timeout: "{{ item.timeout | default(10) }}"
+  changed_when: false
+  check_mode: false
+  loop: "{{ container_node_verification_application_health_checks }}"
+  loop_control:
+    label: "{{ item.name | default((item.host | default('invalid-host')) ~ ':' ~ (item.port | default('invalid-port') | string)) }}"
+  when: item.type == 'tcp'
