@@ -26,7 +26,7 @@
 
 - name: Inspect Forgejo administrators before one-time creation
   ansible.builtin.command:
-    argv: [docker, exec, forgejo-c1, forgejo, --config, /etc/gitea/app.ini, admin, user, list, --admin]
+    argv: [docker, exec, forgejo-c1, forgejo, --config, /etc/gitea/conf/app.ini, admin, user, list, --admin]
   register: runtime_forgejo_admin_list
   changed_when: false
   when: runtime_forgejo_final_probe.status != 200
@@ -50,7 +50,7 @@
       - forgejo-c1
       - forgejo
       - --config
-      - /etc/gitea/app.ini
+      - /etc/gitea/conf/app.ini
       - admin
       - user
       - create

@@ -90,7 +90,7 @@ for name in vector_ingest_token backup_heartbeat_token crowdsec_lapi_key crowdse
     chmod 0600 "$runtime/$name"
 done
 for name in forgejo_jwt_secret forgejo_lfs_jwt_secret; do
-    openssl rand -base64 32 > "$runtime/$name"
+    python3 -c 'import base64, secrets; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("="))' > "$runtime/$name"
     chmod 0600 "$runtime/$name"
 done
 

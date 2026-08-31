@@ -12,8 +12,10 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    environment:
+      GITEA_CUSTOM: /etc/gitea
     volumes:
-      - { type: bind, source: /srv/applications/apps/forgejo/secrets/app.ini, target: /etc/gitea/app.ini, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/forgejo/secrets/app.ini, target: /etc/gitea/conf/app.ini, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/forgejo/app, target: /var/lib/gitea, bind: { create_host_path: false } }
       - type: bind
         source: /srv/applications/apps/forgejo/logs/forgejo
