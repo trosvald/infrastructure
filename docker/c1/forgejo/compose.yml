@@ -24,7 +24,7 @@ services:
       - /tmp:rw,nosuid,nodev,noexec,size=256m,mode=1777
       - /var/run:rw,nosuid,nodev,noexec,size=16m,mode=0755
     networks:
-      frontend: {}
+      frontend: { ipv4_address: 172.30.15.3 }
       database: {}
       outbound: { ipv4_address: 172.30.15.66 }
     depends_on: { postgres: { condition: service_healthy } }

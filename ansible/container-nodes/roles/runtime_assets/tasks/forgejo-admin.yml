@@ -1,0 +1,230 @@
+---
+- name: Select validated Forgejo record
+  ansible.builtin.assert:
+    that:
+      - runtime_forgejo_record.admin_password | length > 0
+      - runtime_forgejo_record.admin_email | length > 3
+  vars:
+    runtime_forgejo_record: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_forgejo') | first).json.data.data }}"
+  no_log: true
+  diff: false
+
+- name: Probe final Forgejo administrator credentials
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_forgejo_url }}/api/v1/user"
+    method: GET
+    url_username: "{{ container_nodes_runtime_assets_forgejo_admin }}"
+    url_password: "{{ runtime_forgejo_record.admin_password }}"
+    force_basic_auth: true
+    return_content: true
+    status_code: [200, 401, 403, 404]
+  vars:
+    runtime_forgejo_record: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_forgejo') | first).json.data.data }}"
+  register: runtime_forgejo_final_probe
+  no_log: true
+  diff: false
+
+- name: Inspect Forgejo administrators before one-time creation
+  ansible.builtin.command:
+    argv: [docker, exec, forgejo-c1, forgejo, --config, /etc/gitea/app.ini, admin, user, list, --admin]
+  register: runtime_forgejo_admin_list
+  changed_when: false
+  when: runtime_forgejo_final_probe.status != 200
+  no_log: true
+  diff: false
+
+- name: Refuse ambiguous existing administrator transition
+  ansible.builtin.assert:
+    that:
+      - runtime_forgejo_admin_list.stdout is not regex('(^|\\s)' + container_nodes_runtime_assets_forgejo_admin + '(\\s|$)')
+    fail_msg: Existing Forgejo administrator does not accept the final credential; refusing an ambiguous bootstrap
+  when: runtime_forgejo_final_probe.status != 200
+  no_log: true
+  diff: false
+
+- name: Create one-time administrator and temporary token
+  ansible.builtin.command:
+    argv:
+      - docker
+      - exec
+      - forgejo-c1
+      - forgejo
+      - --config
+      - /etc/gitea/app.ini
+      - admin
+      - user
+      - create
+      - --username
+      - "{{ container_nodes_runtime_assets_forgejo_admin }}"
+      - --email
+      - bootstrap@localhost.invalid
+      - --admin
+      - --must-change-password=false
+      - --random-password
+      - --random-password-length
+      - '64'
+      - --access-token
+      - --access-token-name
+      - "{{ runtime_forgejo_token_name }}"
+      - --access-token-scopes
+      - all
+  vars:
+    runtime_forgejo_token_name: "ansible-{{ runtime_auth_directory.path | basename }}"
+  register: runtime_forgejo_create
+  changed_when: true
+  when: runtime_forgejo_final_probe.status != 200
+  no_log: true
+  diff: false
+
+- name: Validate exact one-time CLI output contract
+  ansible.builtin.assert:
+    that:
+      - runtime_forgejo_create.stdout is regex("generated random password is '[^']{64}'")
+      - runtime_forgejo_create.stdout is regex('Access token was successfully created[^\\r\\n]*[ :]\\S+$', multiline=True)
+      - runtime_forgejo_temporary_token | length > 20
+    fail_msg: Forgejo did not return the source-verified random-password and temporary-token output
+  vars:
+    runtime_forgejo_temporary_token: >-
+      {{
+        runtime_forgejo_create.stdout
+        | regex_search('Access token was successfully created[^\r\n]*[ :](\S+)$', '\1', multiline=True)
+        | first
+      }}
+  when: runtime_forgejo_final_probe.status != 200
+  no_log: true
+  diff: false
+
+- name: Set final private administrator email first
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_forgejo_url }}/api/v1/admin/users/{{ container_nodes_runtime_assets_forgejo_admin }}"
+    method: PATCH
+    headers:
+      Authorization: "token {{ runtime_forgejo_temporary_token }}"
+    body_format: json
+    body:
+      email: "{{ runtime_forgejo_record.admin_email }}"
+    return_content: true
+    status_code: 200
+  vars:
+    runtime_forgejo_record: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_forgejo') | first).json.data.data }}"
+    runtime_forgejo_temporary_token: >-
+      {{
+        runtime_forgejo_create.stdout
+        | regex_search('Access token was successfully created[^\r\n]*[ :](\S+)$', '\1', multiline=True)
+        | first
+      }}
+  when: runtime_forgejo_final_probe.status != 200
+  register: runtime_forgejo_email_patch
+  no_log: true
+  diff: false
+
+- name: Verify final private administrator email
+  ansible.builtin.assert:
+    that:
+      - runtime_forgejo_email_patch.json.email == runtime_forgejo_record.admin_email
+      - runtime_forgejo_email_patch.json.login == container_nodes_runtime_assets_forgejo_admin
+  vars:
+    runtime_forgejo_record: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_forgejo') | first).json.data.data }}"
+  when: runtime_forgejo_final_probe.status != 200
+  no_log: true
+  diff: false
+
+- name: Set final OpenBao-held password after email verification
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_forgejo_url }}/api/v1/admin/users/{{ container_nodes_runtime_assets_forgejo_admin }}"
+    method: PATCH
+    headers:
+      Authorization: "token {{ runtime_forgejo_temporary_token }}"
+    body_format: json
+    body:
+      password: "{{ runtime_forgejo_record.admin_password }}"
+      must_change_password: false
+    return_content: true
+    status_code: 200
+  vars:
+    runtime_forgejo_record: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_forgejo') | first).json.data.data }}"
+    runtime_forgejo_temporary_token: >-
+      {{
+        runtime_forgejo_create.stdout
+        | regex_search('Access token was successfully created[^\r\n]*[ :](\S+)$', '\1', multiline=True)
+        | first
+      }}
+  when: runtime_forgejo_final_probe.status != 200
+  no_log: true
+  diff: false
+
+- name: Verify final administrator password by authenticated API
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_forgejo_url }}/api/v1/user"
+    method: GET
+    url_username: "{{ container_nodes_runtime_assets_forgejo_admin }}"
+    url_password: "{{ runtime_forgejo_record.admin_password }}"
+    force_basic_auth: true
+    return_content: true
+    status_code: 200
+  vars:
+    runtime_forgejo_record: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_forgejo') | first).json.data.data }}"
+  register: runtime_forgejo_final_verify
+  no_log: true
+  diff: false
+
+- name: Verify final administrator identity
+  ansible.builtin.assert:
+    that:
+      - runtime_forgejo_final_verify.json.login == container_nodes_runtime_assets_forgejo_admin
+      - runtime_forgejo_final_verify.json.is_admin is sameas true
+      - runtime_forgejo_final_verify.json.email == runtime_forgejo_record.admin_email
+  vars:
+    runtime_forgejo_record: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_forgejo') | first).json.data.data }}"
+  no_log: true
+  diff: false
+
+- name: Revoke unique temporary administrator token
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_forgejo_url
+      }}/api/v1/admin/users/{{ container_nodes_runtime_assets_forgejo_admin
+      }}/tokens/ansible-{{ runtime_auth_directory.path | basename }}"
+    method: DELETE
+    headers:
+      Authorization: "token {{ runtime_forgejo_temporary_token }}"
+    status_code: 204
+  vars:
+    runtime_forgejo_temporary_token: >-
+      {{
+        runtime_forgejo_create.stdout
+        | regex_search('Access token was successfully created[^\r\n]*[ :](\S+)$', '\1', multiline=True)
+        | first
+      }}
+  when: runtime_forgejo_final_probe.status != 200
+  no_log: true
+  diff: false
+
+- name: Prove temporary administrator token is revoked
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_forgejo_url }}/api/v1/user"
+    method: GET
+    headers:
+      Authorization: "token {{ runtime_forgejo_temporary_token }}"
+    status_code: [401, 403]
+  vars:
+    runtime_forgejo_temporary_token: >-
+      {{
+        runtime_forgejo_create.stdout
+        | regex_search('Access token was successfully created[^\r\n]*[ :](\S+)$', '\1', multiline=True)
+        | first
+      }}
+  when: runtime_forgejo_final_probe.status != 200
+  no_log: true
+  diff: false
+
+- name: Remove every legacy bootstrap projection after final verification
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /srv/applications/apps/forgejo/secrets/bootstrap_admin_password
+    - /srv/applications/apps/forgejo/secrets/bootstrap_admin_email
+    - /opt/forgejo/secrets/bootstrap_admin_password
+    - /opt/forgejo/secrets/bootstrap_admin_email
+  no_log: true
+  diff: false
