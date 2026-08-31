@@ -22,6 +22,9 @@ jq -e '
   and .services.gatus.user == "65534:65534"
   and .services.vector.user == "65534:65534"
   and .volumes["vector-evidence"] != null
+  and .services.gatus.tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
+  and .services.vector.tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
+  and .services["vector-prune"].tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
 ' "$rendered" >/dev/null
 python3 - <<'PY'
 from pathlib import Path

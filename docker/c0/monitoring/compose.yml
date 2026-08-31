@@ -17,7 +17,7 @@ services:
     volumes:
       - { type: bind, source: /var/lib/monosense-monitoring/secrets/gatus.yaml, target: /config/config.yaml, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /var/lib/monosense-monitoring/tls, target: /run/tls, read_only: true, bind: { create_host_path: false } }
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
     networks:
       c0_services: { ipv4_address: 10.25.13.36 }
     healthcheck:
@@ -47,7 +47,7 @@ services:
       - { type: bind, source: /var/lib/monosense-monitoring/secrets/vector.yaml, target: /etc/vector/vector.yaml, read_only: true, bind: { create_host_path: false } }
       - vector-evidence:/var/lib/vector
       - { type: bind, source: /var/lib/monosense-monitoring/tls, target: /run/tls, read_only: true, bind: { create_host_path: false } }
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
     networks:
       c0_services: { ipv4_address: 10.25.13.37 }
     healthcheck:
@@ -73,7 +73,7 @@ services:
     entrypoint: [/bin/sh, -ceu]
     command: ["while :; do find /var/lib/vector/evidence -type f -mtime +13 -delete; sleep 21600; done"]
     volumes: [vector-evidence:/var/lib/vector]
-    tmpfs: [/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
     networks: { maintenance: null }
     cpus: 0.1
     mem_limit: 32m
