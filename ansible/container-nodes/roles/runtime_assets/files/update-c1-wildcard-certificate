@@ -29,7 +29,8 @@ container_is_running() {
     [[ "$("$DOCKER_BIN" inspect "$container" --format '{{.State.Running}}' 2>/dev/null)" == true ]]
 }
 reload_consumers() {
-    if container_is_running haproxy-c1; then
+    if "$SYSTEMCTL_BIN" is-active --quiet doco-project-edge-c1.service &&
+        container_is_running haproxy-c1; then
         "$DOCKER_BIN" exec haproxy-c1 haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg >/dev/null
         "$DOCKER_BIN" kill --signal HUP haproxy-c1 >/dev/null
         verify_running haproxy-c1
