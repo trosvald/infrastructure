@@ -25,7 +25,7 @@ jq -e '
   and ([.services | to_entries[] | select(.value.networks | has("database")) | .key] | sort) == ["forgejo","postgres"]
   and .services.forgejo.healthcheck.test == ["CMD","wget","--spider","--quiet","http://127.0.0.1:3000/api/healthz"]
   and .services.postgres.healthcheck.test == ["CMD-SHELL","pg_isready -U forgejo -d forgejo"]
-  and ([.services.forgejo.volumes[].source] | sort) == (["/srv/applications/apps/forgejo/app/archives","/srv/applications/apps/forgejo/app/attachments","/srv/applications/apps/forgejo/app/avatars","/srv/applications/apps/forgejo/app/lfs","/srv/applications/apps/forgejo/app/packages","/srv/applications/apps/forgejo/app/queues","/srv/applications/apps/forgejo/app/repositories","/srv/applications/apps/forgejo/app/sessions","/srv/applications/apps/forgejo/app/ssh","/srv/applications/apps/forgejo/logs/forgejo","/srv/applications/apps/forgejo/staging","/srv/applications/apps/forgejo/secrets/app.ini"] | sort)
+  and ([.services.forgejo.volumes[].source] | sort) == (["/srv/applications/apps/forgejo/app","/srv/applications/apps/forgejo/logs/forgejo","/srv/applications/apps/forgejo/staging","/srv/applications/apps/forgejo/secrets/app.ini"] | sort)
 ' "$rendered" >/dev/null
 python3 - <<'PY'
 from pathlib import Path
