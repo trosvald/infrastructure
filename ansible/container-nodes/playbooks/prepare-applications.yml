@@ -28,10 +28,10 @@
 
     - name: Refresh the libreFS prerequisite from published Git
       block:
-        - name: Start the prerequisite-gated Doco controller
+        - name: Restart Doco controller with the rotated token
           ansible.builtin.systemd_service:
             name: doco-cd-c1.service
-            state: started
+            state: restarted
 
         - name: Inspect existing libreFS certificate generation
           ansible.builtin.stat:

@@ -84,6 +84,7 @@ services:
     tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777"]
     networks:
       security: { ipv4_address: 172.30.15.18 }
+      outbound: {}
     healthcheck:
       test: [CMD, cscli, lapi, status]
       interval: 30s
