@@ -30,24 +30,6 @@ services:
       driver: json-file
       options: { max-size: 10m, max-file: "3" }
 
-  vector-evidence-init:
-    image: docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee
-    platform: linux/amd64
-    user: "0:0"
-    restart: "no"
-    read_only: true
-    cap_drop: [ALL]
-    cap_add: [CHOWN]
-    security_opt: [no-new-privileges:true]
-    entrypoint: [/bin/sh, -ceu]
-    command: ["install -d -o 0 -g 0 -m 0700 /var/lib/vector/evidence; chown -R 65534:65534 /var/lib/vector"]
-    volumes: [vector-evidence:/var/lib/vector]
-    networks: { maintenance: null }
-    cpus: 0.1
-    mem_limit: 32m
-    memswap_limit: 32m
-    pids_limit: 32
-    logging: *bounded_logs
 
   vector:
     image: docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee
@@ -59,7 +41,7 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     depends_on:
-      vector-evidence-init: { condition: service_completed_successfully }
+      vector-prune: { condition: service_started }
     volumes:
       - { type: bind, source: /var/lib/monosense-monitoring/secrets/vector.yaml, target: /etc/vector/vector.yaml, read_only: true, bind: { create_host_path: false } }
       - vector-evidence:/var/lib/vector
@@ -82,15 +64,14 @@ services:
   vector-prune:
     image: docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee
     platform: linux/amd64
-    user: "65534:65534"
+    user: "0:0"
     restart: "no"
     read_only: true
     cap_drop: [ALL]
+    cap_add: [CHOWN]
     security_opt: [no-new-privileges:true]
-    depends_on:
-      vector-evidence-init: { condition: service_completed_successfully }
     entrypoint: [/bin/sh, -ceu]
-    command: ["while :; do find /var/lib/vector/evidence -type f -mtime +13 -delete; sleep 21600; done"]
+    command: ["install -d -o 0 -g 65534 -m 0770 /var/lib/vector/evidence; while :; do find /var/lib/vector/evidence -type f -mtime +13 -delete; sleep 21600; done"]
     volumes: [vector-evidence:/var/lib/vector]
     tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
     networks: { maintenance: null }
