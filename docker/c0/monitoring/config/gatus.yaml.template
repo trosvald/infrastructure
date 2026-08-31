@@ -41,12 +41,12 @@ endpoints:
     ui: *private
   - name: c0 host
     group: Hosts
-    url: tcp://10.25.13.10:22
+    url: tcp://10.25.13.16:22
     conditions: ["[CONNECTED] == true"]
     ui: *private
   - name: c1 host
     group: Hosts
-    url: tcp://10.25.13.11:22
+    url: tcp://10.25.13.17:22
     conditions: ["[CONNECTED] == true"]
     ui: *private
   - name: Edge HTTP
