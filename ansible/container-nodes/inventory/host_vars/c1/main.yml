@@ -1,0 +1,212 @@
+---
+container_node_hostname: c1
+container_node_management_address: 10.25.10.101
+container_node_network_interfaces_content: "{{ container_node_network_interfaces_by_host[inventory_hostname] }}"
+container_node_network_interfaces_sha256: 3963f7a803d51faa11898e2b8a6b9414e0cf8b6d927adb064602c007b0a83dd1
+container_node_network_activation_interfaces:
+  - eno1
+  - bond0
+  - bond0.2512
+  - bond0.2513
+  - bond0.2515
+container_node_network_management_interface: eno1
+container_node_network_management_address: 10.25.10.101
+container_node_network_management_gateway: 10.25.10.1
+container_node_network_dns_server: 10.25.13.35
+container_node_network_oob_verified: false
+container_node_network_rollback_seconds: 300
+container_node_network_verify_routes: "{{ container_node_network_verify_routes_by_host[inventory_hostname] }}"
+container_node_network_verify_container_paths: "{{ container_node_network_verify_container_paths_by_host[inventory_hostname] }}"
+
+
+container_node_baseline_modules:
+  - 8021q
+  - bonding
+  - nf_conntrack
+  - overlay
+container_node_baseline_sysctl:
+  net.ipv4.ip_forward: '1'
+  net.ipv6.conf.all.forwarding: '0'
+  vm.swappiness: '10'
+
+container_node_baseline_critical_package_pins:
+  ifupdown: 0.8.44+deb13u1
+  nftables: 1.1.3-1
+  openssh-server: 1:10.0p1-7+deb13u4
+  systemd-timesyncd: 257.13-1~deb13u1
+  linux-image-amd64: 6.12.101-1
+  xfsprogs: 6.13.0-2+b1
+  python3-cryptography: 43.0.0-3+deb13u1
+
+# Exact pins confirmed by read-only dpkg-query or reviewed Debian candidate metadata.
+docker_host_packages:
+  containerd.io: 2.3.3-1~debian.13~trixie
+  docker-buildx-plugin: 0.36.1-1~debian.13~trixie
+  docker-ce: 5:29.7.2-1~debian.13~trixie
+  docker-ce-cli: 5:29.7.2-1~debian.13~trixie
+  docker-compose-plugin: 5.5.0-1~debian.13~trixie
+docker_host_server_version: 29.7.2
+docker_host_compose_version: 5.5.0
+docker_host_daemon_config_state: absent
+
+container_nodes_storage:
+  state_dir: /var/lib/c1-storage
+  applications:
+    mount: /srv/applications
+    fs_label: c1_apps
+    gpt_label: c1_applications
+    fstab_options: defaults,noatime,prjquota
+  librefs:
+    mount: /srv/librefs
+    fs_label: c1_librefs
+    gpt_label: c1_librefs
+    fstab_options: defaults,noatime
+  projects_file: /etc/projects
+  projid_file: /etc/projid
+
+doco_controller_unit_name: doco-cd-c1.service
+doco_controller_prerequisites:
+  - docker.service
+  - doco-c1-openbao-token.service
+doco_controller_protected_files:
+  - {path: /opt/doco-cd/secrets/api_secret, mode: '0600'}
+  - {path: /opt/doco-cd/secrets/openbao-token, mode: '0600'}
+doco_controller_projects:
+  - name: librefs-c1
+    prerequisites: [c1-librefs-storage.service, c1-services-network.service]
+  - name: edge-c1
+    prerequisites: [c1-applications-storage.service, c1-edge-networks.service, c1-forgejo-egress.service, c1-wildcard-certificate.service]
+  - name: forgejo-c1
+    prerequisites: [c1-applications-storage.service, c1-edge-networks.service, c1-forgejo-egress.service, c1-wildcard-certificate.service]
+
+container_nodes_rollback_host_files:
+  c0: []
+  c1:
+    - /etc/monosense/doco-projects
+    - /etc/network/interfaces.d/c1-edge
+    - /etc/nftables.d/monosense-c1-forgejo-egress.nft
+    - /etc/fstab
+    - /etc/projid
+    - /etc/projects
+    - /etc/systemd/system/c1-applications-storage.service
+    - /etc/systemd/system/c1-edge-networks.service
+    - /etc/systemd/system/c1-edge-state.service
+    - /etc/systemd/system/c1-forgejo-egress.service
+    - /etc/systemd/system/c1-forgejo-quotas.service
+    - /etc/systemd/system/c1-librefs-storage.service
+    - /etc/systemd/system/c1-services-network.service
+    - /etc/systemd/system/c1-services-shim.service
+    - /etc/systemd/system/c1-wildcard-certificate.service
+    - /etc/systemd/system/c1-wildcard-certificate.timer
+    - /etc/systemd/system/doco-c1-openbao-renew.service
+    - /etc/systemd/system/doco-c1-openbao-renew.timer
+    - /etc/systemd/system/doco-c1-openbao-token.service
+    - /etc/systemd/system/doco-cd-c1.service
+    - /etc/systemd/system/doco-project-edge-c1.service
+    - /etc/systemd/system/doco-project-forgejo-c1.service
+    - /etc/systemd/system/doco-project-librefs-c1.service
+    - /etc/systemd/system/forgejo-backup.service
+    - /etc/systemd/system/forgejo-backup.timer
+    - /etc/systemd/system/librefs-c1.service
+    - /usr/local/libexec/monosense-ansible/ensure-c1-edge-networks
+    - /usr/local/libexec/monosense-ansible/ensure-c1-services-network
+    - /usr/local/libexec/monosense-ansible/ensure-c1-services-shim
+    - /usr/local/libexec/monosense-ansible/network-transaction
+    - /usr/local/libexec/monosense-ansible/ensure-c1-forgejo-egress
+    - /usr/local/sbin/assert-c1-mount
+    - /usr/local/sbin/backup-c1-forgejo
+    - /usr/local/sbin/check-c1-openbao-token
+    - /usr/local/sbin/ensure-c1-edge-state
+    - /usr/local/sbin/ensure-forgejo-quotas
+    - /usr/local/sbin/haproxy-runtime-c1-forgejo.py
+    - /usr/local/sbin/rematerialize-c1-librefs-credentials
+    - /usr/local/sbin/renew-c1-openbao-token
+    - /usr/local/sbin/update-c1-wildcard-certificate
+
+container_node_verification_host_units:
+  - {name: ssh.service, state: running, enabled: true}
+  - {name: docker.service, state: running, enabled: true}
+  - {name: c1-librefs-storage.service, state: running, enabled: true}
+  - {name: c1-applications-storage.service, state: running, enabled: true}
+  - {name: c1-services-shim.service, state: running, enabled: true}
+  - {name: c1-services-network.service, state: running, enabled: true}
+  - {name: c1-edge-networks.service, state: running, enabled: true}
+  - {name: c1-forgejo-egress.service, state: running, enabled: true}
+  - {name: doco-cd-c1.service, state: any, enabled: true}
+  - {name: doco-project-librefs-c1.service, state: any, enabled: true}
+  - {name: doco-project-edge-c1.service, state: any, enabled: true}
+  - {name: doco-project-forgejo-c1.service, state: any, enabled: true}
+container_node_verification_host_paths:
+  - {path: /etc/ssh/sshd_config, type: file, mode: '0644', uid: 0, gid: 0}
+  - {path: /etc/ssh/sshd_config.d/00-monosense.conf, type: file, mode: '0644', uid: 0, gid: 0}
+  - {path: /etc/sudoers.d/90-monosense, type: file, mode: '0440', uid: 0, gid: 0}
+  - {path: /home/monosense/.ssh/authorized_keys, type: file, mode: '0600', uid: 1000, gid: 1000}
+  - {path: /opt/doco-cd/secrets, type: directory, mode: '0700', uid: 0, gid: 0}
+  - {path: /srv/librefs, type: directory, mode: '0755', uid: 0, gid: 0}
+  - {path: /srv/applications, type: directory, mode: '0755', uid: 0, gid: 0}
+container_node_verification_docker_networks:
+  - {name: c1_services, driver: ipvlan, internal: false, parent: bond0.2513}
+  - {name: c1_edge, driver: ipvlan, internal: false, parent: bond0.2515}
+  - {name: c1_forgejo_frontend, driver: bridge, internal: true}
+container_node_verification_application_containers:
+  - {name: librefs-c1, state: running, health: healthy}
+  - {name: haproxy-c1, state: running, health: healthy}
+  - {name: crowdsec-c1, state: running, health: healthy}
+  - {name: crowdsec-spoa-c1, state: running}
+  - {name: certbot-edge-c1, state: running}
+  - {name: geoipupdate-c1, state: running}
+  - {name: vector-c1, state: running, health: healthy}
+  - {name: edge-echo-c1, state: running}
+  - {name: forgejo-c1, state: running, health: healthy}
+  - {name: forgejo-postgres-c1, state: running, health: healthy}
+  - {name: kopia-forgejo-c1, state: running}
+container_node_verification_application_health_checks:
+  - {name: librefs, type: http, url: 'https://s3.monosense.io/minio/health/ready', status: 200, timeout: 10}
+  - name: edge
+    type: https-resolve
+    hostname: edge-test.monosense.io
+    address: 172.30.15.2
+    path: /
+    ca_file: /srv/applications/apps/edge/tls/current/fullchain.pem
+    status: 200
+    timeout: 10
+  - name: forgejo
+    type: https-resolve
+    hostname: git.monosense.io
+    address: 172.30.15.2
+    path: /api/healthz
+    ca_file: /srv/applications/apps/edge/tls/current/fullchain.pem
+    status: 200
+    timeout: 10
+container_node_verification_openbao_address: https://vault.monosense.io:8200
+container_node_verification_openbao_token_file: >-
+  {{ lookup('ansible.builtin.env', 'CONTAINER_NODES_OPENBAO_TOKEN_FILE') }}
+container_node_verification_openbao_records:
+  - name: librefs
+    path: docker/c1/librefs
+    keys: [root_user, root_password]
+    minimum_version: 1
+  - name: edge
+    path: docker/c1/edge
+    keys: [acme_email, cloudflare_dns_token, maxmind_account_id, maxmind_license_key, crowdsec_lapi_key, crowdsec_bouncer_key, vector_ingest_token]
+    minimum_version: 1
+  - name: forgejo
+    path: docker/c1/forgejo
+    keys:
+      - postgres_password
+      - forgejo_secret_key
+      - forgejo_internal_token
+      - forgejo_jwt_secret
+      - forgejo_lfs_jwt_secret
+      - admin_password
+      - admin_email
+      - zoho_username
+      - zoho_password
+      - kopia_repository_password
+      - librefs_access_key
+      - librefs_secret_key
+    minimum_version: 1
+  - name: wildcard-tls
+    path: platform/tls/monosense-wildcard
+    keys: [certificate, fullchain, private_key, serial, not_after]
+    minimum_version: 1
