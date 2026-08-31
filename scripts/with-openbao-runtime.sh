@@ -22,6 +22,30 @@ case "$1" in
             exit 2
         }
         ;;
+    scripts/provision-container-application-records.sh)
+        [[ $# == 1 ]] || {
+            echo "Container application record provisioner accepts no arguments" >&2
+            exit 2
+        }
+        ;;
+    scripts/normalize-wildcard-metadata.sh)
+        [[ $# == 1 ]] || {
+            echo "Wildcard metadata normalizer accepts no arguments" >&2
+            exit 2
+        }
+        ;;
+    scripts/normalize-forgejo-jwt-secrets.sh)
+        [[ $# == 1 ]] || {
+            echo "Forgejo JWT normalizer accepts no arguments" >&2
+            exit 2
+        }
+        ;;
+    scripts/run-container-nodes-openbao-action.sh)
+        [[ $# == 2 && "${2:-}" =~ ^(prepare-applications|provision-secrets|verify)$ ]] || {
+            echo "Protected container-node runtime accepts prepare-applications, provision-secrets, or verify" >&2
+            exit 2
+        }
+        ;;
     talos/scripts/render.sh)
         [[ "${2:-}" == "--authenticated" ]] || {
             echo "Talos runtime must use the authenticated internal entry point" >&2
@@ -113,7 +137,9 @@ jq -e '
     type == "object" and
     (keys | sort) == ["BAO_PASSWORD", "BAO_USERNAME"] and
     .BAO_USERNAME == "monosense-infra" and
-    (.BAO_PASSWORD | type == "string" and length >= 32 and test("^[A-Za-z0-9_-]+$"))
+    (.BAO_PASSWORD | type) == "string" and
+    (.BAO_PASSWORD | length) >= 32 and
+    (.BAO_PASSWORD | explode | all(. >= 33 and . <= 126))
 ' "$credentials_json" >/dev/null || {
     echo "Encrypted credentials must contain exactly BAO_USERNAME=monosense-infra and a valid BAO_PASSWORD" >&2
     exit 1

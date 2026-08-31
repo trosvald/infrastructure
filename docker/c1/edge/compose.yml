@@ -32,7 +32,7 @@ services:
       - /var/lib/haproxy:rw,nosuid,nodev,noexec,size=16m,mode=0750,uid=99,gid=99
     networks:
       c1_edge: { ipv4_address: 10.25.15.10 }
-      forgejo_frontend: {}
+      forgejo_frontend: { ipv4_address: 172.30.15.2 }
       security: { ipv4_address: 172.30.15.20 }
       echo: { ipv4_address: 172.30.15.51 }
       telemetry: { ipv4_address: 172.30.15.35 }
