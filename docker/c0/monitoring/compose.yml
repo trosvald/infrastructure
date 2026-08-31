@@ -41,6 +41,7 @@ services:
     restart: "no"
     read_only: true
     cap_drop: [ALL]
+    cap_add: [CHOWN]
     security_opt: [no-new-privileges:true]
     entrypoint: [/bin/sh, -ceu]
     command: ["install -d -o 65534 -g 65534 -m 0700 /var/lib/vector/evidence"]
