@@ -44,7 +44,7 @@ services:
     cap_add: [CHOWN]
     security_opt: [no-new-privileges:true]
     entrypoint: [/bin/sh, -ceu]
-    command: ["install -d -o 65534 -g 65534 -m 0700 /var/lib/vector/evidence"]
+    command: ["install -d -o 0 -g 0 -m 0700 /var/lib/vector/evidence; chown 65534:65534 /var/lib/vector/evidence"]
     volumes: [vector-evidence:/var/lib/vector]
     networks: { maintenance: null }
     cpus: 0.1

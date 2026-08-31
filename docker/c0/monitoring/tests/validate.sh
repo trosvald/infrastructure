@@ -29,6 +29,8 @@ jq -e '
   and .services["vector-prune"].tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
   and .services["vector-evidence-init"].user == "0:0"
   and .services["vector-evidence-init"].cap_add == ["CHOWN"]
+  and .services["vector-evidence-init"].entrypoint == ["/bin/sh","-ceu"]
+  and .services["vector-evidence-init"].command == ["install -d -o 0 -g 0 -m 0700 /var/lib/vector/evidence; chown 65534:65534 /var/lib/vector/evidence"]
   and .services.vector.depends_on["vector-evidence-init"].condition == "service_completed_successfully"
   and .services["vector-prune"].depends_on["vector-evidence-init"].condition == "service_completed_successfully"
 ' "$rendered" >/dev/null
