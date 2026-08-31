@@ -40,8 +40,8 @@ vector = Path("docker/c0/monitoring/config/vector.yaml.template").read_text()
 combined = compose + gatus + vector
 for value in ("metrics: false", "hide-url: true", "hide-hostname: true", "hide-conditions: true", "hide-errors: true", "@@telegram_bot_token@@", "@@backup_heartbeat_token@@", "external-endpoints:", "heartbeat: { interval: 26h }", "0.0.0.0:8686", "strategy: custom", "@@vector_ingest_token@@", "0.0.0.0:6514", "-mtime +13", "authorization", "request_body"):
     assert value in combined, value
-for host_shim in ("tcp://10.25.13.16:22", "tcp://10.25.13.17:22"):
-    assert host_shim in gatus, host_shim
+for host_endpoint in ("tcp://10.25.13.16:22", "tcp://10.25.10.101:22"):
+    assert host_endpoint in gatus, host_endpoint
 assert "env_file" not in compose and "MONITORING_" not in compose
 for forbidden in ("victoriametrics", "victorialogs", "alertmanager", "/var/run/docker.sock"):
     assert forbidden not in combined.lower(), forbidden

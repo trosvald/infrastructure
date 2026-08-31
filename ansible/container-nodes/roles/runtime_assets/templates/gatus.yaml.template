@@ -46,7 +46,7 @@ endpoints:
     ui: *private
   - name: c1 host
     group: Hosts
-    url: tcp://10.25.13.17:22
+    url: tcp://10.25.10.101:22
     conditions: ["[CONNECTED] == true"]
     ui: *private
   - name: Edge HTTP
