@@ -1,0 +1,121 @@
+---
+container_node_hostname: c0
+container_node_management_address: 10.25.10.20
+container_node_network_interfaces_content: "{{ container_node_network_interfaces_by_host[inventory_hostname] }}"
+container_node_network_interfaces_sha256: ebd809e6f400b58b53e085b32459f2bc341a1f6486a37092860fadf3d1d73137
+container_node_network_activation_interfaces:
+  - enp0s31f6
+  - enp0s31f6.2513
+  - c0-svc-shim
+container_node_network_management_interface: enp0s31f6
+container_node_network_management_address: 10.25.10.20
+container_node_network_management_gateway: 10.25.10.1
+container_node_network_dns_server: 10.25.13.35
+container_node_network_oob_verified: false
+container_node_network_rollback_seconds: 300
+container_node_network_verify_routes: "{{ container_node_network_verify_routes_by_host[inventory_hostname] }}"
+container_node_network_verify_container_paths: "{{ container_node_network_verify_container_paths_by_host[inventory_hostname] }}"
+
+
+container_node_baseline_modules:
+  - 8021q
+  - nf_conntrack
+  - overlay
+container_node_baseline_sysctl:
+  net.ipv4.ip_forward: '1'
+  net.ipv6.conf.all.forwarding: '0'
+  vm.swappiness: '10'
+
+container_node_baseline_critical_package_pins:
+  ifupdown: 0.8.44+deb13u1
+  nftables: 1.1.3-1
+  openssh-server: 1:10.0p1-7+deb13u4
+  systemd-timesyncd: 257.13-1~deb13u1
+  linux-image-amd64: 6.12.101-1
+  python3-cryptography: 43.0.0-3+deb13u1
+
+# Exact pins confirmed by read-only dpkg-query or reviewed Debian candidate metadata.
+docker_host_packages:
+  containerd.io: 2.3.3-1~debian.13~trixie
+  docker-buildx-plugin: 0.36.1-1~debian.13~trixie
+  docker-ce: 5:29.7.2-1~debian.13~trixie
+  docker-ce-cli: 5:29.7.2-1~debian.13~trixie
+  docker-compose-plugin: 5.5.0-1~debian.13~trixie
+docker_host_server_version: 29.7.2
+docker_host_compose_version: 5.5.0
+docker_host_daemon_config_state: absent
+doco_controller_unit_name: doco-cd-c0.service
+doco_controller_prerequisites:
+  - docker.service
+doco_controller_protected_files:
+  - {path: /opt/doco-cd/secrets/api_secret, mode: '0600'}
+  - {path: /opt/doco-cd/secrets/sops_age_key, mode: '0600'}
+doco_controller_projects:
+  - name: powerdns-c0
+    prerequisites: [c0-services-prerequisite.service]
+  - name: blocky-c0
+    prerequisites: [c0-services-prerequisite.service, doco-project-powerdns-c0.service]
+  - name: openbao-c0
+    prerequisites: [c0-services-prerequisite.service, doco-project-blocky-c0.service]
+  - name: monitoring-c0
+    prerequisites: [c0-services-prerequisite.service, doco-project-blocky-c0.service, c0-wildcard-certificate.service]
+  - name: omada-controller-c0
+    prerequisites: [c0-omada-network.service]
+
+container_nodes_rollback_host_files:
+  c0:
+    - /etc/monosense/doco-projects
+    - /etc/systemd/system/c0-omada-network.service
+    - /etc/systemd/system/c0-services-prerequisite.service
+    - /etc/systemd/system/c0-wildcard-certificate.service
+    - /etc/systemd/system/c0-wildcard-certificate.timer
+    - /etc/systemd/system/doco-cd-c0.service
+    - /etc/systemd/system/doco-project-blocky-c0.service
+    - /etc/systemd/system/doco-project-monitoring-c0.service
+    - /etc/systemd/system/doco-project-omada-controller-c0.service
+    - /etc/systemd/system/doco-project-openbao-c0.service
+    - /etc/systemd/system/doco-project-powerdns-c0.service
+    - /usr/local/libexec/monosense-ansible/assert-c0-services-network
+    - /usr/local/libexec/monosense-ansible/assert-c0-services-shim
+    - /usr/local/libexec/monosense-ansible/ensure-c0-omada-network
+    - /usr/local/libexec/monosense-ansible/network-transaction
+    - /usr/local/sbin/update-c0-wildcard-certificate
+  c1: []
+
+container_node_verification_host_units:
+  - {name: ssh.service, state: running, enabled: true}
+  - {name: docker.service, state: running, enabled: true}
+  - {name: c0-services-prerequisite.service, state: any, enabled: true}
+  - {name: c0-omada-network.service, state: any, enabled: true}
+  - {name: doco-cd-c0.service, state: any, enabled: true}
+  - {name: doco-project-powerdns-c0.service, state: any, enabled: true}
+  - {name: doco-project-blocky-c0.service, state: any, enabled: true}
+  - {name: doco-project-openbao-c0.service, state: any, enabled: true}
+  - {name: doco-project-monitoring-c0.service, state: any, enabled: true}
+  - {name: doco-project-omada-controller-c0.service, state: any, enabled: true}
+container_node_verification_host_paths:
+  - {path: /etc/ssh/sshd_config, type: file, mode: '0644', uid: 0, gid: 0}
+  - {path: /etc/ssh/sshd_config.d/00-monosense.conf, type: file, mode: '0644', uid: 0, gid: 0}
+  - {path: /etc/sudoers.d/90-monosense, type: file, mode: '0440', uid: 0, gid: 0}
+  - {path: /home/monosense/.ssh/authorized_keys, type: file, mode: '0600', uid: 1000, gid: 1000}
+  - {path: /opt/doco-cd/secrets, type: directory, mode: '0700', uid: 0, gid: 0}
+container_node_verification_docker_networks:
+  - {name: c0_services, driver: ipvlan}
+  - {name: c0_omada_mgmt, driver: ipvlan}
+container_node_verification_application_containers:
+  - {name: gatus-c0, state: running, health: healthy}
+  - {name: vector-c0, state: running, health: healthy}
+container_node_verification_application_health_checks:
+  - {name: monitoring, type: http, url: 'https://status.monosense.io/health', status: 200, timeout: 10}
+container_node_verification_openbao_address: https://vault.monosense.io:8200
+container_node_verification_openbao_token_file: >-
+  {{ lookup('ansible.builtin.env', 'CONTAINER_NODES_OPENBAO_TOKEN_FILE') }}
+container_node_verification_openbao_records:
+  - name: monitoring
+    path: docker/c0/monitoring
+    keys: [telegram_bot_token, telegram_chat_id, vector_ingest_token, backup_heartbeat_token]
+    minimum_version: 1
+  - name: wildcard-tls
+    path: platform/tls/monosense-wildcard
+    keys: [certificate, fullchain, private_key, serial, not_after]
+    minimum_version: 1
