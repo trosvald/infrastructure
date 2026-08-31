@@ -32,10 +32,10 @@ from pathlib import Path
 cfg = Path("docker/c1/edge/config/haproxy.cfg").read_text()
 for value in ("maxconn 1000", "maxconn 500", "maxconn 100", "timeout connect 5s", "timeout http-request 10s", "timeout client 60s", "timeout server 60s", "timeout http-keep-alive 15s", "timeout queue 15s", "timeout tunnel 1h", "sc0_conn_cur gt 20", "sc0_conn_rate gt 60", "sc1_http_req_rate gt 300", "10737418240", "send-proxy-v2", "strict-sni", "alpn h2,http/1.1"):
     assert value in cfg, value
-for header in ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP", "CF-Connecting-IP", "CF-IPCountry", "True-Client-IP"):
+for header in ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP", "X-Request-ID", "CF-Connecting-IP", "CF-IPCountry", "True-Client-IP"):
     assert f"del-header {header}" in cfg, header
-assert cfg.count("unique-id-header X-Request-ID") == 1
-assert "set-header X-Request-ID" not in cfg
+assert "unique-id-header X-Request-ID" not in cfg
+assert cfg.count("set-header X-Request-ID %[unique-id]") == 1
 compose = Path("docker/c1/edge/compose.yml").read_text()
 assert "${EDGE_" not in compose
 assert "var(txn.crowdsec.remediation)" in cfg
