@@ -10,30 +10,27 @@ jq -e '
   and (.services | with_entries(.value = .value.image)) == {
     "gatus":"docker.io/twinproduction/gatus:v5.36.0@sha256:8df964117ac6a78749ec8cd00039a499268156b874c3a110dc58de7e312c1ab5",
     "vector":"docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee",
-    "vector-evidence-init":"docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee",
     "vector-prune":"docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee"
   }
-  and (.services | keys | sort) == ["gatus","vector","vector-evidence-init","vector-prune"]
+  and (.services | keys | sort) == ["gatus","vector","vector-prune"]
   and all(.services[]; ((.ports // []) | length) == 0 and .privileged != true and .read_only == true and .cap_drop == ["ALL"] and .security_opt == ["no-new-privileges:true"])
   and all(.services[]; all((.volumes // [])[]; .source != "/var/run/docker.sock"))
   and .services.gatus.networks.c0_services.ipv4_address == "10.25.13.36"
   and .services.vector.networks.c0_services.ipv4_address == "10.25.13.37"
   and ([.services | to_entries[] | select(.value.networks.c0_services? != null) | .key] | sort) == ["gatus","vector"]
   and .services["vector-prune"].networks == {"maintenance":null}
-  and .services["vector-evidence-init"].networks == {"maintenance":null}
   and .services.gatus.user == "65534:65534"
   and .services.vector.user == "65534:65534"
+  and .services["vector-prune"].user == "0:0"
   and .volumes["vector-evidence"] != null
   and .services.gatus.tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
   and .services.vector.tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
   and .services["vector-prune"].tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
-  and .services["vector-evidence-init"].user == "0:0"
-  and .services["vector-evidence-init"].cap_add == ["CHOWN"]
-  and .services["vector-evidence-init"].entrypoint == ["/bin/sh","-ceu"]
-  and .services["vector-evidence-init"].command == ["install -d -o 0 -g 0 -m 0700 /var/lib/vector/evidence; chown -R 65534:65534 /var/lib/vector"]
+  and .services["vector-prune"].cap_add == ["CHOWN"]
+  and .services["vector-prune"].entrypoint == ["/bin/sh","-ceu"]
+  and .services["vector-prune"].command == ["install -d -o 0 -g 65534 -m 0770 /var/lib/vector/evidence; while :; do find /var/lib/vector/evidence -type f -mtime +13 -delete; sleep 21600; done"]
   and .services.gatus.healthcheck == null
-  and .services.vector.depends_on["vector-evidence-init"].condition == "service_completed_successfully"
-  and .services["vector-prune"].depends_on["vector-evidence-init"].condition == "service_completed_successfully"
+  and .services.vector.depends_on["vector-prune"].condition == "service_started"
 ' "$rendered" >/dev/null
 python3 - <<'PY'
 from pathlib import Path
