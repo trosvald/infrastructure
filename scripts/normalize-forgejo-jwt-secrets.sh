@@ -44,14 +44,17 @@ normalized = {}
 for key in ("forgejo_jwt_secret", "forgejo_lfs_jwt_secret"):
     value = record["data"]["data"][key]
     if re.fullmatch(r"[0-9a-f]{64}", value):
-        value = base64.b64encode(bytes.fromhex(value)).decode("ascii")
-    try:
-        decoded = base64.b64decode(value, validate=True)
-    except Exception as error:
-        raise SystemExit(f"{key} is neither legacy hex nor valid base64: {error}")
+        decoded = bytes.fromhex(value)
+    else:
+        if not re.fullmatch(r"[A-Za-z0-9+/_-]+={0,2}", value):
+            raise SystemExit(f"{key} is neither legacy hex nor valid base64")
+        try:
+            decoded = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+        except Exception as error:
+            raise SystemExit(f"{key} is neither legacy hex nor valid base64: {error}")
     if len(decoded) != 32:
         raise SystemExit(f"{key} does not encode exactly 32 bytes")
-    normalized[key] = value
+    normalized[key] = base64.urlsafe_b64encode(decoded).decode("ascii").rstrip("=")
 json.dump(normalized, open(destination, "w", encoding="utf-8"), separators=(",", ":"))
 PY
 chmod 0600 "$runtime/normalized.json"
