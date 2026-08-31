@@ -44,7 +44,7 @@ PROVIDER = file
 PROVIDER_CONFIG = /var/lib/gitea/data/sessions
 [queue]
 TYPE = level
-CONN_STR = /var/lib/gitea/data/queues
+CONN_STR = leveldb:///var/lib/gitea/data/queues
 [actions]
 ENABLED = true
 DEFAULT_ACTIONS_URL = github
