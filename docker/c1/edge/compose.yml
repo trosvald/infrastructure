@@ -33,9 +33,9 @@ services:
     networks:
       c1_edge: { ipv4_address: 10.25.15.10 }
       forgejo_frontend: {}
-      security: { ipv4_address: 172.30.15.17 }
-      echo: { ipv4_address: 172.30.15.49 }
-      telemetry: { ipv4_address: 172.30.15.33 }
+      security: { ipv4_address: 172.30.15.20 }
+      echo: { ipv4_address: 172.30.15.51 }
+      telemetry: { ipv4_address: 172.30.15.35 }
     healthcheck:
       test: [CMD, haproxy, -c, -f, /usr/local/etc/haproxy/haproxy.cfg]
       interval: 30s
