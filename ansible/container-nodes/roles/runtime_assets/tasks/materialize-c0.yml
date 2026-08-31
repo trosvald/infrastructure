@@ -1,0 +1,47 @@
+---
+- name: Transactionally materialize c0 protected consumers
+  ansible.builtin.include_tasks: materialize-consumers.yml
+  vars:
+    runtime_monitoring: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c0_monitoring') | first).json.data.data }}"
+    runtime_materials:
+      - path: /var/lib/monosense-monitoring/secrets/gatus.yaml
+        content: >-
+          {{ lookup('ansible.builtin.file', role_path + '/templates/gatus.yaml.template')
+             | replace('@@telegram_bot_token@@', runtime_monitoring.telegram_bot_token)
+             | replace('@@telegram_chat_id@@', runtime_monitoring.telegram_chat_id)
+             | replace('@@vector_ingest_token@@', runtime_monitoring.vector_ingest_token)
+             | replace('@@backup_heartbeat_token@@', runtime_monitoring.backup_heartbeat_token) }}
+        owner: '65534'
+        group: '65534'
+      - path: /var/lib/monosense-monitoring/secrets/vector.yaml
+        content: "{{
+          lookup('ansible.builtin.file', role_path + '/templates/vector.yaml.template')
+          | replace('@@vector_ingest_token@@', runtime_monitoring.vector_ingest_token) }}"
+        owner: '65534'
+        group: '65534'
+  no_log: true
+
+- name: Read protected c0 Doco API secret
+  ansible.builtin.slurp:
+    src: /opt/doco-cd/secrets/api_secret
+  register: runtime_c0_doco_api_secret
+  no_log: true
+  diff: false
+
+- name: Validate normalizable c0 Doco API secret
+  ansible.builtin.assert:
+    that:
+      - runtime_c0_doco_api_secret.content | b64decode is match('^[A-Za-z0-9_-]{64}\n?$')
+  no_log: true
+  diff: false
+
+- name: Normalize c0 Doco API secret without trailing whitespace
+  atomic_secret:
+    path: /opt/doco-cd/secrets/api_secret
+    content: "{{ runtime_c0_doco_api_secret.content | b64decode | trim }}"
+    owner: root
+    group: root
+    mode: '0600'
+    parent_mode: '0700'
+  no_log: true
+  diff: false
