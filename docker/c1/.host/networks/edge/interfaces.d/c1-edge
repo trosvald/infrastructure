@@ -1,6 +1,0 @@
-# Install beside the existing bond0.2512 and bond0.2513 stanzas only after review.
-# bond0 itself is operator-owned active-backup across tor1 and tor2; this file does not alter it.
-auto bond0.2515
-iface bond0.2515 inet manual
-    vlan-raw-device bond0
-    mtu 1496
