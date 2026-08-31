@@ -34,6 +34,8 @@ for value in ("maxconn 1000", "maxconn 500", "maxconn 100", "timeout connect 5s"
     assert value in cfg, value
 for header in ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto", "X-Real-IP", "CF-Connecting-IP", "CF-IPCountry", "True-Client-IP"):
     assert f"del-header {header}" in cfg, header
+assert cfg.count("unique-id-header X-Request-ID") == 1
+assert "set-header X-Request-ID" not in cfg
 compose = Path("docker/c1/edge/compose.yml").read_text()
 assert "${EDGE_" not in compose
 assert "var(txn.crowdsec.remediation)" in cfg
