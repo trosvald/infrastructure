@@ -172,6 +172,20 @@ class ProtectedRuntimeAssetTests(unittest.TestCase):
         self.assertIn("content: \"{{ runtime_c0_doco_api_secret.content | b64decode | trim }}\"", materialize)
         self.assertNotIn("atomic_secret:", controller)
 
+    def test_c0_wildcard_certificate_precedes_and_safely_restarts_monitoring(self):
+        updater = (
+            ROOT / "roles/runtime_assets/files/update-c0-wildcard-certificate"
+        ).read_text(encoding="utf-8")
+        inventory = (ROOT / "inventory/host_vars/c0/main.yml").read_text(encoding="utf-8")
+        self.assertIn("c0-wildcard-certificate.service", inventory)
+        self.assertIn(
+            '"$SYSTEMCTL_BIN" is-active --quiet doco-project-monitoring-c0.service',
+            updater,
+        )
+        self.assertIn('"$LIFECYCLE" stop monitoring-c0', updater)
+        self.assertIn('"$LIFECYCLE" start monitoring-c0', updater)
+        self.assertNotIn('"$LIFECYCLE" monitoring-c0 stop', updater)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PYTHON_BIN="${PYTHON_BIN:-python3}"
+DOCKER_BIN="${DOCKER_BIN:-docker}"
+SYSTEMCTL_BIN="${SYSTEMCTL_BIN:-systemctl}"
+LIFECYCLE="${LIFECYCLE:-/usr/local/libexec/monosense/doco-project-lifecycle}"
+FETCHER="${FETCHER:-/usr/local/libexec/fetch-wildcard-certificate.py}"
+INSTALLER="${INSTALLER:-/usr/local/libexec/install_certificate.py}"
+TOKEN_FILE="${TOKEN_FILE:-/opt/monitoring/secrets/wildcard-reader-c0.token}"
+TARGET="${TARGET:-/var/lib/monosense-monitoring/tls}"
+target_before="$(readlink "$TARGET/current" 2>/dev/null || true)"
+target_changed=false
+
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+[[ "$(id -u)" == 0 ]] || fail 'c0 wildcard update requires root'
+[[ -x "$FETCHER" && -x "$INSTALLER" ]] || fail 'wildcard installer assets are missing'
+verify_running() {
+    local container="$1" state health
+    state="$("$DOCKER_BIN" inspect "$container" --format '{{.State.Status}}')"
+    health="$("$DOCKER_BIN" inspect "$container" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}')"
+    [[ "$state" == running && ( -z "$health" || "$health" == healthy ) ]]
+}
+reload_consumers() {
+    if "$SYSTEMCTL_BIN" is-active --quiet doco-project-monitoring-c0.service; then
+        [[ -x "$LIFECYCLE" ]] || fail 'Doco project lifecycle helper is missing'
+        "$LIFECYCLE" stop monitoring-c0
+        "$LIFECYCLE" start monitoring-c0
+        for container in gatus-c0 vector-c0; do
+            verify_running "$container"
+        done
+    fi
+}
+rollback() {
+    local rc=0
+    if [[ "$target_changed" == true ]]; then
+        "$PYTHON_BIN" "$INSTALLER" rollback --target "$TARGET" >/dev/null || rc=1
+        reload_consumers || rc=1
+    fi
+    if [[ "$rc" != 0 ]]; then
+        printf '%s\n' 'ERROR: wildcard rollback could not restore and verify every c0 consumer' >&2
+    fi
+    return "$rc"
+}
+trap rollback ERR
+"$PYTHON_BIN" "$FETCHER" --token-file "$TOKEN_FILE" --target "$TARGET" \
+    --uid 65534 --gid 65534
+if [[ "$(readlink "$TARGET/current" 2>/dev/null || true)" != "$target_before" ]]; then
+    target_changed=true
+fi
+if "$SYSTEMCTL_BIN" is-active --quiet doco-project-monitoring-c0.service; then
+    "$DOCKER_BIN" exec vector-c0 vector validate --no-environment /etc/vector/vector.yaml >/dev/null
+fi
+reload_consumers
+trap - ERR
+printf '%s\n' 'c0 wildcard certificate generation validated and activated'
