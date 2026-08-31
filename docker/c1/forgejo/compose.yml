@@ -8,14 +8,12 @@ services:
     platform: linux/amd64
     container_name: forgejo-c1
     user: "1000:1000"
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     volumes:
       - { type: bind, source: /srv/applications/apps/forgejo/secrets/app.ini, target: /etc/gitea/app.ini, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/secrets/bootstrap_admin_password, target: /run/secrets/bootstrap_admin_password, read_only: true, bind: { create_host_path: false } }
-      - { type: bind, source: /srv/applications/apps/forgejo/secrets/bootstrap_admin_email, target: /run/secrets/bootstrap_admin_email, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/forgejo/app/repositories, target: /var/lib/gitea/git/repositories, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/forgejo/app/lfs, target: /var/lib/gitea/data/lfs, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/forgejo/app/packages, target: /var/lib/gitea/data/packages, bind: { create_host_path: false } }
@@ -59,7 +57,7 @@ services:
     platform: linux/amd64
     container_name: forgejo-postgres-c1
     user: "70:70"
-    restart: unless-stopped
+    restart: "no"
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -99,7 +97,7 @@ services:
     image: docker.io/kopia/kopia:0.23.1@sha256:83d8bc7bce313dd8b2c17771b5f3f804e18e79ad7d7cc6bc994ff5872374794d
     platform: linux/amd64
     container_name: kopia-forgejo-c1
-    restart: unless-stopped
+    restart: "no"
     entrypoint: [/bin/sh, -ceu]
     command: ["while :; do sleep 86400; done"]
     user: "1000:1000"

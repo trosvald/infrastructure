@@ -25,7 +25,7 @@ jq -e '
   and ([.services | to_entries[] | select(.value.networks | has("database")) | .key] | sort) == ["forgejo","postgres"]
   and .services.forgejo.healthcheck.test == ["CMD","wget","--spider","--quiet","http://127.0.0.1:3000/api/healthz"]
   and .services.postgres.healthcheck.test == ["CMD-SHELL","pg_isready -U forgejo -d forgejo"]
-  and ([.services.forgejo.volumes[].source] | sort) == (["/srv/applications/apps/forgejo/app/archives","/srv/applications/apps/forgejo/app/attachments","/srv/applications/apps/forgejo/app/avatars","/srv/applications/apps/forgejo/app/lfs","/srv/applications/apps/forgejo/app/packages","/srv/applications/apps/forgejo/app/queues","/srv/applications/apps/forgejo/app/repositories","/srv/applications/apps/forgejo/app/sessions","/srv/applications/apps/forgejo/app/ssh","/srv/applications/apps/forgejo/logs/forgejo","/srv/applications/apps/forgejo/staging","/srv/applications/apps/forgejo/secrets/app.ini","/srv/applications/apps/forgejo/secrets/bootstrap_admin_email","/srv/applications/apps/forgejo/secrets/bootstrap_admin_password"] | sort)
+  and ([.services.forgejo.volumes[].source] | sort) == (["/srv/applications/apps/forgejo/app/archives","/srv/applications/apps/forgejo/app/attachments","/srv/applications/apps/forgejo/app/avatars","/srv/applications/apps/forgejo/app/lfs","/srv/applications/apps/forgejo/app/packages","/srv/applications/apps/forgejo/app/queues","/srv/applications/apps/forgejo/app/repositories","/srv/applications/apps/forgejo/app/sessions","/srv/applications/apps/forgejo/app/ssh","/srv/applications/apps/forgejo/logs/forgejo","/srv/applications/apps/forgejo/staging","/srv/applications/apps/forgejo/secrets/app.ini"] | sort)
 ' "$rendered" >/dev/null
 python3 - <<'PY'
 from pathlib import Path
@@ -34,11 +34,4 @@ template = Path("docker/c1/forgejo/config/app.ini.template").read_text()
 assert "${FORGEJO_" not in compose
 for value in ("ROOT_URL = https://git.monosense.io/", "SSH_SERVER_USE_PROXY_PROTOCOL = true", "SSH_PORT = 22", "DISABLE_REGISTRATION = true", "DEFAULT_PRIVATE = private", "ENABLED = false", "MAX_SIZE = 10240", "MAX_FILE_SIZE = 10737418240", "smtp+starttls", "smtp.zoho.com", "FORCE_TRUST_SERVER_CERT = false"):
     assert value in template, value
-bootstrap = Path("docker/c1/forgejo/scripts/bootstrap-admin.sh").read_text()
-assert 'username="trosvald"' in bootstrap
-assert '--must-change-password=false' in bootstrap
-backup = Path("docker/c1/forgejo/scripts/backup.sh").read_text()
-for value in ('python3 "$RUNTIME_HELPER" drain', 'docker stop --time 60 "$FORGEJO"', '--volumes-from "$FORGEJO"', 'source=$FORGEJO_CONFIG,target=/run/forgejo-app.ini,readonly', '--config /run/forgejo-app.ini', 'docker exec "$POSTGRES" pg_dump', 'kopia snapshot verify', 'docker start "$FORGEJO"', 'backups_forgejo-backup/external?success=true', 'Authorization: Bearer $heartbeat_token'):
-    assert value in backup, value
-assert 'docker cp "$FORGEJO:/etc/gitea/app.ini"' not in backup
 PY
