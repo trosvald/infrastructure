@@ -20,12 +20,8 @@ services:
     tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
     networks:
       c0_services: { ipv4_address: 10.25.13.36 }
-    healthcheck:
-      test: [CMD, wget, --spider, --quiet, --no-check-certificate, https://127.0.0.1/health]
-      interval: 30s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    # The pinned distroless image has no HTTP client; Gatus is verified through
+    # its routed HTTPS endpoint instead of a container-local health command.
     cpus: 0.5
     mem_limit: 256m
     memswap_limit: 256m
@@ -44,7 +40,7 @@ services:
     cap_add: [CHOWN]
     security_opt: [no-new-privileges:true]
     entrypoint: [/bin/sh, -ceu]
-    command: ["install -d -o 0 -g 0 -m 0700 /var/lib/vector/evidence; chown 65534:65534 /var/lib/vector/evidence"]
+    command: ["install -d -o 0 -g 0 -m 0700 /var/lib/vector/evidence; chown -R 65534:65534 /var/lib/vector"]
     volumes: [vector-evidence:/var/lib/vector]
     networks: { maintenance: null }
     cpus: 0.1
