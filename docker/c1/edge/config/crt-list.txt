@@ -1,0 +1,1 @@
+/run/tls/current/combined.pem git.monosense.io

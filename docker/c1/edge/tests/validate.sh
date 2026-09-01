@@ -37,6 +37,9 @@ assert "unique-id-header X-Request-ID" not in cfg
 assert cfg.count("set-header X-Request-ID %[unique-id]") == 1
 compose = Path("docker/c1/edge/compose.yml").read_text()
 assert "${EDGE_" not in compose
+crt_list = Path("docker/c1/edge/config/crt-list.txt").read_text()
+assert crt_list == "/run/tls/current/combined.pem git.monosense.io\n"
+assert "edge-test" not in cfg and "edge-test" not in compose and "edge-test" not in crt_list
 assert "var(txn.crowdsec.remediation)" in cfg
 assert "var(txn.crowdsec.isocode)" in cfg
 assert "default_backend reject_unknown" in cfg
