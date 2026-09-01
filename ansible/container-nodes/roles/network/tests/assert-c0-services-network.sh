@@ -2,7 +2,7 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; SCRIPT="$HERE/../files/assert-c0-services-network"; work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 cat >"$work/network.json" <<'JSON'
-[{"Name":"c0_services","Driver":"ipvlan","Scope":"local","EnableIPv4":true,"EnableIPv6":false,"Internal":false,"Attachable":false,"Ingress":false,"ConfigOnly":false,"IPAM":{"Driver":"default","Options":{},"Config":[{"Subnet":"10.25.13.0/24","Gateway":"10.25.13.1"}]},"Options":{"com.docker.network.driver.mtu":"1496","ipvlan_flag":"bridge","ipvlan_mode":"l2","parent":"enp0s31f6.2513"},"Labels":{},"Containers":{"a":{"Name":"powerdns-c0-powerdns-1","IPv4Address":"10.25.13.33/24","IPv6Address":""},"b":{"Name":"openbao-c0-openbao-1","IPv4Address":"10.25.13.34/24","IPv6Address":""},"c":{"Name":"blocky-c0-blocky-1","IPv4Address":"10.25.13.35/24","IPv6Address":""}}}]
+[{"Name":"c0_services","Driver":"ipvlan","Scope":"local","EnableIPv4":true,"EnableIPv6":false,"Internal":false,"Attachable":false,"Ingress":false,"ConfigOnly":false,"IPAM":{"Driver":"default","Options":{},"Config":[{"Subnet":"10.25.13.0/24","Gateway":"10.25.13.1"}]},"Options":{"com.docker.network.driver.mtu":"1496","ipvlan_flag":"bridge","ipvlan_mode":"l2","parent":"enp0s31f6.2513"},"Labels":{},"Containers":{"a":{"Name":"powerdns-c0-powerdns-1","IPv4Address":"10.25.13.33/24","IPv6Address":""},"b":{"Name":"openbao-c0-openbao-1","IPv4Address":"10.25.13.34/24","IPv6Address":""},"c":{"Name":"blocky-c0-blocky-1","IPv4Address":"10.25.13.35/24","IPv6Address":""},"d":{"Name":"gatus-c0","IPv4Address":"10.25.13.36/24","IPv6Address":""},"e":{"Name":"vector-c0","IPv4Address":"10.25.13.37/24","IPv6Address":""}}}]
 JSON
 cat >"$work/docker" <<'SH'
 #!/usr/bin/env bash

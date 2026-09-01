@@ -11,7 +11,7 @@ set +e; document="$("$DOCKER_BIN" network inspect "$NAME" 2>"$error")"; status=$
 (( status == 0 )) || { [[ "$(<"$error")" == "Error response from daemon: network $NAME not found" ]] && fail 'critical active c0_services network is absent; refusing creation'; fail "failed to inspect $NAME: $(<"$error")"; }
 "$PYTHON_BIN" -c 'import json,sys
 n=json.load(sys.stdin)
-expected=[("blocky-c0-blocky-1","10.25.13.35/24",""),("openbao-c0-openbao-1","10.25.13.34/24",""),("powerdns-c0-powerdns-1","10.25.13.33/24","")]
+expected=[("blocky-c0-blocky-1","10.25.13.35/24",""),("gatus-c0","10.25.13.36/24",""),("openbao-c0-openbao-1","10.25.13.34/24",""),("powerdns-c0-powerdns-1","10.25.13.33/24",""),("vector-c0","10.25.13.37/24","")]
 try:
  x=n[0];e=sorted((v.get("Name"),v.get("IPv4Address"),v.get("IPv6Address","")) for v in x.get("Containers",{}).values());ok=(len(n)==1 and x["Name"]=="c0_services" and x["Driver"]=="ipvlan" and x["Scope"]=="local" and x["EnableIPv4"] is True and x["EnableIPv6"] is False and x["Internal"] is False and x["Attachable"] is False and x["Ingress"] is False and x["ConfigOnly"] is False and x["IPAM"]["Driver"]=="default" and x["IPAM"].get("Options",{})=={} and x["IPAM"]["Config"]==[{"Subnet":"10.25.13.0/24","Gateway":"10.25.13.1"}] and x["Options"]=={"parent":"enp0s31f6.2513","ipvlan_mode":"l2","ipvlan_flag":"bridge","com.docker.network.driver.mtu":"1496"} and x["Labels"]=={} and e==expected)
 except (IndexError,KeyError,TypeError,ValueError):ok=False
