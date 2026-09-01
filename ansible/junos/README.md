@@ -537,7 +537,8 @@ zone, NAT, DHCP, reservation, policy, and ordered-term relationship before
 emitting only the `ANSIBLE_SRX1500` apply-group.
 
 The running-config reconciliation preserves the live `VR-XLSATU` HOME
-routing/DHCP relationship, four independent source-NAT rule sets, five RSTP
+routing/DHCP relationship, including exact MGMT/PROD/DEV/EDGE imports before
+the terminal reject, four independent source-NAT rule sets, five RSTP
 point-to-point trunks with bridge priority, all explicit permit/deny policy
 ordering and logging, WAN screens, DHCP option 138, and the `TO-C0-TRUNK`
 native VLAN 2510 plus tagged VLAN-DEV (2513) invariant. Recovery users and

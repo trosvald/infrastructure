@@ -1041,6 +1041,9 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
     expected_prod = ipaddress.ip_network(
         "198.51.100.0/24" if synthetic else "10.25.11.0/24"
     )
+    expected_edge = ipaddress.ip_network(
+        "198.18.1.0/24" if synthetic else "10.25.15.0/24"
+    )
     expected_gateway = parse_address(
         "198.51.100.1" if synthetic else "10.25.11.1",
         "approved PROD gateway",
@@ -1098,6 +1101,26 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
     ]
     if policy_by_name.get("IMPORT-CILIUM-LB", {}).get("terms") != expected_import_terms:
         raise IntentError("CILIUM import must permit only LB-pool /32 BGP routes then reject")
+    expected_home_import_terms = [
+        {
+            "name": name,
+            "from_instance": "master",
+            "route_filter": str(network),
+            "action": "accept",
+        }
+        for name, network in (
+            ("MGMT", parse_network(topology["networks"]["mgmt"]["subnet"], "MGMT subnet")),
+            ("PROD", expected_prod),
+            ("DEV", parse_network(topology["networks"]["dev"]["subnet"], "DEV subnet")),
+            ("EDGE", expected_edge),
+        )
+    ]
+    expected_home_import_terms.append({"name": "REJECT-REST", "action": "reject"})
+    if (
+        policy_by_name.get("IMPORT-MASTER-INTERNAL-INTO-HOME", {}).get("terms")
+        != expected_home_import_terms
+    ):
+        raise IntentError("HOME route import must include MGMT, PROD, DEV, and EDGE then reject")
     if policy_by_name.get("EXPORT-CILIUM-NONE", {}).get("terms") != [
         {"name": "REJECT-ALL", "action": "reject"}
     ]:
