@@ -38,6 +38,14 @@ SYSLOG_VERIFY_COMMANDS = (
     "show security policies hit-count from-zone MGMT to-zone EDGE | no-more",
 )
 
+PRECUTOVER_BASELINE_COMMANDS = (
+    "show security flow session summary | no-more",
+    "show security monitoring performance spu | no-more",
+    "show security screen statistics zone WAN-MYREP | no-more",
+    "show interfaces terse ge-0/0/1.0 | no-more",
+)
+
+
 CILIUM_PEERS = tuple(f"10.25.11.{index}" for index in range(11, 16))
 BGP_VERIFY_COMMANDS = (
     "show configuration groups ANSIBLE_SRX1500 protocols bgp group CILIUM | display set | no-more",
@@ -51,6 +59,7 @@ BGP_VERIFY_COMMANDS = (
 
 MODES = {
     "postcommit": POSTCOMMIT_COMMANDS,
+    "precutover-baseline": PRECUTOVER_BASELINE_COMMANDS,
     "bgp-verify": BGP_VERIFY_COMMANDS,
     "syslog-verify": SYSLOG_VERIFY_COMMANDS,
 }
@@ -85,7 +94,7 @@ def required(name: str) -> str:
 def main() -> int:
     if len(sys.argv) != 2 or sys.argv[1] not in MODES:
         print(
-            "usage: read_operational.py postcommit|bgp-verify|syslog-verify",
+            "usage: read_operational.py postcommit|precutover-baseline|bgp-verify|syslog-verify",
             file=sys.stderr,
         )
         return 2
