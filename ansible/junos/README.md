@@ -580,6 +580,7 @@ reservation IPs.
 | `just ansible junos pki-bootstrap` | Live | Yes | Direct PKI only | Yes | No | Suppressed |
 | `just ansible junos diff` | Live | Yes | Temporary | No | No | Value-free reviewed diff |
 | `just ansible junos deploy` | Live | Yes | Yes | Confirmed | Yes | Digest only |
+| `just ansible junos myrep-preflight` | Live | Yes | No | No | No | Public address only |
 | `just ansible junos syslog-verify` | Live | Yes | No | No | No | Suppressed |
 | `just ansible junos bgp-preflight` | Live | Yes | No | No | No | Suppressed |
 | `just ansible junos bgp-verify` | Live | Yes | No | No | No | Suppressed |
@@ -611,6 +612,16 @@ owner-controlled temporary directory, authenticates as `monosense-infra`, reads
 the topology and shared Cilium BGP password, and displays only the candidate
 SHA-256. The candidate, decrypted credentials, and short-lived revoked token are
 removed when the command exits.
+
+### Verify the protected MYREP address
+
+```console
+just ansible junos myrep-preflight
+```
+
+The fixed preflight requires an exact globally routable non-CGNAT `/32`, observes
+the same egress address twice through a direct TLS endpoint, and requires that
+address on `ge-0/0/1.0` through strictly host-key-verified NETCONF.
 
 ### Commit-check and diff
 
