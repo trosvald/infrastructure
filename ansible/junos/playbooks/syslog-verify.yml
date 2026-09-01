@@ -42,7 +42,7 @@
     - name: Require exact TLS syslog and flow-stream configuration
       ansible.builtin.assert:
         that:
-          - (syslog_verify_raw.stdout | from_json).stdout | length == 8
+          - (syslog_verify_raw.stdout | from_json).stdout | length == 7
           - (syslog_verify_raw.stdout | from_json).stdout[0] is search('transport tls')
           - (syslog_verify_raw.stdout | from_json).stdout[0] is search('trusted-ca-group EDGE-SYSLOG-CA')
           - (syslog_verify_raw.stdout | from_json).stdout[1] is search('mode stream')
@@ -67,16 +67,16 @@
     - name: Require active SRX flow stream
       ansible.builtin.assert:
         that:
-          - (syslog_verify_raw.stdout | from_json).stdout[4] is search('VECTOR|10[.]25[.]13[.]37')
-          - (syslog_verify_raw.stdout | from_json).stdout[5] is search('6514')
+          - (syslog_verify_raw.stdout | from_json).stdout[4] is search('10[.]25[.]13[.]37')
+          - (syslog_verify_raw.stdout | from_json).stdout[4] is search('6514')
         fail_msg: "The SRX has no active TLS security-log stream to Vector."
       no_log: true
 
     - name: Require operational MGMT-to-EDGE session logging
       ansible.builtin.assert:
         that:
-          - (syslog_verify_raw.stdout | from_json).stdout[6] is search('MGMT-EDGE')
-          - (syslog_verify_raw.stdout | from_json).stdout[6] is search('(?i)session.*close|close.*session')
-          - (syslog_verify_raw.stdout | from_json).stdout[7] is search('MGMT-EDGE\\s+[1-9][0-9]*')
+          - (syslog_verify_raw.stdout | from_json).stdout[5] is search('MGMT-EDGE')
+          - (syslog_verify_raw.stdout | from_json).stdout[5] is search('(?i)session.*close|close.*session')
+          - (syslog_verify_raw.stdout | from_json).stdout[6] is search('MGMT-EDGE\\s+[1-9][0-9]*')
         fail_msg: "The operational MGMT-to-EDGE policy does not report session-close logging."
       no_log: true

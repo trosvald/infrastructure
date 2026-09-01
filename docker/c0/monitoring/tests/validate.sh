@@ -40,6 +40,7 @@ vector = Path("docker/c0/monitoring/config/vector.yaml.template").read_text()
 combined = compose + gatus + vector
 for value in ("metrics: false", "hide-url: true", "hide-hostname: true", "hide-conditions: true", "hide-errors: true", "@@telegram_bot_token@@", "@@backup_heartbeat_token@@", "external-endpoints:", "heartbeat: { interval: 26h }", "0.0.0.0:8686", "strategy: custom", "@@vector_ingest_token@@", "0.0.0.0:6514", "-mtime +13", ".appname", ".msgid", "RT_FLOW", "authorization", "request_body"):
     assert value in combined, value
+assert "if !allowed { abort }" in vector
 for value in ("/var/lib/monosense-monitoring/vector-tls", "/run/vector-tls/fullchain.pem", "/run/vector-tls/privkey.pem"):
     assert value in combined, value
 for host_endpoint in ("tcp://10.25.13.16:22", "tcp://10.25.10.101:22"):
@@ -47,4 +48,8 @@ for host_endpoint in ("tcp://10.25.13.16:22", "tcp://10.25.10.101:22"):
 assert "env_file" not in compose and "MONITORING_" not in compose
 for forbidden in ("victoriametrics", "victorialogs", "alertmanager", "/var/run/docker.sock"):
     assert forbidden not in combined.lower(), forbidden
+installer = Path("docker/c0/.host/openbao/install-wildcard-assets.sh").read_text()
+materializer = Path("docker/c0/.host/openbao/materialize-monitoring-secrets.sh").read_text()
+assert "install -d -o 65534 -g 65534 -m 0700 /var/lib/monosense-monitoring/vector-tls" in installer
+assert "os.chown(tls_root, 65534, 65534)" in materializer
 PY

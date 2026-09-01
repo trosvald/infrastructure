@@ -577,8 +577,10 @@ reservation IPs.
 | `just ansible junos lint` | Offline | No | No | No | No | No |
 | `just ansible junos render` | OpenBao live | No | No | No | No | Digest only |
 | `just ansible junos check` | Live | Yes | Temporary | No | No | Suppressed |
+| `just ansible junos pki-bootstrap` | Live | Yes | Direct PKI only | Yes | No | Suppressed |
 | `just ansible junos diff` | Live | Yes | Temporary | No | No | Value-free reviewed diff |
 | `just ansible junos deploy` | Live | Yes | Yes | Confirmed | Yes | Digest only |
+| `just ansible junos syslog-verify` | Live | Yes | No | No | No | Suppressed |
 | `just ansible junos bgp-preflight` | Live | Yes | No | No | No | Suppressed |
 | `just ansible junos bgp-verify` | Live | Yes | No | No | No | Suppressed |
 | `just ansible junos drift` | Live | Yes (managed scope only) | No | No | No | Bounded path/count summary |
@@ -622,6 +624,35 @@ The runtime establishes strict host trust, verifies SRX1500 and the anchored
 `check_commit: true`, and discards the uncommitted candidate after NETCONF
 validation. `diff` must suppress authentication values and show only normalized
 value-free paths for secret-bearing commands.
+
+### Dedicated Vector flow-stream trust
+
+The SRX flow stream uses a dedicated internal root rather than the public wildcard PKI. The root
+certificate at `files/vector-srx-root-ca.pem` is public trust material; the root private key exists
+only as SOPS ciphertext under `docker/c0/monitoring/encrypted/`. Issue a replacement leaf with:
+
+```console
+just rotate-vector-srx-certificate
+```
+
+After the normal c0 secret-materialization and monitoring restart, bootstrap the direct SRX CA
+profile only for first installation or a root-CA change:
+
+```console
+just ansible junos pki-bootstrap
+```
+
+The bootstrap action uses the protected administrator credential because the routine NETCONF
+identity cannot own direct `security pki` configuration. The CA profile disables revocation
+checking deliberately: this private root publishes no CRL, while exact certificate fingerprint,
+profile, TLS connection, policy logging, and retained flow evidence remain independently checked.
+After deploying the stream intent, verify the fixed evidence set with:
+
+```console
+just ansible junos syslog-verify
+```
+
+### Commit-confirmed deployment
 
 ```console
 just ansible junos deploy

@@ -34,6 +34,7 @@ transforms:
         starts_with(msgid, "RT_SCREEN") || contains(text, "RT_FLOW") ||
         contains(text, "RT_SCREEN") || contains(text, "BGP") ||
         contains(text, "UI_AUTH_EVENT") || contains(text, "UI_COMMIT")
+      if !allowed { abort }
       del(.authorization)
       del(.headers)
       del(.cookies)

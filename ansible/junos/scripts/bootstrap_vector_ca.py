@@ -52,10 +52,10 @@ def main() -> int:
             allow_agent=False,
             gather_facts=False,
         ) as device:
-            expected_profile = (
-                "set security pki ca-profile VECTOR-SRX-ROOT "
-                "ca-identity VECTOR-SRX-ROOT"
-            )
+            expected_profile = "\n".join((
+                "set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT",
+                "set security pki ca-profile VECTOR-SRX-ROOT revocation-check disable",
+            ))
             current_profile = device.cli(
                 "show configuration security pki ca-profile VECTOR-SRX-ROOT "
                 "| display set | no-more",

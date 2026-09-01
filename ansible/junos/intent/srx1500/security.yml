@@ -28,7 +28,7 @@ security:
   pki_ca_profiles:
     - { name: { topology: monitoring.syslog_ca_profile }, ca_identity: { topology: monitoring.syslog_ca_profile } }
   direct_pki_ca_profiles:
-    - { name: VECTOR-SRX-ROOT, ca_identity: VECTOR-SRX-ROOT }
+    - { name: VECTOR-SRX-ROOT, ca_identity: VECTOR-SRX-ROOT, revocation_check: disable }
   zones:
     - { name: MGMT, interfaces: [irb.2510], services: [dhcp, ping, ssh, https, netconf] }
     - { name: PROD, interfaces: [irb.2511], services: [dhcp, ping], protocols: [bgp] }

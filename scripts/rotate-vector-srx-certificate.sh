@@ -43,7 +43,7 @@ cmp "$runtime/ca-key-public.pem" "$runtime/ca-certificate-public.pem" >/dev/null
 openssl verify -CAfile "$runtime/ca.pem" "$runtime/ca.pem" >/dev/null
 
 openssl req -new -newkey rsa:2048 -sha256 -nodes \
-    -subj '/CN=vector-srx.monosense.internal' \
+    -subj '/CN=10.25.13.37' \
     -keyout "$runtime/leaf-key.pem" -out "$runtime/leaf.csr" >/dev/null 2>&1
 cat > "$runtime/leaf.ext" <<'EOF'
 authorityKeyIdentifier=keyid,issuer

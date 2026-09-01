@@ -39,7 +39,7 @@ if not record["vector_tls_fullchain"].startswith("-----BEGIN CERTIFICATE-----\n"
 if not record["vector_tls_private_key"].startswith("-----BEGIN PRIVATE KEY-----\n"):
     raise SystemExit("Vector TLS private key is not PEM")
 tls_root.mkdir(mode=0o700, parents=True, exist_ok=True)
-os.chown(tls_root, 0, 0)
+os.chown(tls_root, 65534, 65534)
 os.chmod(tls_root, 0o700)
 
 def render(name):

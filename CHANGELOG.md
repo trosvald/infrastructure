@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Added authenticated SRX flow-log streaming to Vector over TLS with a dedicated
+  SOPS-custodied internal CA, protected leaf rotation, exact SRX trust bootstrap,
+  bounded operational verification, and 14-day local evidence retention.
 - Added Blocky DNS proxy (`blocky-c0`) for c0 with reviewed upstream,
   conditional-forwarding, read-only, and no-persistent-state controls. Production
   rollout and client cutover remain outside this repository's automation scope.

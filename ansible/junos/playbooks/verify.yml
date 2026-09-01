@@ -183,7 +183,10 @@
           - >-
             verify_operational.stdout[12].splitlines()
             | map('trim') | reject('equalto', '') | list
-            == ['set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT']
+            == [
+              'set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT',
+              'set security pki ca-profile VECTOR-SRX-ROOT revocation-check disable'
+            ]
         fail_msg: "Newest pending commit or complete managed configuration is not bound to this digest."
       no_log: true
 
