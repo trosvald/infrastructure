@@ -11,6 +11,5 @@ appsec_url: http://crowdsec-c1:7422
 appsec_timeout: 200ms
 hosts:
   - { host: git.monosense.io, appsec: { always_send: false, timeout: 200ms } }
-  - { host: edge-test.monosense.io, appsec: { always_send: false, timeout: 200ms } }
 prometheus:
   enabled: false

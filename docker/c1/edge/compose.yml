@@ -34,7 +34,6 @@ services:
       c1_edge: { ipv4_address: 10.25.15.10 }
       forgejo_frontend: { ipv4_address: 172.30.15.2 }
       security: { ipv4_address: 172.30.15.20 }
-      echo: { ipv4_address: 172.30.15.51 }
       telemetry: { ipv4_address: 172.30.15.35 }
     healthcheck:
       test: [CMD, haproxy, -c, -f, /usr/local/etc/haproxy/haproxy.cfg]
@@ -235,24 +234,6 @@ services:
     pids_limit: 128
     logging: *bounded_logs
 
-  echo:
-    image: docker.io/mendhak/http-https-echo:39@sha256:96f9c17b35c4699d71567ec6037f2e3862f55c8b69492a7e2133774e4592dc9f
-    platform: linux/amd64
-    container_name: edge-echo-c1
-    user: "1000:1000"
-    restart: "no"
-    read_only: true
-    cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
-    environment: { HTTP_PORT: "8080", LOG_WITHOUT_NEWLINE: "true" }
-    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
-    networks:
-      echo: { ipv4_address: 172.30.15.50 }
-    cpus: 0.25
-    mem_limit: 128m
-    memswap_limit: 128m
-    pids_limit: 64
-    logging: *bounded_logs
 
 configs:
   haproxy_config: { file: ./config/haproxy.cfg }
@@ -272,10 +253,6 @@ networks:
     internal: true
     name: edge-c1-security
     ipam: { config: [{ subnet: 172.30.15.16/28 }] }
-  echo:
-    internal: true
-    name: edge-c1-echo
-    ipam: { config: [{ subnet: 172.30.15.48/28 }] }
   telemetry:
     internal: true
     name: edge-c1-telemetry

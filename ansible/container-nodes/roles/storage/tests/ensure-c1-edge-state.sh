@@ -47,7 +47,7 @@ SH
 chmod +x "$work/bin"/*
 run() { PATH="$work/bin:$PATH" ROOT="$work/edge" ID_BIN="$work/bin/id" INSTALL_BIN="$work/bin/install" STAT_BIN="$work/bin/stat" "$root/files/ensure-c1-edge-state" "$@"; }
 run apply >/dev/null; run check >/dev/null
-[[ "$(cat "$work/edge/tls/crt-list.txt")" == '/run/tls/current/combined.pem git.monosense.io edge-test.monosense.io' ]]
+[[ "$(cat "$work/edge/tls/crt-list.txt")" == '/run/tls/current/combined.pem git.monosense.io' ]]
 rm -rf "$work/edge/geolite"; ln -s "$work/elsewhere" "$work/edge/geolite"
 if run check >/dev/null 2>&1; then echo 'symlink edge source was accepted' >&2; exit 1; fi
 rm "$work/edge/geolite"; FAKE_UID=1000 run apply >/dev/null 2>&1 && { echo 'non-root apply was accepted' >&2; exit 1; }

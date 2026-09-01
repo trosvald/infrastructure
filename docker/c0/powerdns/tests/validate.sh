@@ -176,7 +176,7 @@ while IFS='|' read -r name address; do
         printf '%s\n' "A record is outside the managed reverse zones: $name -> $address" >&2
         exit 1
     fi
-    if [[ "$address" == 10.25.15.10 && "$name" =~ ^(edge-test|git)\.monosense\.io$ ]]; then
+    if [[ "$address" == 10.25.15.10 && "$name" == git.monosense.io ]]; then
         [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$reverse_zone' AND r.name='$host.$reverse_zone' AND r.type='PTR' AND r.content='edge.monosense.io';")" == 1 ]]
     else
         [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$reverse_zone' AND r.name='$host.$reverse_zone' AND r.type='PTR' AND r.content='$name';")" == 1 ]]
