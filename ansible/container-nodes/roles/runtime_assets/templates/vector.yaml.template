@@ -1,0 +1,52 @@
+data_dir: /var/lib/vector
+sources:
+  c1_https:
+    type: http_server
+    address: 0.0.0.0:8686
+    auth:
+      strategy: custom
+      source: |
+        .headers.authorization == "Bearer @@vector_ingest_token@@"
+    tls: { enabled: true, crt_file: /run/tls/current/fullchain.pem, key_file: /run/tls/current/privkey.pem }
+    decoding: { codec: json }
+  srx_tls:
+    type: syslog
+    address: 0.0.0.0:6514
+    mode: tcp
+    tls:
+      enabled: true
+      crt_file: /run/vector-tls/fullchain.pem
+      key_file: /run/vector-tls/privkey.pem
+transforms:
+  allow_redact:
+    type: remap
+    inputs: [c1_https, srx_tls]
+    drop_on_abort: true
+    drop_on_error: true
+    source: |
+      text = string!(.message)
+      appname = to_string(.appname) ?? ""
+      msgid = to_string(.msgid) ?? ""
+      allowed = contains(text, "haproxy") || contains(text, "forgejo") ||
+        contains(text, "crowdsec") || contains(text, "backup") ||
+        contains(text, "certificate") || starts_with(appname, "RT_FLOW") ||
+        starts_with(appname, "RT_SCREEN") || starts_with(msgid, "RT_FLOW") ||
+        starts_with(msgid, "RT_SCREEN") || contains(text, "RT_FLOW") ||
+        contains(text, "RT_SCREEN") || contains(text, "BGP") ||
+        contains(text, "UI_AUTH_EVENT") || contains(text, "UI_COMMIT")
+      if !allowed { abort }
+      del(.authorization)
+      del(.headers)
+      del(.cookies)
+      del(.password)
+      del(.token)
+      del(.request_body)
+      .message = redact(text, filters: [r'(?i)(authorization|cookie|password|token)=[^ ]+', r'https?://[^/@ ]+@'])
+sinks:
+  evidence:
+    type: file
+    inputs: [allow_redact]
+    path: /var/lib/vector/evidence/%Y-%m-%d.jsonl
+    encoding: { codec: json }
+    compression: none
+    healthcheck: { enabled: true }

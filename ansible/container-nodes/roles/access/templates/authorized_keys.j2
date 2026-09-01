@@ -1,0 +1,3 @@
+{% for key in container_node_access_authorized_keys | unique | sort %}
+{{ key }}
+{% endfor %}

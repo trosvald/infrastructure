@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DOCKER_BIN="${DOCKER_BIN:-docker}"; IP_BIN="${IP_BIN:-ip}"; PYTHON_BIN="${PYTHON_BIN:-python3}"; NAME=c0_omada_mgmt
+fail(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+validate(){ "$PYTHON_BIN" -c 'import json,sys
+n=json.load(sys.stdin)
+try:
+ x=n[0];ok=(len(n)==1 and x["Name"]=="c0_omada_mgmt" and x["Driver"]=="ipvlan" and x["Scope"]=="local" and x["EnableIPv4"] is True and x["EnableIPv6"] is False and x["Internal"] is False and x["Attachable"] is False and x["Ingress"] is False and x["ConfigOnly"] is False and x["IPAM"]["Driver"]=="default" and x["IPAM"].get("Options",{})=={} and x["IPAM"]["Config"]==[{"Subnet":"10.25.10.0/24","IPRange":"10.25.10.26/32","Gateway":"10.25.10.1","AuxiliaryAddresses":{"c0":"10.25.10.20"}}] and x["Options"]=={"parent":"enp0s31f6","ipvlan_mode":"l2","ipvlan_flag":"bridge"} and x["Labels"]=={"io.monosense.infrastructure.managed-by":"bootstrap","io.monosense.infrastructure.purpose":"omada-controller-mgmt"} and all(v.get("Name")=="omada-controller-c0-omada-controller-1" and v.get("IPv4Address")=="10.25.10.26/24" and not v.get("IPv6Address","") for v in x.get("Containers",{}).values()) and len(x.get("Containers",{}))<=1)
+except (IndexError,KeyError,TypeError,ValueError):ok=False
+raise SystemExit(0 if ok else 1)' || fail "$NAME immutable contract or endpoint allowlist mismatch"; }
+mode="${1:-check}"; [[ $# -le 1 && ( "$mode" == check || "$mode" == apply ) ]] || fail 'usage: ensure-c0-omada-network [check|apply]'
+parent="$("$IP_BIN" -j link show dev enp0s31f6)"; "$PYTHON_BIN" -c 'import json,sys
+x=json.load(sys.stdin);raise SystemExit(0 if len(x)==1 and x[0].get("ifname")=="enp0s31f6" and x[0].get("mtu")==1500 and "UP" in x[0].get("flags",[]) else 1)' <<<"$parent" || fail 'Omada parent drift'
+error="$(mktemp)"; trap 'rm -f "$error"' EXIT; set +e; document="$("$DOCKER_BIN" network inspect "$NAME" 2>"$error")"; status=$?; set -e
+if (( status==0 )); then validate <<<"$document"; exit; fi
+[[ "$(<"$error")" == "Error response from daemon: network $NAME not found" ]] || fail "failed inspect: $(<"$error")"; names="$("$DOCKER_BIN" network ls --filter "name=^${NAME}$" --format '{{.Name}}')" || fail 'failed to confirm absence'; [[ -z "$names" ]] || fail 'ambiguous absence'
+[[ "$mode" == apply ]] || { printf '%s absent; apply would create it\n' "$NAME"; exit; }
+"$DOCKER_BIN" network create --driver ipvlan --scope local --ipv4 --ipv6=false --subnet 10.25.10.0/24 --gateway 10.25.10.1 --ip-range 10.25.10.26/32 --aux-address c0=10.25.10.20 --opt parent=enp0s31f6 --opt ipvlan_mode=l2 --opt ipvlan_flag=bridge --label io.monosense.infrastructure.managed-by=bootstrap --label io.monosense.infrastructure.purpose=omada-controller-mgmt "$NAME" >/dev/null || fail 'create failed'
+document="$("$DOCKER_BIN" network inspect "$NAME")" || fail 'post-create inspect failed'; validate <<<"$document"

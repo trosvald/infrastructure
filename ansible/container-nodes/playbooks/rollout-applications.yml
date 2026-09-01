@@ -1,0 +1,85 @@
+---
+- name: Roll out c1 applications through Doco-CD
+  hosts: c1
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: rollout-applications
+    container_nodes_rollout_projects:
+      - doco-project-librefs-c1.service
+      - doco-project-edge-c1.service
+      - doco-project-forgejo-c1.service
+    container_nodes_rollout_containers:
+      - librefs-c1
+      - haproxy-c1
+      - forgejo-c1
+  tasks:
+    - name: Re-audit identity-critical state
+      ansible.builtin.include_role: {name: audit}
+
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+
+    - name: Start Doco-owned c1 application rollout
+      block:
+        - name: Start the prerequisite-gated Doco controller
+          ansible.builtin.systemd_service:
+            name: doco-cd-c1.service
+            state: started
+
+        - name: Wait for Doco to create representative project containers
+          ansible.builtin.command:
+            argv:
+              - docker
+              - container
+              - inspect
+              - "{{ item }}"
+          register: container_nodes_rollout_inspect
+          changed_when: false
+          failed_when: false
+          retries: 40
+          delay: 10
+          until: container_nodes_rollout_inspect.rc == 0
+          loop: "{{ container_nodes_rollout_containers }}"
+
+        - name: Start exact prerequisite-gated Doco projects
+          ansible.builtin.systemd_service:
+            name: "{{ item }}"
+            state: started
+          loop: "{{ container_nodes_rollout_projects }}"
+
+        - name: Require representative application containers to become healthy
+          ansible.builtin.command:
+            argv:
+              - docker
+              - container
+              - inspect
+              - --format
+              - "{{ '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' }}"
+              - "{{ item }}"
+          register: container_nodes_rollout_health
+          changed_when: false
+          retries: 30
+          delay: 10
+          until: container_nodes_rollout_health.stdout == 'healthy'
+          loop: "{{ container_nodes_rollout_containers }}"
+      rescue:
+        - name: Stop application gates after failed rollout
+          ansible.builtin.systemd_service:
+            name: "{{ item }}"
+            state: stopped
+          loop: "{{ container_nodes_rollout_projects | reverse | list }}"
+          failed_when: false
+
+        - name: Stop Doco controller after failed rollout
+          ansible.builtin.systemd_service:
+            name: doco-cd-c1.service
+            state: stopped
+          failed_when: false
+
+        - name: Abort failed application rollout after compensation
+          ansible.builtin.fail:
+            msg: c1 application rollout failed; project gates and Doco controller were stopped without removing containers or volumes

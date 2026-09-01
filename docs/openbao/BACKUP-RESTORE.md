@@ -9,8 +9,8 @@ only on the isolated c1 host so production state is never at risk.
 This runbook is destructive by design: the c1 restore uses disposable Shamir
 shares and disposable credentials, force-installs the production snapshot,
 and tears the entire scratch project down before comparing to a captured
-baseline. The backup artifact itself never leaves the operator workstation
-plus the offline recovery system.
+baseline. Copies of the encrypted backup artifact are retained on the operator workstation and
+Hermes recovery host.
 
 ## Storage boundary
 
@@ -41,12 +41,11 @@ not mix contexts without re-reading the label.
 - **c0 OpenBao container** — `docker exec` shell on the c0 production
   OpenBao service running `/bin/sh`.
 - **c1** — operator workstation session into the destructive test host
-  `c1` (`monosense@10.25.10.101`) running Bash. The c1 user keeps a
-  standard SOPS age identity at `$HOME/.config/sops/age/keys.txt`
-  (mode `0600`, owned by the operator); the `age` binary is supplied
-  by the workstation's mise toolchain.
+  `c1` (`monosense@10.25.10.101`) running Bash.
 - **c1 scratch container** — `docker exec` shell on the isolated c1
   scratch OpenBao service running `/bin/sh`.
+- **Hermes** — dedicated always-online recovery host with its recovery identity at
+  `$HOME/.config/sops/age/keys.txt` mode `0600`. It receives ciphertext only.
 
 ## Inputs the procedure assumes
 
@@ -59,13 +58,11 @@ This runbook assumes:
   `monosense-junos` (least-privilege Junos operator) exist, with passwords
   held in the operator password manager and offline custody as covered in
   [OPERATIONS.md](OPERATIONS.md).
-- The SOPS age identities and the offline recovery recipient are
-  configured per [SOPS.md](../SOPS.md). The operator workstation identity
-  lives at `~/.config/sops/age/keys.txt`. The offline recovery private
-  identity lives on the offline recovery system and is never copied to
-  the workstation, c0, or c1. The c1 user `monosense` keeps its own
-  identity at the same path on c1, scoped to the destructive restore
-  proof only.
+- The SOPS age identities and the Hermes recovery recipient are configured per
+  [SOPS.md](../SOPS.md). The operator workstation identity lives at
+  `~/.config/sops/age/keys.txt`. The recovery private identity lives only on Hermes and is never
+  copied to the workstation, c0, or c1. Its encrypted backup is retained on offline removable
+  media. c1 has no recovery identity.
 - c0 hosts the production OpenBao service, listens at `10.25.13.34:8200`,
   and exposes the static `c0_services` network as in [OPENBAO.md](../OPENBAO.md).
 - c1 is a clean, destructive test host with no persistent OpenBao service
@@ -383,11 +380,10 @@ document. If they disagree, treat the artifact as untrustworthy.
 
 ## Run the destructive restore drill on c1
 
-The restore proof is destructive, isolated, and runs only on c1.
-The c1 user `monosense` keeps its own standard SOPS age identity at
-`$HOME/.config/sops/age/keys.txt` (mode `0600`, owned by the
-operator); the `age` binary is supplied by the workstation's mise
-toolchain.
+The restore proof is destructive, isolated, and runs only on c1. c1 receives the encrypted
+snapshot and the temporary materials required by the scratch restore, but it holds no long-lived
+recovery age identity. The `age` binary used for the scratch workflow is supplied by the
+workstation's mise toolchain.
 
 ### Build the isolated scratch Compose project
 
@@ -741,48 +737,39 @@ unset BAO_TOKEN
 exit
 ```
 
-## Prove c1 recovery decryption
+## Prove Hermes recovery decryption
 
-The recovery proof has two halves: the workstation developer identity
-already proved the artifact above. The c1 user identity proves the
-artifact can be decrypted by c1's own age identity — the artifact
-still originates from workstation transport, but the decryption step
-uses only c1's local `$HOME/.config/sops/age/keys.txt`. The encrypted
-artifact is staged on c1 only for the duration of this single
-comparison and is shredded immediately after.
+The recovery proof has two halves: the workstation developer identity already proved the artifact
+above. The Hermes identity independently proves the same ciphertext without using the developer,
+c0, or c1 identity. Only ciphertext is staged on Hermes; plaintext is streamed directly into the
+checksum process.
 
-Copy the encrypted artifact from the Mac workstation backup to a
-protected file under the c1 scratch root. The copy originates on the
-workstation (which is the only place a complete, multi-recipient
-ciphertext exists); c1 only receives ciphertext.
+Copy the encrypted artifact to a protected temporary path on Hermes:
 
 ```sh
 # Mac
 scp "$workstation_backup_dir/${ciphertext_name}" \
-  "monosense@10.25.10.101:/tmp/openbao-restore-test/recovery.snap.age"
-ssh monosense@10.25.10.101 \
-  'chmod 0600 /tmp/openbao-restore-test/recovery.snap.age'
+  "hermes:/tmp/openbao-recovery.snap.age"
+ssh hermes 'chmod 0600 /tmp/openbao-recovery.snap.age'
 ```
 
-Decrypt with the c1 user identity and compute the SHA-256 inline. The
-plaintext is destroyed as soon as the checksum is compared; no
-plaintext file is ever created on c1.
+Decrypt on Hermes and compute the SHA-256 inline:
+
 ```sh
-# c1
+# Hermes
 age --decrypt \
   --identity "$HOME/.config/sops/age/keys.txt" \
   --output - \
-  /tmp/openbao-restore-test/recovery.snap.age \
+  /tmp/openbao-recovery.snap.age \
   | sha256sum \
   | awk '{print $1}'
-shred -u /tmp/openbao-restore-test/recovery.snap.age
-test ! -e /tmp/openbao-restore-test/recovery.snap.age
+rm -f /tmp/openbao-recovery.snap.age
+test ! -e /tmp/openbao-recovery.snap.age
 ```
 
-The displayed SHA-256 must equal `$plaintext_sha` retained in the Mac shell
-and the `plaintext_sha256` field in the local sidecar. After comparison, the
-staged ciphertext copy is destroyed on c1; no plaintext file is created by
-this independent identity proof.
+The displayed SHA-256 must equal `$plaintext_sha` retained in the Mac shell and the
+`plaintext_sha256` field in the local sidecar. After comparison, remove the staged ciphertext from
+Hermes. No plaintext file is created by this independent identity proof.
 
 ## Tear down the c1 scratch project
 
@@ -852,12 +839,11 @@ If any step fails, stop. Specific actions:
 | Restore reports non-empty diff                | Stop; do not touch production c0; capture logs and rerun on a fresh c1 |
 | Two production shares do not unseal scratch   | Stop; the snapshot is suspect; do not declare restore successful      |
 | Sentinel missing after force restore          | Stop; do not trust the artifact; rerun from snapshot save             |
-| c1 recovery decrypt SHA-256 mismatches        | Stop; rotate the c1 identity through [SOPS.md](../SOPS.md) and rerun |
+| Hermes recovery decrypt SHA-256 mismatches | Stop; rotate the Hermes identity through [SOPS.md](../SOPS.md) and rerun |
 | Audit log leaks raw secrets                   | Stop; treat credentials as exposed and rotate per [OPERATIONS.md](OPERATIONS.md) |
 
-A successful drill produces no artifacts outside
-`$HOME/.local/share/openbao-backups/c0/`, the offline recovery system,
-and operator memory during the run.
+A successful drill leaves persistent artifacts only in
+`$HOME/.local/share/openbao-backups/c0/`, on Hermes, and in operator memory during the run.
 
 ## Operational cadence
 
@@ -873,4 +859,4 @@ References:
   policy.
 - [BOOTSTRAP.md](BOOTSTRAP.md) — initialization and unseal.
 - [OPERATIONS.md](OPERATIONS.md) — named-identity usage and rotation.
-- [SOPS.md](../SOPS.md) — developer and offline recovery age identities.
+- [SOPS.md](../SOPS.md) — developer and Hermes recovery custody.

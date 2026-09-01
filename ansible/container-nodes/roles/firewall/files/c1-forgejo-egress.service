@@ -1,0 +1,13 @@
+[Unit]
+Description=Assert or create fail-closed Forgejo and Kopia egress policy
+Requires=network-online.target
+After=network-online.target
+Before=doco-cd-c1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/monosense-ansible/ensure-c1-forgejo-egress apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

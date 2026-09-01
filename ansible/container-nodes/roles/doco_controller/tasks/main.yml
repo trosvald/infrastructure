@@ -1,0 +1,169 @@
+---
+- name: Validate Doco controller intent
+  ansible.builtin.assert:
+    that:
+      - doco_controller_unit_name in ['doco-cd-c0.service', 'doco-cd-c1.service']
+      - doco_controller_api_url == 'http://127.0.0.1:8080'
+      - doco_controller_api_timeout | int == 30
+      - doco_controller_projects | length > 0
+      - doco_controller_projects | map(attribute='name') | unique | length == doco_controller_projects | length
+      - doco_controller_protected_files | length > 0
+      - item.name is match('^[a-z0-9]+(?:-[a-z0-9]+)*$')
+      - item.prerequisites is defined
+      - item.prerequisites is sequence
+      - item.prerequisites is not string
+    fail_msg: Doco controller projects require unique exact names and explicit prerequisite lists.
+  loop: "{{ doco_controller_projects }}"
+  loop_control:
+    label: "{{ item.name | default('invalid') }}"
+
+- name: Validate protected Doco file contracts
+  ansible.builtin.assert:
+    that:
+      - item.path is match('^/opt/doco-cd/secrets/[A-Za-z0-9_.-]+$')
+      - item.mode is string
+      - item.mode is match('^0[46]00$')
+    fail_msg: Protected Doco files require exact absolute paths and string modes 0400 or 0600.
+  loop: "{{ doco_controller_protected_files }}"
+  loop_control:
+    label: "{{ item.path | default('invalid') }}"
+
+- name: Create Doco controller non-secret directories
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - path: "{{ doco_controller_install_directory }}"
+      mode: "0755"
+    - path: "{{ doco_controller_install_directory }}/secrets"
+      mode: "0700"
+    - path: /etc/monosense
+      mode: "0700"
+    - path: /usr/local/libexec/monosense
+      mode: "0755"
+
+- name: Install Doco controller Compose and polling configuration
+  become: true
+  ansible.builtin.copy:
+    src: "{{ doco_controller_source_directory }}/{{ item }}"
+    dest: "{{ doco_controller_install_directory }}/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - docker-compose.app.yaml
+    - poll-config.yml
+
+- name: Inspect protected Doco files without changing them
+  become: true
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+  register: doco_controller_protected_file_stats
+  loop: "{{ doco_controller_protected_files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Refuse drift in existing protected Doco files
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists or item.stat.isreg
+      - not item.stat.exists or not item.stat.islnk
+      - not item.stat.exists or item.stat.pw_name == 'root'
+      - not item.stat.exists or item.stat.gr_name == 'root'
+      - not item.stat.exists or item.stat.mode == item.item.mode
+      - not item.stat.exists or item.stat.size > 0
+    fail_msg: >-
+      Protected Doco file {{ item.item.path }} has critical custody drift. Provision or rotate it only
+      through the explicit secret transaction; routine deploy preserves it.
+  loop: "{{ doco_controller_protected_file_stats.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Install Doco project lifecycle helper
+  become: true
+  ansible.builtin.copy:
+    src: doco_project_lifecycle.py
+    dest: /usr/local/libexec/monosense/doco-project-lifecycle
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install bounded authenticated Doco readiness gate
+  become: true
+  ansible.builtin.copy:
+    src: doco_controller_ready.py
+    dest: /usr/local/libexec/monosense/doco-controller-ready
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install Doco controller preflight
+  become: true
+  ansible.builtin.template:
+    src: doco_controller_preflight.py.j2
+    dest: /usr/local/libexec/monosense/doco-controller-preflight
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Install exact Doco project allowlist
+  become: true
+  ansible.builtin.template:
+    src: doco-projects.j2
+    dest: /etc/monosense/doco-projects
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Install systemd-owned Doco controller unit
+  become: true
+  ansible.builtin.template:
+    src: doco-controller.service.j2
+    dest: "/etc/systemd/system/{{ doco_controller_unit_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: doco_controller_unit_install
+
+- name: Install prerequisite-gated Doco project units
+  become: true
+  ansible.builtin.template:
+    src: doco-project.service.j2
+    dest: "/etc/systemd/system/doco-project-{{ item.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ doco_controller_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: doco_controller_project_unit_install
+
+- name: Reload systemd definitions without activating services
+  become: true
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: >-
+    doco_controller_unit_install is changed or
+    doco_controller_project_unit_install is changed
+
+- name: Enable the Doco controller without starting or restarting it
+  become: true
+  ansible.builtin.systemd_service:
+    name: "{{ doco_controller_unit_name }}"
+    enabled: true
+  when: not ansible_check_mode
+
+- name: Enable Doco project gates without starting applications
+  become: true
+  ansible.builtin.systemd_service:
+    name: "doco-project-{{ item.name }}.service"
+    enabled: true
+  loop: "{{ doco_controller_projects }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: not ansible_check_mode

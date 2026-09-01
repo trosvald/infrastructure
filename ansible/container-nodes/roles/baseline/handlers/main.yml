@@ -1,0 +1,45 @@
+---
+- name: Generate locale
+  ansible.builtin.command:
+    argv: [/usr/sbin/locale-gen, "{{ container_node_baseline_locale }}"]
+  changed_when: true
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode
+
+- name: Restart timesyncd
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd.service
+    state: restarted
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode
+
+- name: Prove synchronized clock
+  ansible.builtin.command:
+    argv: [/usr/bin/timedatectl, show, --property=NTPSynchronized, --value]
+  register: container_node_baseline_ntp_synchronized
+  changed_when: false
+  until: container_node_baseline_ntp_synchronized.stdout == 'yes'
+  retries: 12
+  delay: 5
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode
+
+- name: Apply baseline sysctl
+  ansible.builtin.command:
+    argv: [/usr/sbin/sysctl, --system]
+  register: container_node_baseline_sysctl_apply
+  changed_when: true
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode
+
+- name: Reload journald configuration
+  ansible.builtin.command:
+    argv: [/usr/bin/systemctl, kill, --kill-whom=main, --signal=HUP, systemd-journald.service]
+  changed_when: true
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode

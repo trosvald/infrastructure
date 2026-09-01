@@ -1,0 +1,21 @@
+---
+container_nodes_storage:
+  state_dir: /var/lib/c1-storage
+  applications:
+    mount: /srv/applications
+    fs_label: c1_apps
+    gpt_label: c1_applications
+    fstab_options: defaults,noatime,prjquota
+  librefs:
+    mount: /srv/librefs
+    fs_label: c1_librefs
+    gpt_label: c1_librefs
+    fstab_options: defaults,noatime
+  projects_file: /etc/projects
+  projid_file: /etc/projid
+
+# These are action inputs, never inventory defaults. The provision play prompts for
+# them and this role rejects absent or malformed values.
+container_nodes_storage_device_by_id: ""
+container_nodes_storage_plan_sha256: ""
+container_nodes_storage_typed_approval: ""

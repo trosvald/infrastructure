@@ -1,0 +1,45 @@
+---
+- name: Check container-node intent without mutation
+  hosts: container_nodes
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: check
+  tasks:
+    - name: Collect current sanitized audit
+      ansible.builtin.include_role:
+        name: audit
+    - name: Check baseline intent
+      ansible.builtin.include_role:
+        name: baseline
+    - name: Check access intent
+      ansible.builtin.include_role:
+        name: access
+    - name: Check network intent
+      ansible.builtin.include_role:
+        name: network
+    - name: Check Docker host intent
+      ansible.builtin.include_role:
+        name: docker_host
+    - name: Check storage intent
+      ansible.builtin.include_role:
+        name: storage
+    - name: Check firewall intent
+      ansible.builtin.include_role:
+        name: firewall
+    - name: Check Doco controller intent
+      ansible.builtin.include_role:
+        name: doco_controller
+    - name: Check resident runtime assets
+      ansible.builtin.include_role:
+        name: runtime_assets
+    - name: Report imperative changes excluded from diff
+      ansible.builtin.debug:
+        msg:
+          - Docker external networks are inspect-first and create-only; immutable drift fails.
+          - Systemd daemon reloads and service activation are reported by their owning roles.
+          - Network activation, storage provisioning, secrets, upgrades, and reboot require separate fixed actions.
+      when: container_nodes_action == 'diff'

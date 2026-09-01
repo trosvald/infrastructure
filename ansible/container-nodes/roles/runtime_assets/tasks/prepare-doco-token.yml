@@ -1,0 +1,90 @@
+---
+- name: Validate protected Doco preparation boundary
+  ansible.builtin.assert:
+    that:
+      - container_nodes_runtime_assets_secret_action | bool
+      - container_nodes_runtime_assets_controller_token | length > 20
+      - not ansible_check_mode
+  no_log: true
+
+- name: Refresh only the Doco c1 token
+  block:
+    - name: Create protected controller authentication directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: container-nodes-openbao-
+      delegate_to: localhost
+      become: false
+      register: runtime_auth_directory
+      no_log: true
+      diff: false
+
+    - name: Protect controller authentication directory
+      ansible.builtin.file:
+        path: "{{ runtime_auth_directory.path }}"
+        state: directory
+        mode: '0700'
+      delegate_to: localhost
+      become: false
+      no_log: true
+      diff: false
+
+    - name: Stage controller authentication in protected ephemeral custody
+      atomic_secret:
+        path: "{{ runtime_auth_directory.path }}/openbao.token"
+        content: "{{ container_nodes_runtime_assets_controller_token }}\n"
+        owner: "{{ lookup('ansible.builtin.pipe', 'id -u') }}"
+        group: "{{ lookup('ansible.builtin.pipe', 'id -g') }}"
+        parent_owner: "{{ lookup('ansible.builtin.pipe', 'id -u') }}"
+        parent_group: "{{ lookup('ansible.builtin.pipe', 'id -g') }}"
+        mode: '0600'
+        parent_mode: '0700'
+      delegate_to: localhost
+      become: false
+      no_log: true
+      diff: false
+
+    - name: Select the existing Doco token consumer contract
+      ansible.builtin.set_fact:
+        runtime_token_consumer: >-
+          {{ container_nodes_runtime_assets_token_consumers.c1 |
+             selectattr('name', 'equalto', 'doco-c1') | first }}
+      no_log: true
+
+    - name: Rotate the Doco token transactionally
+      ansible.builtin.include_tasks: rotate-token-consumer.yml
+
+    - name: Read protected Doco API secret
+      ansible.builtin.slurp:
+        src: /opt/doco-cd/secrets/api_secret
+      register: runtime_doco_api_secret
+      no_log: true
+      diff: false
+
+    - name: Validate normalizable Doco API secret
+      ansible.builtin.assert:
+        that:
+          - runtime_doco_api_secret.content | b64decode is match('^[A-Za-z0-9_-]{64}\n?$')
+      no_log: true
+      diff: false
+
+    - name: Normalize Doco API secret without trailing whitespace
+      atomic_secret:
+        path: /opt/doco-cd/secrets/api_secret
+        content: "{{ runtime_doco_api_secret.content | b64decode | trim }}"
+        owner: root
+        group: root
+        mode: '0600'
+        parent_mode: '0700'
+      no_log: true
+      diff: false
+  always:
+    - name: Remove protected controller authentication directory
+      ansible.builtin.file:
+        path: "{{ runtime_auth_directory.path | default('') }}"
+        state: absent
+      when: runtime_auth_directory.path is defined
+      delegate_to: localhost
+      become: false
+      no_log: true
+      diff: false

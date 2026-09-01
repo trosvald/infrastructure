@@ -1,0 +1,19 @@
+---
+- name: Validate tracked adoption record schema
+  ansible.builtin.assert:
+    that:
+      - container_nodes_adoption_schema_version == 1
+      - container_nodes_adoption.keys() | sort == ['c0', 'c1']
+      - inventory_hostname in container_nodes_adoption
+      - container_nodes_adoption[inventory_hostname].keys() | sort == ['adopted', 'audit_schema_version', 'audit_sha256', 'contract_version']
+      - container_nodes_adoption[inventory_hostname].adopted | bool
+      - container_nodes_adoption[inventory_hostname].contract_version == container_nodes_contract_version
+      - container_nodes_adoption[inventory_hostname].audit_schema_version == container_node_audit_schema_version
+      - container_nodes_adoption[inventory_hostname].audit_sha256 is string
+      - container_nodes_adoption[inventory_hostname].audit_sha256 is match('^[0-9a-f]{64}$')
+      - container_node_audit_sha256 is string
+      - container_node_audit_sha256 is match('^[0-9a-f]{64}$')
+      - container_nodes_adoption[inventory_hostname].audit_sha256 == container_node_audit_sha256
+    fail_msg: >-
+      Host mutation is blocked until this host's reviewed adoption record matches
+      the immediately collected sanitized audit artifact.

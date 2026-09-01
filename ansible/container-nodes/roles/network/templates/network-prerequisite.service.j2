@@ -1,0 +1,13 @@
+[Unit]
+Description={{ item.description }}
+Requires={{ item.requires | join(' ') }}
+After={{ item.after | join(' ') }}
+{% if item.before | default([]) | length > 0 %}Before={{ item.before | join(' ') }}
+{% endif %}
+[Service]
+Type=oneshot
+{% for command in item.commands %}ExecStart={{ container_node_network_bin_dir }}/{{ command }} apply
+{% endfor %}RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

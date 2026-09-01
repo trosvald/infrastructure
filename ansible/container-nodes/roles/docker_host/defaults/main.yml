@@ -1,0 +1,10 @@
+---
+docker_host_packages: {}
+docker_host_server_version: ""
+docker_host_compose_version: ""
+docker_host_daemon_config_state: absent
+docker_host_daemon_config_path: /etc/docker/daemon.json
+docker_host_storage_driver: overlayfs
+docker_host_root_directory: /var/lib/docker
+docker_host_cgroup_driver: systemd
+docker_host_cgroup_version: "2"

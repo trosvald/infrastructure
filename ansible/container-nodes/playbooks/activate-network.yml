@@ -1,0 +1,25 @@
+---
+- name: Activate reviewed container-node network intent
+  hosts: container_nodes
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: activate-network
+  tasks:
+    - name: Re-audit identity-critical state
+      ansible.builtin.include_role: {name: audit}
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+    - name: Activate with armed rollback and fresh-session proof
+      block:
+        - name: Invoke network maintenance boundary
+          ansible.builtin.include_role:
+            name: network
+            tasks_from: activate.yml
+      rescue:
+        - name: Stop after timed rollback
+          ansible.builtin.fail:
+            msg: Network activation failed; timed rollback remains authoritative until connectivity is proven

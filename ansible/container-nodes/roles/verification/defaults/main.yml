@@ -1,0 +1,4 @@
+---
+# Host verification is mandatory. Concrete intent is defined in reviewed inventory.
+# Application and OpenBao verification are explicit because sealed or not-yet-deployed
+# application state must not weaken ordinary host verification.

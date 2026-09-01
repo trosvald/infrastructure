@@ -1,0 +1,9 @@
+---
+- name: Manage c1 storage state
+  ansible.builtin.include_tasks: routine.yml
+  when: inventory_hostname == 'c1'
+
+- name: Report storage is not applicable to c0
+  ansible.builtin.debug:
+    msg: Storage is c1-only; c0 has no role-owned application storage contract.
+  when: inventory_hostname == 'c0'

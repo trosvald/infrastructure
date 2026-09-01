@@ -55,6 +55,7 @@ python = "3.13"
 "aqua:jqlang/jq" = "1"
 "aqua:mikefarah/yq" = "4"
 "aqua:gitleaks/gitleaks" = "8.30.0"
+"aqua:minio/mc" = "RELEASE.2025-08-13T08-35-41Z"
 
 [hooks]
 postinstall = "ansible-galaxy install -r {{config_root}}/ansible/requirements.yml"

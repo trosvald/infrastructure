@@ -1,0 +1,545 @@
+---
+- name: Restrict storage provisioning to c1
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname == 'c1'
+      - not ansible_check_mode
+    fail_msg: >-
+      provision-storage is c1-only and cannot run under Ansible check mode.
+
+- name: Detect an already provisioned installation
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop:
+    - "{{ container_nodes_storage.state_dir }}/approved-plan"
+    - "{{ container_nodes_storage.state_dir }}/c1_librefs.uuid"
+    - "{{ container_nodes_storage.state_dir }}/c1_applications.uuid"
+  register: provision_storage_existing
+  check_mode: false
+
+- name: Refuse incomplete provisioned-state adoption
+  ansible.builtin.assert:
+    that:
+      - >-
+          (provision_storage_existing.results | selectattr('stat.exists') | list | length)
+          in [0, 3]
+      - >-
+          (provision_storage_existing.results
+          | selectattr('stat.islnk', 'defined')
+          | selectattr('stat.islnk') | list | length) == 0
+    fail_msg: >-
+      Storage state is partial or symlinked; destructive provisioning is refused.
+
+- name: Adopt and verify existing provisioned storage without reprovisioning
+  ansible.builtin.include_tasks: routine.yml
+  when: >-
+      (provision_storage_existing.results | selectattr('stat.exists') | list | length) == 3
+
+- name: Provision a pristine c1 storage device
+  when: >-
+      (provision_storage_existing.results | selectattr('stat.exists') | list | length) == 0
+  block:
+    - name: Validate protected provisioning inputs
+      ansible.builtin.assert:
+        that:
+          - container_nodes_storage_device_by_id is regex('^/dev/disk/by-id/[^/]+$')
+          - "'-part' not in container_nodes_storage_device_by_id"
+          - container_nodes_storage_plan_sha256 is regex('^[0-9a-f]{64}$')
+          - container_nodes_storage_typed_approval | length > 0
+        fail_msg: >-
+          Stable device path, reviewed plan SHA-256, and protected typed approval are mandatory.
+
+    - name: Inspect stable device path without following it
+      ansible.builtin.stat:
+        path: "{{ container_nodes_storage_device_by_id }}"
+        follow: false
+      register: provision_storage_by_id
+      check_mode: false
+
+    - name: Require a stable by-id symlink
+      ansible.builtin.assert:
+        that:
+          - provision_storage_by_id.stat.exists
+          - provision_storage_by_id.stat.islnk
+        fail_msg: Storage target is not an existing stable by-id symlink.
+
+    - name: Resolve storage target
+      ansible.builtin.command:
+        argv:
+          - realpath
+          - -e
+          - --
+          - "{{ container_nodes_storage_device_by_id }}"
+      register: provision_storage_realpath
+      changed_when: false
+      check_mode: false
+
+    - name: Inspect target geometry and children
+      ansible.builtin.command:
+        argv:
+          - lsblk
+          - -J
+          - -b
+          - -o
+          - PATH,TYPE,MODEL,SIZE,LOG-SEC,MOUNTPOINTS
+          - --
+          - "{{ provision_storage_realpath.stdout }}"
+      register: provision_storage_lsblk
+      changed_when: false
+      check_mode: false
+
+    - name: Bind target geometry
+      ansible.builtin.set_fact:
+        provision_storage_disk: >-
+          {{ (provision_storage_lsblk.stdout | from_json).blockdevices[0] }}
+
+    - name: Refuse a non-pristine or wrong-size target
+      ansible.builtin.assert:
+        that:
+          - provision_storage_realpath.stdout is regex('^/dev/[^/]+$')
+          - provision_storage_disk.type == 'disk'
+          - provision_storage_disk.model | default('') | trim | length > 0
+          - provision_storage_disk.size | int >= 900000000000
+          - provision_storage_disk.size | int <= 1100000000000
+          - provision_storage_disk['log-sec'] | int >= 512
+          - (provision_storage_disk.size | int) % (provision_storage_disk['log-sec'] | int) == 0
+          - provision_storage_disk.children | default([], true) | length == 0
+          - >-
+              provision_storage_disk.mountpoints
+              | default([], true) | select | list | length == 0
+        fail_msg: >-
+          Target must be the reviewed unused whole 1 TB disk with no children or mounts.
+
+    - name: Identify the OS root backing disk
+      ansible.builtin.shell:
+        cmd: >-
+          set -o pipefail;
+          root_source=$(findmnt -n -o SOURCE /);
+          lsblk -s -dnro PATH -- "$root_source" | tail -n 1
+        executable: /bin/bash
+      register: provision_storage_root_disk
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse the OS root disk
+      ansible.builtin.assert:
+        that: provision_storage_realpath.stdout != provision_storage_root_disk.stdout
+        fail_msg: Storage target backs the OS root filesystem.
+
+    - name: Inspect active device holders
+      ansible.builtin.command:
+        argv:
+          - find
+          - "/sys/class/block/{{ provision_storage_realpath.stdout | basename }}/holders"
+          - -mindepth
+          - '1'
+          - -maxdepth
+          - '1'
+          - -print
+          - -quit
+      register: provision_storage_holders
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse active device holders
+      ansible.builtin.assert:
+        that: provision_storage_holders.stdout | length == 0
+        fail_msg: Storage target has an active device-mapper, RAID, or other holder.
+
+    - name: Inspect signatures
+      ansible.builtin.command:
+        argv:
+          - wipefs
+          - --no-act
+          - --json
+          - --
+          - "{{ provision_storage_realpath.stdout }}"
+      register: provision_storage_wipefs
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse existing signatures
+      ansible.builtin.assert:
+        that: >-
+          (provision_storage_wipefs.stdout | from_json).signatures
+          | default([], true) | length == 0
+        fail_msg: Storage target has an unapproved signature.
+
+    - name: Inspect LVM physical volumes
+      ansible.builtin.command:
+        argv:
+          - pvs
+          - --noheadings
+          - -o
+          - pv_name
+      register: provision_storage_pvs
+      changed_when: false
+      check_mode: false
+
+    - name: Refuse an LVM member
+      ansible.builtin.assert:
+        that: >-
+          provision_storage_realpath.stdout
+          not in (provision_storage_pvs.stdout_lines | map('trim') | list)
+        fail_msg: Storage target is an LVM physical volume.
+
+    - name: Inspect RAID metadata
+      ansible.builtin.command:
+        argv:
+          - mdadm
+          - --examine
+          - --export
+          - "{{ provision_storage_realpath.stdout }}"
+      register: provision_storage_mdadm
+      changed_when: false
+      failed_when: provision_storage_mdadm.rc not in [0, 1]
+      check_mode: false
+
+    - name: Refuse RAID metadata
+      ansible.builtin.assert:
+        that: provision_storage_mdadm.stdout is not regex('(?m)^MD_UUID=')
+        fail_msg: Storage target has RAID metadata.
+
+    - name: Inspect open target users
+      ansible.builtin.command:
+        argv:
+          - fuser
+          - -s
+          - "{{ provision_storage_realpath.stdout }}"
+      register: provision_storage_fuser
+      changed_when: false
+      failed_when: provision_storage_fuser.rc not in [0, 1]
+      check_mode: false
+
+    - name: Refuse an in-use target
+      ansible.builtin.assert:
+        that: provision_storage_fuser.rc == 1
+        fail_msg: Storage target is in use.
+
+    - name: Require passing SMART health
+      ansible.builtin.command:
+        argv:
+          - smartctl
+          - -H
+          - "{{ provision_storage_realpath.stdout }}"
+      changed_when: false
+      check_mode: false
+
+    - name: Read NVMe health counters
+      ansible.builtin.command:
+        argv:
+          - nvme
+          - smart-log
+          - -o
+          - json
+          - "{{ provision_storage_realpath.stdout }}"
+      register: provision_storage_nvme
+      changed_when: false
+      check_mode: false
+
+    - name: Bind NVMe health
+      ansible.builtin.set_fact:
+        provision_storage_health: "{{ provision_storage_nvme.stdout | from_json }}"
+
+    - name: Refuse unhealthy NVMe counters
+      ansible.builtin.assert:
+        that:
+          - provision_storage_health.critical_warning | int == 0
+          - provision_storage_health.media_errors | int == 0
+          - >-
+              provision_storage_health.avail_spare | int
+              >= provision_storage_health.spare_thresh | int
+          - provision_storage_health.percent_used | int >= 0
+          - provision_storage_health.percent_used | int <= 100
+        fail_msg: Storage target has unacceptable NVMe health counters.
+
+    - name: Calculate approved GPT sector layout
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            s=int(__import__('sys').argv[1]);
+            z=int(__import__('sys').argv[2]);
+            total=s//z;
+            start=2048;
+            last=total-34;
+            usable=last-start+1;
+            p2=((start+usable//2+2047)//2048)*2048;
+            print(total,last,start,p2-1,p2,last)
+          - "{{ provision_storage_disk.size }}"
+          - "{{ provision_storage_disk['log-sec'] }}"
+      register: provision_storage_layout_command
+      changed_when: false
+      check_mode: false
+
+    - name: Bind GPT layout
+      ansible.builtin.set_fact:
+        provision_storage_layout: "{{ provision_storage_layout_command.stdout.split() }}"
+
+    - name: Refuse an invalid computed partition split
+      ansible.builtin.assert:
+        that:
+          - provision_storage_layout[3] | int > provision_storage_layout[2] | int
+          - provision_storage_layout[4] | int == provision_storage_layout[3] | int + 1
+          - provision_storage_layout[5] | int > provision_storage_layout[4] | int
+          - provision_storage_layout[5] | int == provision_storage_layout[1] | int
+        fail_msg: Computed GPT partition split is invalid.
+
+    - name: Construct byte-stable storage plan
+      ansible.builtin.set_fact:
+        provision_storage_plan_body: |-
+          C1_STORAGE_PLAN_VERSION=2
+          1TB_PATH={{ container_nodes_storage_device_by_id }}
+          1TB_DEVICE={{ provision_storage_realpath.stdout }}
+          1TB_MODEL={{ provision_storage_disk.model | trim | regex_replace('\\s+', ' ') }}
+          1TB_SIZE={{ provision_storage_disk.size }}
+          1TB_LOGICAL_SECTOR={{ provision_storage_disk['log-sec'] }}
+          1TB_SIGNATURES=none
+          1TB_HEALTH_CRITICAL_WARNING={{ provision_storage_health.critical_warning | int }}
+          1TB_HEALTH_MEDIA_ERRORS={{ provision_storage_health.media_errors | int }}
+          1TB_HEALTH_AVAILABLE_SPARE={{ provision_storage_health.avail_spare | int }}
+          1TB_HEALTH_SPARE_THRESHOLD={{ provision_storage_health.spare_thresh | int }}
+          1TB_HEALTH_PERCENT_USED={{ provision_storage_health.percent_used | int }}
+          1TB_HEALTH_ERROR_LOG_ENTRIES={{ provision_storage_health.num_err_log_entries | int }}
+          TOTAL_SECTORS={{ provision_storage_layout[0] }}
+          LAST_USABLE_SECTOR={{ provision_storage_layout[1] }}
+          PART1_START={{ provision_storage_layout[2] }}
+          PART1_END={{ provision_storage_layout[3] }}
+          PART2_START={{ provision_storage_layout[4] }}
+          PART2_END={{ provision_storage_layout[5] }}
+          PART1_GPT_LABEL=c1_librefs
+          PART1_FS_LABEL=c1_librefs
+          PART1_MOUNT=/srv/librefs
+          PART2_GPT_LABEL=c1_applications
+          PART2_FS_LABEL=c1_apps
+          PART2_MOUNT=/srv/applications
+          PARTITION_LAYOUT=50% LIBREFS + 50% APPLICATIONS
+          1TB_ACTION=erase-gpt;gpt-two-xfs-partitions
+          OS_DISK_EXCLUDED=true
+          512GB_EXCLUDED=true
+          DOCKER_ROOTS_REMAIN_OS=true
+          ROLLBACK=formatting-cannot-recover-existing-content
+
+    - name: Verify reviewed SHA-256 and typed approval
+      ansible.builtin.assert:
+        that:
+          - >-
+              (provision_storage_plan_body ~ '\n') | hash('sha256')
+              == container_nodes_storage_plan_sha256
+          - >-
+              container_nodes_storage_typed_approval
+              == ('APPROVE C1 STORAGE\n1TB=' ~ container_nodes_storage_device_by_id
+              ~ '\nPLAN_SHA256=' ~ container_nodes_storage_plan_sha256
+              ~ '\n1TB_SIGNATURES=none\nPARTITION_LAYOUT=50% LIBREFS + 50% APPLICATIONS'
+              ~ '\nACKNOWLEDGE_WIPE=ERASE APPROVED 1TB TARGET ONLY')
+        fail_msg: >-
+          Immediate evidence, reviewed plan SHA-256, or typed approval does not match byte-for-byte.
+
+    - name: Create protected storage state directory
+      ansible.builtin.file:
+        path: "{{ container_nodes_storage.state_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Persist approved plan atomically before destructive work
+      ansible.builtin.copy:
+        content: "{{ provision_storage_plan_body }}\nPLAN_SHA256={{ container_nodes_storage_plan_sha256 }}\n"
+        dest: "{{ container_nodes_storage.state_dir }}/approved-plan"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Persist pre-GPT evidence
+      ansible.builtin.copy:
+        content: "{{ provision_storage_wipefs.stdout }}\n"
+        dest: "{{ container_nodes_storage.state_dir }}/1TB.signatures.before.json"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Mark GPT transaction pending
+      ansible.builtin.copy:
+        content: "{{ container_nodes_storage_plan_sha256 }}\n"
+        dest: "{{ container_nodes_storage.state_dir }}/layout.pending"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Fsync approved plan and pending transaction state
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - >-
+            import os, sys;
+            p = sys.argv[1];
+            fds = [os.open(os.path.join(p, n), os.O_RDONLY) for n in sys.argv[2:]];
+            [os.fsync(fd) for fd in fds];
+            [os.close(fd) for fd in fds];
+            fd = os.open(p, os.O_RDONLY | os.O_DIRECTORY);
+            os.fsync(fd); os.close(fd)
+          - "{{ container_nodes_storage.state_dir }}"
+          - approved-plan
+          - 1TB.signatures.before.json
+          - layout.pending
+      changed_when: false
+
+    - name: Create exact GPT layout with pre-format compensation
+      block:
+        - name: Clear prior partition table
+          ansible.builtin.command:
+            argv:
+              - sgdisk
+              - --zap-all
+              - "{{ provision_storage_realpath.stdout }}"
+          changed_when: true
+
+        - name: Create reviewed partitions
+          ansible.builtin.command:
+            argv:
+              - sgdisk
+              - --clear
+              - "--new=1:{{ provision_storage_layout[2] }}:{{ provision_storage_layout[3] }}"
+              - --typecode=1:8300
+              - --change-name=1:c1_librefs
+              - "--new=2:{{ provision_storage_layout[4] }}:{{ provision_storage_layout[5] }}"
+              - --typecode=2:8300
+              - --change-name=2:c1_applications
+              - "{{ provision_storage_realpath.stdout }}"
+          changed_when: true
+
+        - name: Re-read partition table
+          ansible.builtin.command:
+            argv:
+              - partprobe
+              - "{{ provision_storage_realpath.stdout }}"
+          changed_when: true
+
+        - name: Wait for partition devices
+          ansible.builtin.command:
+            argv:
+              - udevadm
+              - settle
+          changed_when: false
+
+        - name: Verify created partition table
+          ansible.builtin.command:
+            argv:
+              - sfdisk
+              - --json
+              - "{{ provision_storage_realpath.stdout }}"
+          register: provision_storage_sfdisk
+          changed_when: false
+
+        - name: Require exact GPT partition metadata
+          ansible.builtin.assert:
+            that:
+              - >-
+                  (provision_storage_sfdisk.stdout | from_json).partitiontable.label
+                  == 'gpt'
+              - >-
+                  (provision_storage_sfdisk.stdout | from_json).partitiontable.partitions
+                  | length == 2
+              - >-
+                  (provision_storage_sfdisk.stdout | from_json).partitiontable.partitions[0].start
+                  | int == provision_storage_layout[2] | int
+              - >-
+                  (provision_storage_sfdisk.stdout | from_json).partitiontable.partitions[0].size
+                  | int == (provision_storage_layout[3] | int - provision_storage_layout[2] | int + 1)
+              - >-
+                  (provision_storage_sfdisk.stdout | from_json).partitiontable.partitions[0].type
+                  | upper == '0FC63DAF-8483-4772-8E79-3D69D8477DE4'
+              - >-
+                  (provision_storage_sfdisk.stdout | from_json).partitiontable.partitions[0].name
+                  == 'c1_librefs'
+              - >-
+                  (provision_storage_sfdisk.stdout | from_json).partitiontable.partitions[1].start
+                  | int == provision_storage_layout[4] | int
+              - >-
+                  (provision_storage_sfdisk.stdout | from_json).partitiontable.partitions[1].size
+                  | int == (provision_storage_layout[5] | int - provision_storage_layout[4] | int + 1)
+              - >-
+                  (provision_storage_sfdisk.stdout | from_json).partitiontable.partitions[1].type
+                  | upper == '0FC63DAF-8483-4772-8E79-3D69D8477DE4'
+              - >-
+                  (provision_storage_sfdisk.stdout | from_json).partitiontable.partitions[1].name
+                  == 'c1_applications'
+      rescue:
+        - name: Compensate a pre-format partition failure
+          ansible.builtin.command:
+            argv:
+              - sgdisk
+              - --zap-all
+              - "{{ provision_storage_realpath.stdout }}"
+          changed_when: true
+
+        - name: Re-read compensated empty table
+          ansible.builtin.command:
+            argv:
+              - partprobe
+              - "{{ provision_storage_realpath.stdout }}"
+          changed_when: true
+
+        - name: Remove transaction state after pre-format compensation
+          ansible.builtin.file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - "{{ container_nodes_storage.state_dir }}/layout.pending"
+            - "{{ container_nodes_storage.state_dir }}/approved-plan"
+            - "{{ container_nodes_storage.state_dir }}/1TB.signatures.before.json"
+
+        - name: Stop after compensated GPT failure
+          ansible.builtin.fail:
+            msg: >-
+              GPT creation failed before formatting; the partial table was cleared and no filesystem was created.
+
+    - name: Commit GPT layout sentinel
+      ansible.builtin.copy:
+        content: "{{ container_nodes_storage_plan_sha256 }}\n"
+        dest: "{{ container_nodes_storage.state_dir }}/layout.created"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Clear GPT pending sentinel
+      ansible.builtin.file:
+        path: "{{ container_nodes_storage.state_dir }}/layout.pending"
+        state: absent
+
+    - name: Provision and mount XFS filesystems
+      ansible.builtin.include_tasks: provision-filesystem.yml
+      loop:
+        - {number: 1, state_label: c1_librefs, fs_label: c1_librefs, mount: /srv/librefs, options: noatime}
+        - {number: 2, state_label: c1_applications, fs_label: c1_apps, mount: /srv/applications, options: 'noatime,prjquota'}
+      loop_control:
+        loop_var: provision_filesystem
+
+    - name: Create libreFS data source
+      ansible.builtin.file:
+        path: /srv/librefs/data
+        state: directory
+        owner: '1000'
+        group: '1000'
+        mode: '0750'
+
+    - name: Create libreFS certificate source
+      ansible.builtin.file:
+        path: /srv/librefs/certs
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Enable fstrim timer
+      ansible.builtin.systemd_service:
+        name: fstrim.timer
+        enabled: true
+        state: started
+
+    - name: Verify completed provisioning through routine contract
+      ansible.builtin.include_tasks: routine.yml

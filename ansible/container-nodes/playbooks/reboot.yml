@@ -1,0 +1,30 @@
+---
+- name: Reboot adopted container nodes serially
+  hosts: container_nodes
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: reboot
+  tasks:
+    - name: Collect pre-reboot audit
+      ansible.builtin.include_role: {name: audit}
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+    - name: Reboot and prove recovery
+      block:
+        - name: Reboot one host
+          ansible.builtin.reboot:
+            connect_timeout: 10
+            reboot_timeout: 900
+            post_reboot_delay: 10
+            test_command: /usr/bin/true
+        - name: Verify host prerequisites and rollback paths
+          ansible.builtin.include_role:
+            name: verification
+      rescue:
+        - name: Report failed reboot recovery
+          ansible.builtin.fail:
+            msg: Reboot recovery verification failed; use the reviewed console and rollback path

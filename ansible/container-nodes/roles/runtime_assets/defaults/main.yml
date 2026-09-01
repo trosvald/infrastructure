@@ -1,0 +1,90 @@
+---
+container_nodes_runtime_assets_openbao_url: https://vault.monosense.io:8200
+container_nodes_runtime_assets_enable_backup_timer: false
+container_nodes_runtime_assets_certificate_timers:
+  c0: c0-wildcard-certificate.timer
+  c1: c1-wildcard-certificate.timer
+container_nodes_runtime_assets_secret_parents:
+  c0:
+    - /opt/monitoring/secrets
+    - /var/lib/monosense-monitoring/secrets
+  c1:
+    - /opt/doco-cd/secrets
+    - /opt/edge/secrets
+    - /opt/forgejo/secrets
+    - /srv/applications/apps/edge/secrets
+    - /srv/applications/apps/forgejo/secrets
+container_nodes_runtime_assets_token_consumers:
+  c0:
+    - name: wildcard-reader-c0
+      role: wildcard-reader-c0
+      policies: [wildcard-reader-c0]
+      period: 86400
+      path: /opt/monitoring/secrets/wildcard-reader-c0.token
+      mode: '0400'
+      capabilities:
+        kv/data/platform/tls/monosense-wildcard: [read]
+        kv/metadata/platform/tls/monosense-wildcard: [read]
+        auth/token/lookup-self: [read]
+        auth/token/renew-self: [update]
+  c1:
+    - name: wildcard-reader-c1
+      role: wildcard-reader-c1
+      policies: [wildcard-reader-c1]
+      period: 86400
+      path: /opt/edge/secrets/wildcard-reader-c1.token
+      mode: '0400'
+      capabilities:
+        kv/data/platform/tls/monosense-wildcard: [read]
+        kv/metadata/platform/tls/monosense-wildcard: [read]
+        auth/token/lookup-self: [read]
+        auth/token/renew-self: [update]
+    - name: wildcard-publisher
+      role: wildcard-publisher
+      policies: [wildcard-publisher]
+      period: 86400
+      path: /opt/edge/secrets/wildcard-publisher.token
+      mode: '0400'
+      capabilities:
+        kv/data/platform/tls/monosense-wildcard: [create, read, update, patch]
+        kv/metadata/platform/tls/monosense-wildcard: [read]
+        auth/token/lookup-self: [read]
+        auth/token/renew-self: [update]
+    - name: doco-c1
+      role: doco-c1
+      policies: [doco-c1]
+      period: 86400
+      path: /opt/doco-cd/secrets/openbao-token
+      mode: '0600'
+      capabilities:
+        kv/data/docker/c1/librefs: [read]
+        kv/data/docker/c1/edge: [read]
+        kv/data/docker/c1/forgejo: [read]
+        auth/token/lookup-self: [read]
+        auth/token/renew-self: [update]
+container_nodes_runtime_assets_kv_contracts:
+  c0_monitoring:
+    path: kv/data/docker/c0/monitoring
+    keys: [telegram_bot_token, telegram_chat_id, vector_ingest_token, backup_heartbeat_token,
+           vector_tls_certificate, vector_tls_fullchain, vector_tls_private_key,
+           vector_tls_serial, vector_tls_not_after]
+  c1_edge:
+    path: kv/data/docker/c1/edge
+    keys: [acme_email, cloudflare_dns_token, maxmind_account_id, maxmind_license_key, crowdsec_lapi_key, crowdsec_bouncer_key, vector_ingest_token]
+  c1_forgejo:
+    path: kv/data/docker/c1/forgejo
+    keys: [postgres_password, forgejo_secret_key, forgejo_internal_token,
+           forgejo_jwt_secret, forgejo_lfs_jwt_secret, admin_password, admin_email,
+           zoho_username, zoho_password, kopia_repository_password,
+           librefs_access_key, librefs_secret_key]
+  c1_librefs:
+    path: kv/data/docker/c1/librefs
+    keys: [root_user, root_password]
+  wildcard:
+    path: kv/data/platform/tls/monosense-wildcard
+    keys: [certificate, fullchain, private_key, serial, not_after]
+container_nodes_runtime_assets_secret_action: false
+container_nodes_runtime_assets_rotate: false
+container_nodes_runtime_assets_controller_token: ''
+container_nodes_runtime_assets_forgejo_admin: trosvald
+container_nodes_runtime_assets_forgejo_url: https://git.monosense.io

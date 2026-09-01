@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DOCKER_BIN="${DOCKER_BIN:-docker}"; IP_BIN="${IP_BIN:-ip}"; PYTHON_BIN="${PYTHON_BIN:-python3}"
+readonly NETWORK_NAME=c1_services PARENT=bond0.2513
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+inspect_parent() {
+  local links addresses
+  links="$("$IP_BIN" -j -d link show dev "$PARENT")" || fail "failed to inspect $PARENT"
+  addresses="$("$IP_BIN" -j address show dev "$PARENT")" || fail "failed to inspect addresses on $PARENT"
+  "$PYTHON_BIN" -c 'import json,sys
+l=json.loads(sys.argv[1]);a=json.loads(sys.argv[2]);x=l[0] if len(l)==1 else {}
+ok=(x.get("ifname")=="bond0.2513" and x.get("mtu")==1496 and "UP" in x.get("flags",[]) and x.get("linkinfo",{}).get("info_kind")=="vlan" and x.get("linkinfo",{}).get("info_data",{}).get("id")==2513 and len(a)==1 and not a[0].get("addr_info",[]))
+raise SystemExit(0 if ok else 1)' "$links" "$addresses" || fail "$PARENT must be an addressless UP VLAN 2513 at MTU 1496"
+}
+validate() {
+  "$PYTHON_BIN" -c 'import json,sys
+n=json.load(sys.stdin); expected_ipam=[{"Subnet":"10.25.13.0/24","IPRange":"10.25.13.64/27","Gateway":"10.25.13.1","AuxiliaryAddresses":{"c1-shim":"10.25.13.17"}}]
+try:
+ x=n[0]; e=sorted((v.get("Name"),v.get("IPv4Address"),v.get("IPv6Address","")) for v in x.get("Containers",{}).values())
+ ok=(len(n)==1 and x["Name"]=="c1_services" and x["Driver"]=="ipvlan" and x["Scope"]=="local" and x["EnableIPv4"] is True and x["EnableIPv6"] is False and x["Internal"] is False and x["Attachable"] is False and x["Ingress"] is False and x["ConfigOnly"] is False and x["IPAM"]["Driver"]=="default" and x["IPAM"].get("Options",{})=={} and x["IPAM"]["Config"]==expected_ipam and x["Options"]=={"parent":"bond0.2513","ipvlan_mode":"l2","ipvlan_flag":"bridge"} and x["Labels"]=={"io.monosense.infrastructure.managed-by":"bootstrap","io.monosense.infrastructure.purpose":"c1-services"} and e in ([],[("librefs-c1","10.25.13.65/24","")]))
+except (IndexError,KeyError,TypeError,ValueError): ok=False
+raise SystemExit(0 if ok else 1)' || fail "$NETWORK_NAME has immutable drift or an unapproved endpoint"
+}
+main() {
+  local mode="${1:-check}" document error status names
+  [[ $# -le 1 && ( "$mode" == check || "$mode" == apply ) ]] || fail 'usage: ensure-c1-services-network [check|apply]'
+  inspect_parent; error="$(mktemp)"; trap "rm -f '$error'" EXIT
+  set +e; document="$("$DOCKER_BIN" network inspect "$NETWORK_NAME" 2>"$error")"; status=$?; set -e
+  if (( status == 0 )); then validate <<<"$document"; printf '%s matches required state\n' "$NETWORK_NAME"; return; fi
+  [[ "$(<"$error")" == "Error response from daemon: network $NETWORK_NAME not found" ]] || fail "failed to inspect $NETWORK_NAME: $(<"$error")"
+  names="$("$DOCKER_BIN" network ls --filter "name=^${NETWORK_NAME}$" --format '{{.Name}}')" || fail 'failed to confirm absence'; [[ -z "$names" ]] || fail "ambiguous absence for $NETWORK_NAME"
+  [[ "$mode" == apply ]] || { printf '%s is absent; apply would create it\n' "$NETWORK_NAME"; return; }
+  "$DOCKER_BIN" network create --driver ipvlan --scope local --ipv4 --ipv6=false --subnet 10.25.13.0/24 --gateway 10.25.13.1 --ip-range 10.25.13.64/27 --aux-address c1-shim=10.25.13.17 --opt parent="$PARENT" --opt ipvlan_mode=l2 --opt ipvlan_flag=bridge --label io.monosense.infrastructure.managed-by=bootstrap --label io.monosense.infrastructure.purpose=c1-services "$NETWORK_NAME" >/dev/null || fail 'create failed'
+  document="$("$DOCKER_BIN" network inspect "$NETWORK_NAME")" || fail 'post-create inspect failed'; validate <<<"$document"
+}
+main "$@"

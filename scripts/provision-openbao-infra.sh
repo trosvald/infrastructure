@@ -31,19 +31,6 @@ export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}"
     exit 1
 }
 
-admin_lookup="$(bao token lookup -format=json)" || {
-    echo "Authenticate the Bao CLI with the monosense-admin identity first" >&2
-    exit 1
-}
-jq -e '.data.policies | any(. == "admin" or . == "root")' \
-    <<< "$admin_lookup" >/dev/null || {
-    echo "Current Bao CLI token does not carry the admin or root policy" >&2
-    exit 1
-}
-bao auth list -format=json | jq -e 'has("userpass/")' >/dev/null || {
-    echo "OpenBao userpass auth must already be enabled by monosense-admin" >&2
-    exit 1
-}
 
 credentials_source="$repo_dir/encrypted/monosense-infra.env"
 policy_source="$repo_dir/docker/c0/openbao/policies/monosense-infra.hcl"
@@ -51,6 +38,7 @@ service_policies=(
     wildcard-publisher
     wildcard-reader-c0
     wildcard-reader-c1
+    doco-c1
 )
 [[ -f "$credentials_source" && ! -L "$credentials_source" ]] || {
     echo "Tracked encrypted monosense-infra credentials are missing or unsafe" >&2
@@ -77,11 +65,16 @@ runtime_dir="$(mktemp -d "${TMPDIR:-/tmp}/monosense-infra-provision.XXXXXX")"
 credentials_json="$runtime_dir/credentials.json"
 user_payload="$runtime_dir/user.json"
 infra_token=""
+admin_token=""
 cleanup() {
     local status=$?
     if [[ -n "$infra_token" ]]; then
         BAO_TOKEN="$infra_token" bao token revoke -self >/dev/null 2>&1 || true
     fi
+    if [[ -n "$admin_token" ]]; then
+        BAO_TOKEN="$admin_token" bao token revoke -self >/dev/null 2>&1 || true
+    fi
+    unset admin_token BAO_TOKEN
     unset infra_token
     chmod -R u=rwX,go= "$runtime_dir" 2>/dev/null || true
     rm -rf -- "$runtime_dir"
@@ -90,13 +83,46 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
 
+tty_device=/dev/tty
+[[ -r "$tty_device" && -w "$tty_device" ]] || {
+    echo "monosense-admin authentication requires an interactive terminal" >&2
+    exit 1
+}
+IFS= read -r -s -p "monosense-admin password: " admin_password < "$tty_device" || {
+    printf '\n' > "$tty_device"
+    echo "Failed to read monosense-admin password" >&2
+    exit 1
+}
+printf '\n' > "$tty_device"
+admin_token="$(jq -cn --arg password "$admin_password" '{password: $password}' |
+    bao write -field=token auth/userpass/login/monosense-admin -)"
+unset admin_password
+[[ "$admin_token" =~ ^hvs\.[A-Za-z0-9_-]+$ || "$admin_token" =~ ^s\.[A-Za-z0-9_-]+$ ]] || {
+    admin_token=""
+    echo "OpenBao did not return a valid monosense-admin token" >&2
+    exit 1
+}
+export BAO_TOKEN="$admin_token"
+admin_lookup="$(bao token lookup -format=json)"
+jq -e '.data.policies | any(. == "admin" or . == "root")' \
+    <<< "$admin_lookup" >/dev/null || {
+    echo "monosense-admin token does not carry the admin or root policy" >&2
+    exit 1
+}
+bao auth list -format=json | jq -e 'has("userpass/")' >/dev/null || {
+    echo "OpenBao userpass auth must already be enabled" >&2
+    exit 1
+}
+
 sops decrypt --input-type dotenv --output-type json "$credentials_source" > "$credentials_json"
 chmod 0600 "$credentials_json"
 jq -e '
     type == "object" and
     (keys | sort) == ["BAO_PASSWORD", "BAO_USERNAME"] and
     .BAO_USERNAME == "monosense-infra" and
-    (.BAO_PASSWORD | type == "string" and length >= 32 and test("^[A-Za-z0-9_-]+$"))
+    (.BAO_PASSWORD | type) == "string" and
+    (.BAO_PASSWORD | length) >= 32 and
+    (.BAO_PASSWORD | explode | all(. >= 33 and . <= 126))
 ' "$credentials_json" >/dev/null || {
     echo "Encrypted credentials have an invalid schema" >&2
     exit 1
@@ -148,6 +174,7 @@ done
     exit 1
 }
 managed_records=(
+    docker/c1/librefs
     docker/c1/edge
     docker/c1/forgejo
     docker/c0/monitoring
@@ -171,7 +198,17 @@ for role in "${service_policies[@]}"; do
         echo "monosense-infra cannot create the exact $role service token" >&2
         exit 1
     }
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "auth/token/roles/$role")" == \
+        "read" ]] || {
+        echo "monosense-infra cannot read the exact $role service token contract" >&2
+        exit 1
+    }
 done
+[[ "$(BAO_TOKEN="$infra_token" bao token capabilities auth/token/revoke-accessor)" == \
+    "update" ]] || {
+    echo "monosense-infra cannot revoke superseded scoped token accessors" >&2
+    exit 1
+}
 for path in \
     kv/data/network/bgp/not-approved \
     kv/metadata/network/bgp/cilium-srx1500 \

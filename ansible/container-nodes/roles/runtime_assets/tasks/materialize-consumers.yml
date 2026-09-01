@@ -1,0 +1,90 @@
+---
+- name: Capture protected prior consumer files
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  loop: "{{ runtime_materials }}"
+  register: runtime_prior_materials
+  failed_when: false
+  no_log: true
+  diff: false
+
+- name: Block unsupported application-internal secret rotation
+  ansible.builtin.assert:
+    that:
+      - runtime_prior_materials.results[runtime_rotation_index].content is defined
+      - runtime_prior_materials.results[runtime_rotation_index].content | b64decode == item.content
+    fail_msg: Application KV differs from the installed consumer; use its application-specific rotation transaction
+  loop: "{{ runtime_materials }}"
+  loop_control:
+    index_var: runtime_rotation_index
+  when: container_nodes_runtime_assets_rotate | bool
+  no_log: true
+  diff: false
+
+
+- name: Commit protected consumer files
+  when: not (container_nodes_runtime_assets_rotate | bool)
+  block:
+    - name: Atomically install protected consumer file
+      atomic_secret:
+        path: "{{ item.path }}"
+        content: "{{ item.content }}"
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode | default('0400') }}"
+        parent_owner: "{{ item.parent_owner | default('root') }}"
+        parent_group: "{{ item.parent_group | default('root') }}"
+        parent_mode: '0700'
+      loop: "{{ runtime_materials }}"
+      no_log: true
+      diff: false
+
+    - name: Read committed consumer files for exact verification
+      ansible.builtin.slurp:
+        src: "{{ item.path }}"
+      loop: "{{ runtime_materials }}"
+      register: runtime_committed_materials
+      no_log: true
+      diff: false
+
+    - name: Verify every committed consumer payload
+      ansible.builtin.assert:
+        that:
+          - runtime_committed_materials.results[runtime_material_index].content | b64decode == item.content
+      loop: "{{ runtime_materials }}"
+      loop_control:
+        index_var: runtime_material_index
+      no_log: true
+      diff: false
+  rescue:
+    - name: Restore protected prior consumer file
+      atomic_secret:
+        path: "{{ item.path }}"
+        content: "{{ runtime_prior_materials.results[runtime_restore_index].content | b64decode }}"
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode | default('0400') }}"
+        parent_owner: "{{ item.parent_owner | default('root') }}"
+        parent_group: "{{ item.parent_group | default('root') }}"
+        parent_mode: '0700'
+      when: runtime_prior_materials.results[runtime_restore_index].content is defined
+      loop: "{{ runtime_materials }}"
+      loop_control:
+        index_var: runtime_restore_index
+      no_log: true
+      diff: false
+
+    - name: Remove failed first-provision consumer file
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      when: runtime_prior_materials.results[runtime_remove_index].content is not defined
+      loop: "{{ runtime_materials }}"
+      loop_control:
+        index_var: runtime_remove_index
+      no_log: true
+      diff: false
+
+    - name: Abort failed materialization after compensation
+      ansible.builtin.fail:
+        msg: Protected consumer materialization failed and prior files were restored

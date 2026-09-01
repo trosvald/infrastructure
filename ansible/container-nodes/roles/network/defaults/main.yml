@@ -1,0 +1,122 @@
+---
+# Sanitized live interface intent, normalized only for Blocky DNS, the corrected
+# active-backup description/removal of obsolete LACP comments, and the reviewed
+# dotted-VLAN IPv6 persistence fix. Inventory binds these values explicitly.
+container_node_network_interfaces_by_host:
+  c0: |
+    # This file describes the network interfaces available on your system
+    # and how to activate them. For more information, see interfaces(5).
+
+    source /etc/network/interfaces.d/*
+
+    # The loopback network interface
+    auto lo
+    iface lo inet loopback
+
+    # The primary network interface (MGMT, native VLAN 2510)
+    allow-hotplug enp0s31f6
+    iface enp0s31f6 inet static
+        address 10.25.10.20/24
+        gateway 10.25.10.1
+        dns-nameservers 10.25.13.35
+        dns-search monosense.io
+
+    # Tagged SERVICES VLAN 2513; parent for c0_services.
+    auto enp0s31f6.2513
+    iface enp0s31f6.2513 inet manual
+        vlan-raw-device enp0s31f6
+        mtu 1496
+        post-up /usr/sbin/sysctl -q -w net/ipv6/conf/$IFACE/disable_ipv6=1
+
+    # Host path to the c0-owned IPvlan service block.
+    auto c0-svc-shim
+    iface c0-svc-shim inet manual
+        pre-up /usr/bin/ip link show $IFACE >/dev/null 2>&1 || /usr/bin/ip link add link enp0s31f6.2513 name $IFACE type ipvlan mode l2 bridge
+        pre-up /usr/bin/ip link set dev $IFACE mtu 1496
+        up /usr/bin/ip address replace 10.25.13.16/32 dev $IFACE
+        up /usr/bin/ip route replace 10.25.13.32/27 dev $IFACE src 10.25.13.16
+        post-up /usr/sbin/sysctl -q -w net/ipv6/conf/$IFACE/disable_ipv6=1
+        down /usr/bin/ip route delete 10.25.13.32/27 dev $IFACE || true
+        post-down /usr/bin/ip link delete $IFACE || true
+  c1: |
+    # This file describes the network interfaces available on your system
+    # and how to activate them. For more information, see interfaces(5).
+
+    source /etc/network/interfaces.d/*
+
+    # The loopback network interface
+    auto lo
+    iface lo inet loopback
+
+    # The primary network interface (MGMT)
+    allow-hotplug eno1
+    iface eno1 inet static
+        address 10.25.10.101/24
+        gateway 10.25.10.1
+        dns-nameservers 10.25.13.35
+        dns-search monosense.io
+
+    # Active-backup trunk across tor1 and tor2. Untagged traffic is VLAN 2511.
+    auto bond0
+    iface bond0 inet manual
+        bond-slaves enp1s0 enp1s0d1
+        bond-mode active-backup
+        bond-miimon 100
+        bond-downdelay 200
+        bond-updelay 200
+        mtu 1500
+        post-up /usr/sbin/sysctl -q -w net/ipv6/conf/$IFACE/disable_ipv6=1
+
+    # Tagged HOME VLAN 2512.
+    auto bond0.2512
+    iface bond0.2512 inet manual
+        vlan-raw-device bond0
+        mtu 1496
+        pre-up /bin/sh -c 'printf 1 > /proc/sys/net/ipv6/conf/"$IFACE"/disable_ipv6'
+        post-up /usr/sbin/ip -6 address flush dev $IFACE scope link
+
+    # Tagged SERVICES VLAN 2513; parent for c1_services.
+    auto bond0.2513
+    iface bond0.2513 inet manual
+        vlan-raw-device bond0
+        mtu 1496
+        pre-up /bin/sh -c 'printf 1 > /proc/sys/net/ipv6/conf/"$IFACE"/disable_ipv6'
+        post-up /usr/sbin/ip -6 address flush dev $IFACE scope link
+container_node_network_interfaces_sha256_by_host:
+  c0: ebd809e6f400b58b53e085b32459f2bc341a1f6486a37092860fadf3d1d73137
+  c1: 3963f7a803d51faa11898e2b8a6b9414e0cf8b6d927adb064602c007b0a83dd1
+container_node_network_activation_interfaces_by_host:
+  c0: [enp0s31f6, enp0s31f6.2513, c0-svc-shim]
+  c1: [eno1, bond0, bond0.2512, bond0.2513, bond0.2515]
+container_node_network_management_by_host:
+  c0: {interface: enp0s31f6, address: 10.25.10.20}
+  c1: {interface: eno1, address: 10.25.10.101}
+container_node_network_verify_routes_by_host:
+  c0:
+    - {destination: 10.25.10.1, interface: enp0s31f6}
+    - {destination: 10.25.13.35, interface: c0-svc-shim}
+  c1:
+    - {destination: 10.25.10.1, interface: eno1}
+    - {destination: 10.25.13.65, interface: c1-svc-shim}
+container_node_network_verify_container_paths_by_host:
+  c0:
+    - {name: c0-services, argv: [docker, network, inspect, c0_services]}
+    - {name: c0-omada-mgmt, argv: [docker, network, inspect, c0_omada_mgmt]}
+  c1:
+    - {name: c1-services, argv: [docker, network, inspect, c1_services]}
+    - {name: c1-edge, argv: [docker, network, inspect, c1_edge]}
+    - {name: c1-forgejo-frontend, argv: [docker, network, inspect, c1_forgejo_frontend]}
+
+container_node_network_interfaces_content: "{{ container_node_network_interfaces_by_host[inventory_hostname] | default('') }}"
+container_node_network_interfaces_sha256: "{{ container_node_network_interfaces_sha256_by_host[inventory_hostname] | default('') }}"
+container_node_network_activation_interfaces: "{{ container_node_network_activation_interfaces_by_host[inventory_hostname] | default([]) }}"
+container_node_network_management_interface: "{{ (container_node_network_management_by_host[inventory_hostname] | default({})).interface | default('') }}"
+container_node_network_management_address: "{{ (container_node_network_management_by_host[inventory_hostname] | default({})).address | default('') }}"
+container_node_network_management_gateway: 10.25.10.1
+container_node_network_dns_server: 10.25.13.35
+container_node_network_oob_verified: false
+container_node_network_rollback_seconds: 300
+container_node_network_verify_routes: "{{ container_node_network_verify_routes_by_host[inventory_hostname] | default([]) }}"
+container_node_network_verify_container_paths: "{{ container_node_network_verify_container_paths_by_host[inventory_hostname] | default([]) }}"
+container_node_network_bin_dir: /usr/local/libexec/monosense-ansible
+container_node_network_state_dir: /var/lib/monosense-ansible/network

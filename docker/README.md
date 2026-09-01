@@ -9,28 +9,28 @@ Inventory last verified over SSH on 2026-08-25. The canonical hostnames are `c0`
 | `c0` | Core services | Intel Core i7-7700T, 4 cores/8 threads | 32 GiB | Debian 13.6, kernel `6.12.101+deb13-amd64` | Docker Engine 29.7.2, Compose 5.5.0 |
 | `c1` | General services | Intel Core i7-8700T, 6 cores/12 threads | 64 GiB | Debian 13.6, kernel `6.12.101+deb13-amd64` | Docker Engine 29.7.2, Compose 5.5.0 |
 
-c0 runs Doco-CD, OpenBao, its certificate renewer, PowerDNS, and Omada Controller. The reviewed c1
-Doco-CD, storage, network, token-lifecycle, and libreFS configuration is repository-only and remains
-undeployed pending every checkpoint in `docs/c1/OPERATIONS.md`.
+c0 currently runs Doco-CD, OpenBao, PowerDNS, Blocky, and Omada. c1's previously staged host state
+is awaiting independent Ansible adoption; repository implementation does not imply live convergence
+or authorize restarting the stopped c1 Doco-CD controller.
 
 ## Doco-CD on c0
 
-All c0-owned repository payload lives below `docker/c0/`, with separate ownership boundaries:
+Application payload remains below `docker/c0/`, while host ownership is isolated:
 
 | Path | Responsibility |
 | --- | --- |
-| `docker/c0/.doco-cd.yaml` | Host Doco deployment settings |
-| `docker/c0/.doco-cd/` | Bootstrap-owned Doco controller source |
-| `docker/c0/.host/` | Host prerequisites that are not Doco applications |
+| `docker/c0/.doco-cd.yaml` | Doco application deployment settings |
+| `docker/c0/.doco-cd/` | Doco controller application source |
 | `docker/c0/<app>/` | Direct-child Doco-managed applications and their local metadata |
+| `ansible/container-nodes/roles/doco_controller/` | Controller bootstrap and systemd lifecycle |
+| `ansible/container-nodes/roles/{baseline,access,network,docker_host,storage,firewall,runtime_assets,verification}/` | c0/c1 host state, prerequisites, resident helpers, and checks |
 
-Doco-CD remains bootstrap-owned and is not one of the applications it manages. Operators install
-`docker/c0/.doco-cd/docker-compose.app.yaml` and `poll-config.yml` as
-`/opt/doco-cd/compose.yml` and `/opt/doco-cd/poll-config.yml`; the differing source and installed
-filenames are intentional. Doco v0.111.0 recognizes only `compose.yaml`, `compose.yml`,
+Doco-CD remains the sole owner of application Compose deployment, creation, and recreation.
+Ansible installs and owns the controller and resident host lifecycle assets but never runs
+application Compose operations. Doco v0.111.0 recognizes only `compose.yaml`, `compose.yml`,
 `docker-compose.yml`, and `docker-compose.yaml` during auto-discovery, so
-`docker-compose.app.yaml` cannot make the controller manage itself. Hidden directories are scanned,
-therefore validation forbids recognized Compose filenames anywhere under `.doco-cd/` and `.host/`.
+`docker-compose.app.yaml` cannot make the controller manage itself. Hidden directories are scanned;
+validation therefore forbids recognized Compose filenames beneath the controller source.
 
 The poller reads the public repository `https://github.com/trosvald/infrastructure.git` at
 `refs/heads/main` every 180 seconds without a target. `DEPLOY_CONFIG_BASE_DIR=./docker/c0/` selects
@@ -80,8 +80,9 @@ The migration used a staged cutover to preserve runtime state:
 3. `/opt/doco-cd` was backed up; the replacement configuration was validated; the existing secret
    files and `doco-cd-data` volume were preserved; and only Doco-CD was recreated.
 4. Controller health, unchanged image and management bindings, a successful Git poll, exactly the
-   three intended applications, no `.doco-cd` or `.host` project, and unchanged application
-   container identities, volumes, addresses, and networks were required before legacy deletion.
+   three intended applications, no hidden controller or prerequisite project, and unchanged
+   application container identities, volumes, addresses, and networks were required before legacy
+   deletion.
 5. The legacy paths were deleted only after that proof, followed by another successful Git poll.
 
 Current rollback to the pre-migration architecture requires restoring the legacy Git paths from a
@@ -98,18 +99,22 @@ credentials. cAdvisor and native observability remain undeployed on c0.
 
 ## Doco-CD and libreFS on c1
 
-c1 mirrors the c0 ownership boundary under `docker/c1/`: `.doco-cd/` is bootstrap-owned, `.host/`
-contains fail-closed host prerequisites, and only direct non-hidden children such as `librefs/` are
-Doco-managed applications. Doco-CD remains pinned to 0.111.0, polls public `main` every 180 seconds,
-binds API and metrics only on loopback, and uses a root-only file token for the exact `doco-c1`
-OpenBao policy. It has no c0 SOPS identity.
+c1 uses the same boundary: `.doco-cd/` contains controller application source, direct non-hidden
+children such as `librefs/` are Doco-managed applications, and
+`ansible/container-nodes/roles/` owns host prerequisites and resident lifecycle gates. Doco-CD
+remains pinned to 0.111.0, polls public `main` every 180 seconds, binds API and metrics only on
+loopback, and uses a root-only file token for the exact `doco-c1` OpenBao policy. It has no c0 SOPS
+identity.
 
 libreFS is pinned by the tested amd64 manifest digest, runs as UID/GID 1000 with a read-only root,
 receives only `_FILE` secret paths, publishes no host ports, and uses static address
 `10.25.13.65` on external `c1_services`. Its only writable persistent bind is the asserted
-`/srv/librefs/data` mount. The repository does not authorize creating the network, storage,
-OpenBao records, controller, or application. Use `just docker validate-c1` for offline validation
-and `docs/c1/OPERATIONS.md` for the gated procedure.
+`/srv/librefs/data` mount. Application Compose does not create the network, storage, OpenBao
+records, controller, or host lifecycle assets. Use `just docker validate-c1` for application
+validation. For pre-adoption host evidence, run the fixed
+`just ansible container-nodes audit`, `just ansible container-nodes check`, and
+`just ansible container-nodes diff` actions separately; `docs/c1/OPERATIONS.md` defines the gated
+procedure.
 
 ## Application inventory
 
@@ -150,7 +155,10 @@ and exact single-device 1 TB approval remain gates; live deployment is intention
 
 ## Networking
 
-Both hosts use Debian `ifupdown`; persistent configuration is in `/etc/network/interfaces`.
+Ansible owns the complete c0/c1 ifupdown intent under
+`ansible/container-nodes/roles/network/`; routine `deploy` writes reviewed configuration without
+activating or bouncing networking. Activation is restricted to the separately gated
+`just ansible container-nodes activate-network` action.
 
 | Node | Interface | Adapter and state | Current address | Gateway | Configured DNS |
 | --- | --- | --- | --- | --- | --- |
@@ -192,10 +200,11 @@ acceptance probes must be confirmed absent before deployment. Operators and prob
 MGMT host. Any future shim requires a separately reviewed route/interface change and a newly
 reserved `/32`.
 
-`c0_omada_mgmt` is a c0 host prerequisite, external to Compose, and owned by
-`docker/c0/.host/networks/omada-mgmt/ensure.sh`. The helper created the live network on 2026-08-25,
-then passed an idempotent exact-state recheck. Moving its repository path does not run it, replace
-the network, or make it Doco-managed. Authoritative IPAM and switch/SRX DAI, DHCP-snooping,
+`c0_omada_mgmt` is an Ansible-owned c0 host prerequisite, external to Compose. Its reconciler is
+`ansible/container-nodes/roles/network/files/ensure-c0-omada-network`. The predecessor helper
+created the live network on 2026-08-25 and then passed an idempotent exact-state recheck; migrating
+its source does not run it, replace the network, or make it Doco-managed. Authoritative IPAM and
+switch/SRX DAI, DHCP-snooping,
 IP-source-guard, port-security, and ARP-policy evidence remain operator follow-up because the
 deployment did not modify or inspect those systems.
 

@@ -1,0 +1,192 @@
+---
+- name: Read exact OpenBao token role
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/auth/token/roles/{{ runtime_token_consumer.role }}"
+    method: GET
+    headers: {X-Vault-Token: "{{ lookup('ansible.builtin.file', runtime_auth_directory.path + '/openbao.token') }}"}
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: runtime_token_role
+  no_log: true
+  diff: false
+
+- name: Validate exact token role contract
+  ansible.builtin.assert:
+    that:
+      - runtime_token_role.json.data.allowed_policies | sort == runtime_token_consumer.policies | sort
+      - runtime_token_role.json.data.disallowed_policies | default([]) | length == 0
+      - runtime_token_role.json.data.orphan | bool
+      - runtime_token_role.json.data.token_period | int == runtime_token_consumer.period | int
+      - runtime_token_role.json.data.token_type == 'service'
+  no_log: true
+  diff: false
+
+- name: Capture protected prior token
+  ansible.builtin.slurp:
+    src: "{{ runtime_token_consumer.path }}"
+  register: runtime_prior_token
+  failed_when: false
+  no_log: true
+  diff: false
+
+- name: Look up prior accessor without exposing token
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/auth/token/lookup-self"
+    method: GET
+    headers: {X-Vault-Token: "{{ runtime_prior_token.content | b64decode | trim }}"}
+    return_content: true
+    status_code: [200, 403]
+  when: runtime_prior_token.content is defined
+  delegate_to: localhost
+  become: false
+  register: runtime_prior_lookup
+  no_log: true
+  diff: false
+
+- name: Issue periodic orphan token for exact role
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/auth/token/create/{{ runtime_token_consumer.role }}"
+    method: POST
+    headers: {X-Vault-Token: "{{ lookup('ansible.builtin.file', runtime_auth_directory.path + '/openbao.token') }}"}
+    body_format: json
+    body: {}
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: runtime_new_token
+  no_log: true
+  diff: false
+
+- name: Validate issued token identity
+  ansible.builtin.assert:
+    that:
+      - runtime_new_token.json.auth.renewable is sameas true
+      - runtime_new_token.json.auth.lease_duration | int == runtime_token_consumer.period | int
+      - runtime_new_token.json.auth.policies | sort == (['default'] + runtime_token_consumer.policies) | unique | sort
+      - runtime_new_token.json.auth.accessor | length > 10
+      - runtime_new_token.json.auth.client_token | length > 20
+  no_log: true
+  diff: false
+
+- name: Query exact allowed and denied capabilities
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/sys/capabilities-self"
+    method: POST
+    headers: {X-Vault-Token: "{{ runtime_new_token.json.auth.client_token }}"}
+    body_format: json
+    body:
+      paths: "{{ runtime_token_consumer.capabilities.keys() | list + ['auth/token/create', 'sys/policies/acl', 'kv/data/global', 'kv/data/junos'] }}"
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: runtime_new_capabilities
+  no_log: true
+  diff: false
+
+- name: Validate exact allowed capabilities
+  ansible.builtin.assert:
+    that: runtime_new_capabilities.json.data[item.key] | sort == item.value | sort
+  loop: "{{ runtime_token_consumer.capabilities | dict2items }}"
+  no_log: true
+  diff: false
+
+- name: Validate mandatory denials
+  ansible.builtin.assert:
+    that: runtime_new_capabilities.json.data[item] == ['deny']
+  loop: [auth/token/create, sys/policies/acl, kv/data/global, kv/data/junos]
+  no_log: true
+  diff: false
+
+- name: Commit and verify token consumer
+  block:
+    - name: Atomically install new scoped token
+      atomic_secret:
+        path: "{{ runtime_token_consumer.path }}"
+        content: "{{ runtime_new_token.json.auth.client_token }}\n"
+        owner: root
+        group: root
+        mode: "{{ runtime_token_consumer.mode }}"
+        parent_mode: '0700'
+      no_log: true
+      diff: false
+
+    - name: Verify installed token through its own identity endpoint
+      ansible.builtin.uri:
+        url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/auth/token/lookup-self"
+        method: GET
+        headers: {X-Vault-Token: "{{ runtime_new_token.json.auth.client_token }}"}
+        return_content: true
+        status_code: 200
+      delegate_to: localhost
+      become: false
+      register: runtime_committed_lookup
+      no_log: true
+      diff: false
+
+    - name: Verify committed periodic identity
+      ansible.builtin.assert:
+        that:
+          - runtime_committed_lookup.json.data.accessor == runtime_new_token.json.auth.accessor
+          - runtime_committed_lookup.json.data.renewable is sameas true
+          - runtime_committed_lookup.json.data.policies | sort == (['default'] + runtime_token_consumer.policies) | unique | sort
+          - runtime_committed_lookup.json.data.ttl | int > 0
+          - runtime_committed_lookup.json.data.ttl | int <= runtime_token_consumer.period | int
+      no_log: true
+      diff: false
+
+    - name: Revoke prior accessor only after committed consumer verification
+      ansible.builtin.uri:
+        url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/auth/token/revoke-accessor"
+        method: POST
+        headers: {X-Vault-Token: "{{ lookup('ansible.builtin.file', runtime_auth_directory.path + '/openbao.token') }}"}
+        body_format: json
+        body: {accessor: "{{ runtime_prior_lookup.json.data.accessor }}"}
+        status_code: [200, 204]
+      when:
+        - runtime_prior_lookup.json.data.accessor is defined
+        - runtime_prior_lookup.json.data.accessor != runtime_new_token.json.auth.accessor
+      delegate_to: localhost
+      become: false
+      no_log: true
+      diff: false
+  rescue:
+    - name: Restore protected prior token
+      atomic_secret:
+        path: "{{ runtime_token_consumer.path }}"
+        content: "{{ runtime_prior_token.content | b64decode }}"
+        owner: root
+        group: root
+        mode: "{{ runtime_token_consumer.mode }}"
+        parent_mode: '0700'
+      when: runtime_prior_token.content is defined
+      no_log: true
+      diff: false
+
+    - name: Remove failed first-provision token file
+      ansible.builtin.file:
+        path: "{{ runtime_token_consumer.path }}"
+        state: absent
+      when: runtime_prior_token.content is not defined
+      no_log: true
+      diff: false
+
+    - name: Revoke failed new token accessor
+      ansible.builtin.uri:
+        url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/auth/token/revoke-accessor"
+        method: POST
+        headers: {X-Vault-Token: "{{ lookup('ansible.builtin.file', runtime_auth_directory.path + '/openbao.token') }}"}
+        body_format: json
+        body: {accessor: "{{ runtime_new_token.json.auth.accessor }}"}
+        status_code: [200, 204]
+      delegate_to: localhost
+      become: false
+      no_log: true
+      diff: false
+
+    - name: Abort failed token transaction after compensation
+      ansible.builtin.fail:
+        msg: "Scoped token transaction failed and was compensated for {{ runtime_token_consumer.name }}"

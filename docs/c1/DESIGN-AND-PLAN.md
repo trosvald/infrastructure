@@ -1,7 +1,9 @@
 # c1 Design and Plan
 
 Date: 2026-08-26
-Status: mission live gates complete; final status `OPERATIONAL_WITHOUT_DURABILITY` solely because
+Historical 2026-08-26 status: mission live gates completed under the predecessor host contract;
+container-node Ansible adoption and convergence remain unclaimed. The recorded final status was
+`OPERATIONAL_WITHOUT_DURABILITY` solely because
 no off-host libreFS backup target/restore exists on c1 (no durability claim). User approved
 controlled c1 reboot; outage and SSH recovery observed. Post-reboot verification passed: both
 XFS noatime mounts and assertion units, Docker, c1 SERVICES network/shim, exact management
@@ -13,9 +15,11 @@ passed again after reboot; 512 MiB observed 542,280,200 B/s upload and 2,014,577
 (post-reboot confirmation, not a replacement of the pre-reboot baseline of 567,957,345 B/s
 upload and 1,863,741,635 B/s download). User explicitly skipped optional bond-member
 failover; record intentionally not exercised, not a blocker. PR8 merged at
-`599fff0e01301d77f5a2e204bac5df9a519f1823` and the reviewed helper
-`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is installed `root:root` mode
-0755 on c1. No remaining live gates.
+`599fff0e01301d77f5a2e204bac5df9a519f1823`; its then-installed libreFS rematerialization helper is
+historical live evidence. The source contract has since migrated to
+`ansible/container-nodes/roles/runtime_assets/files/rematerialize-c1-librefs-credentials`.
+Container-node adoption and any later secret rotation remain separately gated and are not implied
+by that earlier completion record.
 
 ## Target architecture
 
@@ -23,7 +27,7 @@ failover; record intentionally not exercised, not a blocker. PR8 merged at
 GitHub public main, polled every 180 seconds
                     |
                     v
-c1 Doco-CD 0.111.0, bootstrap-owned
+c1 Doco-CD 0.111.0, systemd-installed and host-managed by Ansible
 - 127.0.0.1:8080 API
 - 127.0.0.1:9120 metrics
 - Docker socket
@@ -180,8 +184,8 @@ fallback directories.
 
 ### Docker network
 
-`docker/c1/.host/networks/services/ensure.sh` owns this exact immutable state:
-
+`ansible/container-nodes/roles/network/files/ensure-c1-services-network` owns this exact immutable
+state:
 | Field | Required value |
 |---|---|
 | name/driver/scope | `c1_services` / `ipvlan` / local |
@@ -191,7 +195,7 @@ fallback directories.
 | parent | `bond0.2513` |
 | options | `ipvlan_mode=l2`, `ipvlan_flag=bridge` |
 | MTU contract | parent and created links remain 1496 |
-| labels | bootstrap-managed and c1 SERVICES purpose |
+| labels | legacy bootstrap-managed value retained for immutable in-place adoption; Ansible owns the object |
 | other flags | not internal, attachable, ingress, or config-only |
 
 The script verifies parent existence, UP state, VLAN identity, MTU 1496, and absence of a host L3
@@ -250,7 +254,7 @@ c1 controller contract:
 - API `127.0.0.1:8080`, metrics `127.0.0.1:9120` only;
 - built-in `/doco-cd healthcheck`;
 - persistent c1-named data volume and bounded JSON logs;
-- Docker socket is present only in the bootstrap controller;
+- Docker socket is present only in the Ansible-managed Doco controller;
 - no c0 SOPS identity;
 - `SECRET_PROVIDER=openbao`;
 - `SECRET_PROVIDER_SITE_URL=https://vault.monosense.io:8200`;
@@ -301,16 +305,19 @@ Doco 0.111.0 resolves ordinary KV values before computing its rendered project h
 under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) showed that an ordinary KV value
 change alone does NOT redeploy or rematerialize the container when the Git source is
 unchanged: Doco and the existing `librefs-c1` container continue to hold the prior pair. The
-repository helper `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` codifies the
-fail-closed rematerialization procedure (stop `librefs-c1.service`, remove only the stateless
-container, invoke an isolated local-only Git custom target through Doco to recreate with
-current provider values, normalize provenance to remote `main`, restart/check the systemd
-gate, clean both the temporary source tree and the cache). Credential rotation is gated by
-stopping Doco before the KV write, then running the rematerialize helper to recreate the
-container with the new pair; the initial canary must reproduce this behavior.
-Rollback stops the systemd service, restores the prior image/config, and starts the service, which
-force-recreates the controller while retaining its named data volume. Never delete the volume during
-normal rollback.
+migrated resident helper in
+`ansible/container-nodes/roles/runtime_assets/files/rematerialize-c1-librefs-credentials` preserves
+the fail-closed transaction: stop the Doco project through its authenticated lifecycle gate,
+remove only the stateless container, let Doco recreate it with current provider values, normalize
+provenance to remote `main`, restart/check the gate, and clean temporary state. Operators do not
+invoke the helper directly. Credential provisioning and rotation use
+`just ansible container-nodes provision-secrets` and
+`just ansible container-nodes rotate-secrets`; both require adoption, protected OpenBao/SOPS input,
+record/schema/capability checks, staged consumer verification, compensation, and delayed
+old-accessor revocation.
+Rollback is part of the same protected Ansible transaction: restore the prior file and consumer
+runtime state, verify it, revoke the replacement accessor, and retain the named Doco volume. Doco
+owns any application recreation; never delete its volume during rollback.
 
 ## OpenBao decision
 
@@ -335,8 +342,10 @@ separate operator grant.
 
 ```text
 ghcr.io/librefs/librefs:release.2026-05-04t00-42-47z@sha256:707de0b1fa0ff7c83dd72ad4bcd8225302f06a4ce5278b7356700401e95004ab
-| token lifecycle | `docker/c1/.host/openbao/` renewal/install scripts and systemd templates, including
-  `rematerialize-librefs-credentials.sh` |
+```
+
+Token renewal, installation, rematerialization, certificate, backup, and systemd assets live under
+`ansible/container-nodes/roles/runtime_assets/`.
 
 Use `linux/amd64`, command `server /data --console-address :9001`, static `.65`, no host ports,
 UID/GID 1000, all capabilities dropped, no-new-privileges, hardened `/tmp`, exact bind, top-level
@@ -410,10 +419,10 @@ revert it. The S3 and performance matrices are complete; results are recorded in
 
 | Purpose | Planned files |
 |---|---|
-| libreFS | `docker/c1/librefs/.doco-cd.yaml`, `compose.yml`, `tests/validate.sh`, `librefs-c1.service`, `manage-c1-librefs` |
-| network prerequisite | `docker/c1/.host/networks/services/ensure.sh`, tests, shim/systemd templates |
-| storage prerequisite | `docker/c1/.host/storage/ensure.sh`, tests, and single-device approval/assertion helpers (no engine config install) |
-| token lifecycle | `docker/c1/.host/openbao/` renewal/install scripts and systemd templates |
+| libreFS | Doco application assets in `docker/c1/librefs/`; host lifecycle in `ansible/container-nodes/roles/doco_controller/` and `roles/runtime_assets/` |
+| network prerequisite | `ansible/container-nodes/roles/network/` files, tests, and systemd template |
+| storage prerequisite | `ansible/container-nodes/roles/storage/` tasks, files, and tests |
+| token lifecycle | `ansible/container-nodes/roles/runtime_assets/` transactions, helpers, and systemd templates |
 | OpenBao policy | `docker/c0/openbao/policies/doco-c1.hcl` plus offline capability assertions |
 | validation | `docker/mod.just`, `.github/workflows/docker.yaml`, `docker/README.md` |
 | design/operations | `docs/c1/*.md`, `CHANGELOG.md` |
@@ -456,14 +465,15 @@ introduced.
 - `validate-c1` runs against the exact Compose 5.5.0 plugin locked in `.mise/mise.lock` and
   activated by CI. Doco 0.111.0 embeds Compose v5.5.0, so the runtime credential canary
   executes the same Compose injection semantics in local and CI as in live Doco.
-- rendered `librefs-c1.service` and `manage-c1-librefs` ordering requires
+- container-node tests verify that the Ansible-installed lifecycle gates require
   `c1-librefs-storage.service`, `c1-applications-storage.service`, `assert-c1-mount`, and
-  `c1-services-network.service` active before `docker start` (the systemd unit and helper filenames
-  are `c1-services-network.service` and `/usr/local/sbin/ensure-c1-services-network`; the network
-  unit transitively Requires/After Docker and the shim unit `c1-services-shim.service`, whose
-  interface is `c1-svc-shim` ≤16 chars); `doco-cd-c1.service` requires the same storage
-  prerequisites plus the token TTL gate before its controller start;
-- `validate-c0`, Gitleaks, yamllint, shell syntax, and actionlint remain in CI.
+  `c1-services-network.service` before starting an already-created libreFS project through Doco's
+  authenticated API. The network unit uses the resident helper sourced at
+  `ansible/container-nodes/roles/network/files/ensure-c1-services-network` and transitively orders
+  after Docker and `c1-services-shim.service`; the actual shim interface remains the IFNAMSIZ-safe
+  `c1-svc-shim`.
+- Docker application validation remains separate from container-node `test`/`lint`; Galaxy pins
+  remain centralized in `ansible/requirements.yml`.
 
 The pre-existing c0 exit-1 failure must be diagnosed and kept separate. c1 work may not bypass or
 weaken it.
@@ -550,7 +560,8 @@ credential reconciliation + rotation, credential rotation leakage gate, post-reb
 and the reviewed rematerialize helper are all complete. The user-approved controlled reboot
 passed post-reboot verification on every persistence path; the exact-value leakage and
 writable-root containment scans passed again after reboot; the scoped S3 matrix passed again
-after reboot with a non-replacement post-reboot observation. Mission live gates are complete.
+after reboot with a non-replacement post-reboot observation. The predecessor mission's live gates
+were complete; this does not satisfy the later container-node adoption gate.
 Off-host libreFS backup is absent on c1; no restore was possible; final durability cap
 remains `OPERATIONAL_WITHOUT_DURABILITY` (no claim of durability until an off-host libreFS
 backup service, project, and target are configured, approved, and tested with a successful

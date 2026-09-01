@@ -7,6 +7,7 @@ services:
     image: docker.io/openbao/openbao:2.6.2@sha256:e29524ba7c3f20d01f562c481e3eccbad6c91df45a2f2531433da4951e408cff
     platform: linux/amd64
     user: "0:0"
+    restart: "no"
     network_mode: none
     entrypoint: ["/bin/sh", "-ec"]
     command:
@@ -25,6 +26,7 @@ services:
     image: certbot/dns-cloudflare:v5.7.0@sha256:ed5e95feb4d64690df77b4628876f3b72ae856d6e0acd51927a2fd45baf1ccd2
     platform: linux/amd64
     user: "0:0"
+    restart: "no"
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
@@ -90,7 +92,7 @@ services:
     security_opt:
       - no-new-privileges:true
     mem_swappiness: 0
-    restart: unless-stopped
+    restart: "no"
     extra_hosts:
       - vault.monosense.io:10.25.13.34
     volumes:
@@ -177,7 +179,7 @@ services:
       - openbao-tls:/openbao/tls
       - ../../scripts/install_certificate.py:/usr/local/bin/install_certificate.py:ro
       - ./scripts/renew_certificate.sh:/usr/local/bin/renew_certificate.sh:ro
-    restart: unless-stopped
+    restart: "no"
     healthcheck:
       test:
         - CMD

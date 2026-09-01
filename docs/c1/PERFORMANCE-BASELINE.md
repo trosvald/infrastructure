@@ -1,7 +1,9 @@
 # c1 Performance Baseline
 
 Date: 2026-08-26
-Status: mission live gates complete; final status `OPERATIONAL_WITHOUT_DURABILITY` solely because
+Historical 2026-08-26 status: mission live gates completed under the predecessor host contract;
+container-node Ansible adoption and convergence remain unclaimed. The recorded final status was
+`OPERATIONAL_WITHOUT_DURABILITY` solely because
 no off-host libreFS backup target/restore exists on c1 (no durability claim). User approved
 controlled c1 reboot; outage and SSH recovery observed. Post-reboot verification passed on both
 XFS noatime mounts and assertion units, Docker, c1 SERVICES network/shim, exact management
@@ -19,9 +21,10 @@ is justified by this evidence. The off-host libreFS backup check confirmed that 
 only `doco-cd-c1` and `librefs-c1`; no libreFS backup service, project, or target exists
 (only the Debian `dpkg-db-backup` units). No restore was possible. User explicitly skipped
 optional bond-member failover; record intentionally not exercised, not a blocker. PR8 merged at
-`599fff0e01301d77f5a2e204bac5df9a519f1823` and the reviewed helper
-`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is installed `root:root` mode
-0755 on c1. No remaining live gates.
+`599fff0e01301d77f5a2e204bac5df9a519f1823`; the then-installed libreFS
+rematerialization helper is historical live evidence. Its maintained source now lives under
+`ansible/container-nodes/roles/runtime_assets/`, and this baseline does not claim subsequent
+container-node adoption or convergence.
 Correction: c1 `bond0` is active-backup and has never been LACP. Any LACP, hashing, aggregator, or
 aggregate-capacity statement below is invalid; only the recorded end-to-end throughput is evidence.
 
@@ -72,7 +75,8 @@ LACP capacity; no tuning change is justified by this evidence. One flow is expec
 member; aggregate 20 Gb/s is claimed only when measured traffic is spread across both members
 and peers can source/sink it.
 
-1. Mission live gates are complete. Optional future work, on a separate operator grant only:
+1. The predecessor mission's live gates were complete; the later container-node adoption gate
+   remains independent. Optional future work, on a separate operator grant only:
    run a bond-member failover drill and record counter evidence; do not change `bond-min-links`.
 2. Configure, approve, and prove an off-host libreFS backup service, project, and target with a
    successful restore to remove the `OPERATIONAL_WITHOUT_DURABILITY` cap.

@@ -4,3 +4,5 @@ collections:
     version: 2.0.2
   - name: ansible.netcommon
     version: 8.6.1
+  - name: ansible.posix
+    version: 2.2.2

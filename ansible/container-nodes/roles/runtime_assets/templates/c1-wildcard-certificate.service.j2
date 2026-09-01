@@ -1,0 +1,10 @@
+[Unit]
+Description=Fetch and validate shared wildcard certificate on c1
+Requires=docker.service c1-applications-storage.service c1-librefs-storage.service
+After=network-online.target docker.service c1-applications-storage.service c1-librefs-storage.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/update-c1-wildcard-certificate
+TimeoutStartSec=5min

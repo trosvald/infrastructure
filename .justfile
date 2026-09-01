@@ -54,10 +54,32 @@ provision-openbao-infra:
     scripts/provision-openbao-infra.sh
 
 [group: 'OpenBao']
+[confirm('Create first-use application records, libreFS account, and wildcard certificate? [y|N]')]
+[doc('Provision application records transactionally through monosense-infra')]
+provision-openbao-applications:
+    scripts/with-openbao-runtime.sh scripts/provision-container-application-records.sh
+
+[group: 'OpenBao']
+[doc('Refresh the Doco token and published TLS libreFS prerequisite')]
+prepare-container-applications:
+    scripts/with-openbao-runtime.sh scripts/run-container-nodes-openbao-action.sh prepare-applications
+
+[group: 'OpenBao']
+[confirm('Materialize protected container application secrets on c1 and c0? [y|N]')]
+[doc('Provision protected container secrets through monosense-infra')]
+provision-container-secrets:
+    scripts/with-openbao-runtime.sh scripts/run-container-nodes-openbao-action.sh provision-secrets
+
+[group: 'OpenBao']
 [confirm('Rotate and publish the dedicated Vector-to-SRX TLS certificate? [y|N]')]
 [doc('Issue a strictly verified Vector certificate for SRX flow streaming')]
 rotate-vector-srx-certificate:
     scripts/with-openbao-runtime.sh scripts/rotate-vector-srx-certificate.sh
+
+[group: 'OpenBao']
+[doc('Verify host, application, and OpenBao contracts through monosense-infra')]
+verify-container-applications:
+    CONTAINER_NODES_VERIFY_SCOPE=all scripts/with-openbao-runtime.sh scripts/run-container-nodes-openbao-action.sh verify
 
 [group: 'OpenBao']
 [confirm('Create the reviewed BGP and Talos OpenBao records with CAS=0? [y|N]')]

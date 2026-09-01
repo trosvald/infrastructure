@@ -1,8 +1,9 @@
 # c1 libreFS Design and Operations
 
 Date: 2026-08-26
-Status: design; service not deployed; storage boundary revised to single 1 TB device (50:50 split);
-512 GB excluded/quarantined; Compose restart policy is `no`, owned by `librefs-c1.service`
+Status: application contract retained under Doco ownership; host lifecycle and runtime helpers are
+now sourced from `ansible/container-nodes/roles/{doco_controller,runtime_assets}/`. Historical
+service evidence below does not claim container-node Ansible adoption or convergence.
 
 ## Service boundary
 
@@ -141,16 +142,17 @@ accounts with bucket-specific policies.
 
 Doco 0.111.0 includes ordinary resolved KV values in its rendered project hash, but live proof
 under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) showed that an ordinary KV value
-change alone does NOT redeploy or rematerialize the container when the Git source is
-unchanged: Doco and the existing `librefs-c1` container continue to hold the prior pair.
-Credential rotation therefore follows the fail-closed rematerialize helper
-(`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh`) to stop the systemd service,
-remove only the stateless container (never `/data` or named volumes), invoke an isolated
-local-only Git custom target through Doco to recreate with current provider values, normalize
-provenance to remote `main`, restart/check the systemd gate, and clean both the temporary
-source tree and the cache; the procedure is detailed in `SECRET-CONTRACT.md`. The Doco
-mapping, Compose config materialization, container environment, engine metadata, Doco
-persistence, and logs must pass that document's canary leakage gate before real values are used.
+change alone does not redeploy or rematerialize the container when the Git source is unchanged.
+Operators therefore use `just ansible container-nodes rotate-secrets`. The protected transaction
+validates OpenBao schema/version and capabilities, stages the replacement, then invokes the
+Ansible-installed resident rematerializer to stop the exact project through its lifecycle gate,
+remove only the stateless container (never `/data` or named volumes), let Doco recreate it with
+current provider values, normalize provenance to remote `main`, and verify the consumer. Failure
+compensates or leaves the project stopped; the old accessor is revoked only after success.
+`ansible/container-nodes/roles/runtime_assets/files/rematerialize-c1-librefs-credentials` is the
+owned helper source, not a direct operator entrypoint. The Doco mapping, Compose materialization,
+engine metadata, persistence, and logs must pass `SECRET-CONTRACT.md`'s canary leakage gate before
+real values are used.
 
 ## Network and TLS
 

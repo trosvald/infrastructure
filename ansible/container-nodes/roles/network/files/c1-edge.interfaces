@@ -1,0 +1,8 @@
+# Ansible-owned reviewed EDGE VLAN intent.
+# bond0 remains active-backup across the two audited physical members.
+auto bond0.2515
+iface bond0.2515 inet manual
+    vlan-raw-device bond0
+    mtu 1496
+    pre-up /bin/sh -c 'printf 1 > /proc/sys/net/ipv6/conf/"$IFACE"/disable_ipv6'
+    post-up /usr/sbin/ip -6 address flush dev $IFACE scope link

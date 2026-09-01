@@ -1,0 +1,102 @@
+---
+- name: Validate runtime asset host contract
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname in ['c0', 'c1']
+      - container_nodes_runtime_assets_secret_action | bool == false
+    fail_msg: Ordinary runtime convergence cannot execute secret actions
+
+- name: Preserve protected runtime directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0700'
+  loop: "{{ container_nodes_runtime_assets_secret_parents[inventory_hostname] }}"
+  diff: false
+
+- name: Install canonical application certificate installer
+  ansible.builtin.copy:
+    src: "{{ role_path }}/../../../../docker/scripts/install_certificate.py"
+    dest: /usr/local/libexec/install_certificate.py
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install shared certificate runtime programs
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - {src: fetch_wildcard_certificate.py, dest: /usr/local/libexec/fetch-wildcard-certificate.py}
+    - {src: "update-{{ inventory_hostname }}-wildcard-certificate", dest: "/usr/local/sbin/update-{{ inventory_hostname }}-wildcard-certificate"}
+
+- name: Install host-specific runtime programs
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: '0755'
+  loop: "{{ runtime_asset_programs[inventory_hostname] }}"
+  vars:
+    runtime_asset_programs:
+      c0: []
+      c1:
+        - {src: renew-c1-openbao-token, dest: /usr/local/sbin/renew-c1-openbao-token}
+        - {src: check-c1-openbao-token, dest: /usr/local/sbin/check-c1-openbao-token}
+        - {src: backup-c1-forgejo, dest: /usr/local/sbin/backup-c1-forgejo}
+        - {src: haproxy-runtime-c1-forgejo.py, dest: /usr/local/sbin/haproxy-runtime-c1-forgejo.py}
+        - {src: rematerialize-c1-librefs-credentials, dest: /usr/local/sbin/rematerialize-c1-librefs-credentials}
+
+- name: Install runtime systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ runtime_asset_units[inventory_hostname] }}"
+  vars:
+    runtime_asset_units:
+      c0:
+        - c0-wildcard-certificate.service
+        - c0-wildcard-certificate.timer
+      c1:
+        - c1-wildcard-certificate.service
+        - c1-wildcard-certificate.timer
+        - doco-c1-openbao-renew.service
+        - doco-c1-openbao-renew.timer
+        - doco-c1-openbao-token.service
+        - forgejo-backup.service
+        - forgejo-backup.timer
+  notify: Reload systemd manager
+
+- name: Enable certificate refresh timer without starting it
+  ansible.builtin.systemd_service:
+    name: "{{ container_nodes_runtime_assets_certificate_timers[inventory_hostname] }}"
+    daemon_reload: true
+    enabled: true
+  notify: Reload systemd manager
+
+- name: Enable c1 token renewal timer without starting it
+  ansible.builtin.systemd_service:
+    name: doco-c1-openbao-renew.timer
+    daemon_reload: true
+    enabled: true
+  when: inventory_hostname == 'c1'
+  notify: Reload systemd manager
+
+- name: Enable accepted backup timer without starting it
+  ansible.builtin.systemd_service:
+    name: forgejo-backup.timer
+    daemon_reload: true
+    enabled: true
+  when:
+    - inventory_hostname == 'c1'
+    - container_nodes_runtime_assets_enable_backup_timer | bool
+  notify: Reload systemd manager

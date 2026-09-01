@@ -1,0 +1,186 @@
+---
+- name: Require complete reviewed interface intent
+  ansible.builtin.assert:
+    that:
+      - container_node_network_interfaces_content | length > 0
+      - container_node_network_interfaces_sha256 | length == 64
+      - (container_node_network_interfaces_content | hash('sha256')) == container_node_network_interfaces_sha256
+      - container_node_network_activation_interfaces | length > 0
+      - container_node_network_management_interface | length > 0
+      - container_node_network_management_address | length > 0
+    fail_msg: Complete reviewed interface content, digest, activation list, and management path are mandatory; physical interface facts are never guessed.
+
+- name: Require c1 active-backup and dotted VLAN persistence intent
+  ansible.builtin.assert:
+    that:
+      - "'bond-mode active-backup' in container_node_network_interfaces_content"
+      - "'iface bond0.2512 inet manual' in container_node_network_interfaces_content"
+      - "'iface bond0.2513 inet manual' in container_node_network_interfaces_content"
+      - "'source /etc/network/interfaces.d/*' in container_node_network_interfaces_content"
+      - "'iface bond0.2515 inet manual' not in container_node_network_interfaces_content"
+      - container_node_network_interfaces_content.count('/proc/sys/net/ipv6/conf/"$IFACE"/disable_ipv6') >= 2
+      - "container_node_network_interfaces_content.count('post-up /usr/sbin/ip -6 address flush dev $IFACE scope link') >= 2"
+    fail_msg: c1 must preserve active-backup and persist IPv6 disablement for every dotted VLAN.
+  when: inventory_hostname == 'c1'
+
+- name: Create network helper and state directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ container_node_network_bin_dir }}", mode: '0755'}
+    - {path: "{{ container_node_network_state_dir }}", mode: '0700'}
+    - {path: "{{ container_node_network_state_dir }}/{{ container_node_network_interfaces_sha256 }}", mode: '0700'}
+
+- name: Inspect current interfaces file for rollback capture
+  ansible.builtin.stat:
+    path: /etc/network/interfaces
+  register: container_node_network_interfaces_before_stat
+
+- name: Read current interfaces file for rollback capture
+  ansible.builtin.slurp:
+    src: /etc/network/interfaces
+  register: container_node_network_interfaces_before
+  when: container_node_network_interfaces_before_stat.stat.exists
+
+- name: Preserve first known-working interfaces file for this deployment digest
+  ansible.builtin.copy:
+    content: "{{ container_node_network_interfaces_before.content | b64decode }}"
+    dest: "{{ container_node_network_state_dir }}/{{ container_node_network_interfaces_sha256 }}/interfaces.before"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  when: container_node_network_interfaces_before_stat.stat.exists
+
+- name: Preserve rollback checksum for this deployment digest
+  ansible.builtin.copy:
+    content: "{{ container_node_network_interfaces_before.content | b64decode | hash('sha256') }}  interfaces.before\n"
+    dest: "{{ container_node_network_state_dir }}/{{ container_node_network_interfaces_sha256 }}/interfaces.before.sha256"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  when: container_node_network_interfaces_before_stat.stat.exists
+
+- name: Preserve rollback interface order
+  ansible.builtin.copy:
+    content: "{{ container_node_network_activation_interfaces | join('\n') }}\n"
+    dest: "{{ container_node_network_state_dir }}/{{ container_node_network_interfaces_sha256 }}/interfaces.list"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+
+- name: Install complete non-activating ifupdown intent
+  ansible.builtin.copy:
+    content: "{{ container_node_network_interfaces_content }}"
+    dest: /etc/network/interfaces
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/sbin/ifquery --list --interfaces %s
+    backup: true
+
+- name: Inspect installed c1 EDGE fragment for rollback capture
+  ansible.builtin.stat:
+    path: /etc/network/interfaces.d/c1-edge
+  register: container_node_network_c1_edge_before_stat
+  when: inventory_hostname == 'c1'
+
+- name: Read installed c1 EDGE fragment for rollback capture
+  ansible.builtin.slurp:
+    src: /etc/network/interfaces.d/c1-edge
+  register: container_node_network_c1_edge_before
+  when:
+    - inventory_hostname == 'c1'
+    - container_node_network_c1_edge_before_stat.stat.exists
+
+- name: Preserve c1 EDGE fragment rollback
+  ansible.builtin.copy:
+    content: "{{ container_node_network_c1_edge_before.content | b64decode }}"
+    dest: "{{ container_node_network_state_dir }}/{{ container_node_network_interfaces_sha256 }}/c1-edge.before"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  when:
+    - inventory_hostname == 'c1'
+    - container_node_network_c1_edge_before_stat.stat.exists
+
+- name: Preserve c1 EDGE fragment rollback checksum
+  ansible.builtin.copy:
+    content: "{{ container_node_network_c1_edge_before.content | b64decode | hash('sha256') }}  c1-edge.before\n"
+    dest: "{{ container_node_network_state_dir }}/{{ container_node_network_interfaces_sha256 }}/c1-edge.before.sha256"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  when:
+    - inventory_hostname == 'c1'
+    - container_node_network_c1_edge_before_stat.stat.exists
+
+- name: Record absent prior c1 EDGE fragment
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ container_node_network_state_dir }}/{{ container_node_network_interfaces_sha256 }}/c1-edge.absent"
+    owner: root
+    group: root
+    mode: '0600'
+    force: false
+  when:
+    - inventory_hostname == 'c1'
+    - not container_node_network_c1_edge_before_stat.stat.exists
+
+- name: Adopt reviewed c1 EDGE interface fragment without activation
+  ansible.builtin.copy:
+    src: c1-edge.interfaces
+    dest: /etc/network/interfaces.d/c1-edge
+    owner: root
+    group: root
+    mode: '0644'
+    backup: true
+  when: inventory_hostname == 'c1'
+
+- name: Install resident network helpers
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ container_node_network_bin_dir }}/{{ item }}"
+    owner: root
+    group: root
+    mode: '0755'
+  loop: "{{ container_node_network_helpers[inventory_hostname] + ['network-transaction'] }}"
+
+- name: Install resident network prerequisite units
+  ansible.builtin.template:
+    src: network-prerequisite.service.j2
+    dest: "/etc/systemd/system/{{ item.name }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ container_node_network_units[inventory_hostname] }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Enable network prerequisites without starting or restarting them
+  ansible.builtin.systemd_service:
+    name: "{{ item.name }}"
+    enabled: true
+    daemon_reload: true
+  loop: "{{ container_node_network_units[inventory_hostname] }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: not ansible_check_mode
+
+- name: Assert or safely create host Docker network prerequisites
+  ansible.builtin.command:
+    argv:
+      - "{{ container_node_network_bin_dir }}/{{ item }}"
+      - apply
+  loop: "{{ container_node_network_helpers[inventory_hostname] }}"
+  register: container_node_network_reconcile
+  changed_when: "'Created ' in container_node_network_reconcile.stdout or 'created' in container_node_network_reconcile.stdout"
+  when: not ansible_check_mode

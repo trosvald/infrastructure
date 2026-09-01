@@ -1,0 +1,5 @@
+# Managed by Ansible.
+[Journal]
+{% for key, value in container_node_baseline_journald | dictsort %}
+{{ key }}={{ value }}
+{% endfor %}

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+IP_BIN="${IP_BIN:-ip}"; PYTHON_BIN="${PYTHON_BIN:-python3}"
+fail(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+link="$("$IP_BIN" -j -d link show dev c0-svc-shim)" || fail 'c0 SERVICES shim absent'
+address="$("$IP_BIN" -j address show dev c0-svc-shim)" || fail 'cannot inspect c0 shim address'
+route="$("$IP_BIN" -j route show 10.25.13.32/27)" || fail 'cannot inspect c0 shim route'
+"$PYTHON_BIN" -c 'import json,sys
+l=json.loads(sys.argv[1]);a=json.loads(sys.argv[2]);r=json.loads(sys.argv[3]);x=l[0] if len(l)==1 else {}; ips=[(v.get("local"),v.get("prefixlen")) for v in a[0].get("addr_info",[]) if v.get("family")=="inet"] if len(a)==1 else []
+ok=(x.get("ifname")=="c0-svc-shim" and x.get("mtu")==1496 and "UP" in x.get("flags",[]) and x.get("link")=="enp0s31f6.2513" and x.get("linkinfo",{}).get("info_kind")=="ipvlan" and x.get("linkinfo",{}).get("info_data",{}).get("mode")=="l2" and ips==[("10.25.13.16",32)] and len(r)==1 and r[0].get("dst")=="10.25.13.32/27" and r[0].get("dev")=="c0-svc-shim" and r[0].get("scope")=="link" and r[0].get("prefsrc")=="10.25.13.16")
+raise SystemExit(0 if ok else 1)' "$link" "$address" "$route" || fail 'c0 SERVICES shim/address/route has critical drift'
+printf 'c0 SERVICES shim exact active contract matches\n'

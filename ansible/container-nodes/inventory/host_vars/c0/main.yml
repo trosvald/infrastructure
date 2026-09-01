@@ -113,7 +113,9 @@ container_node_verification_openbao_token_file: >-
 container_node_verification_openbao_records:
   - name: monitoring
     path: docker/c0/monitoring
-    keys: [telegram_bot_token, telegram_chat_id, vector_ingest_token, backup_heartbeat_token]
+    keys: [telegram_bot_token, telegram_chat_id, vector_ingest_token, backup_heartbeat_token,
+           vector_tls_certificate, vector_tls_fullchain, vector_tls_private_key,
+           vector_tls_serial, vector_tls_not_after]
     minimum_version: 1
   - name: wildcard-tls
     path: platform/tls/monosense-wildcard

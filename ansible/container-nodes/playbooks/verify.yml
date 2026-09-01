@@ -1,0 +1,30 @@
+---
+- name: Verify container-node operation without mutation
+  hosts: container_nodes
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_verify_scope: "{{ lookup('ansible.builtin.env', 'CONTAINER_NODES_VERIFY_SCOPE') | default('host', true) }}"
+  pre_tasks:
+    - name: Validate verification scope
+      ansible.builtin.assert:
+        that:
+          - container_nodes_verify_scope in ['host', 'applications', 'openbao', 'all']
+        fail_msg: CONTAINER_NODES_VERIFY_SCOPE must be host, applications, openbao, or all
+  tasks:
+    - name: Verify host prerequisites
+      ansible.builtin.include_role:
+        name: verification
+    - name: Verify application operation
+      ansible.builtin.include_role:
+        name: verification
+        tasks_from: applications.yml
+      when: container_nodes_verify_scope in ['applications', 'all']
+    - name: Verify OpenBao-backed contracts
+      ansible.builtin.include_role:
+        name: verification
+        tasks_from: openbao.yml
+      when: container_nodes_verify_scope in ['openbao', 'all']

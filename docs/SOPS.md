@@ -59,7 +59,7 @@ SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"
 
 It never stores identity contents. Outside a mise-activated repository shell, export the same path explicitly before invoking SOPS.
 
-## Offline recovery identity
+## Offline recovery identity for offline workflows
 
 Generate the recovery identity on an offline recovery system using that system's own `~/.config/sops/age/keys.txt`. Keep the private identity offline and transfer only its public recipient to the system that encrypts data.
 
@@ -105,9 +105,9 @@ Rotation cannot revoke ciphertext already copied from history. Rotate exposed un
 ## c0 and OpenBao: runtime SOPS
 
 This section extends the workstation convention to the Doco-CD-managed c0 host
-and the OpenBao project. It does not replace the workstation guidance above;
-workstation authoring continues to follow the storage boundary, identity
-creation, and offline recovery procedures already documented.
+and the OpenBao project. It does not replace the workstation guidance above.
+For c0/OpenBao, recovery custody is on the dedicated always-online Hermes host; no
+removable-media copy or attached external storage is required.
 
 ### Three-recipient policy and `docker/c0/<stack>/encrypted/`
 
@@ -120,7 +120,7 @@ docker/c0/<stack>/encrypted/
 
 Root `.sops.yaml` carries one creation rule scoped to that path, naming three
 `age1…` public recipients: the workstation developer identity, the dedicated
-c0 Doco-CD machine identity, and the offline recovery identity. Any one
+c0 Doco-CD machine identity, and the Hermes recovery identity. Any one
 recipient can decrypt. This recipient set is independent of OpenBao's later
 Shamir threshold and does not name any human userpass account.
 
@@ -202,21 +202,22 @@ are reachable only because `/var/lib/docker` is `root:root` mode `0710`.
 Weakening that mode breaks the root-only file-secret design and is a
 regression to be detected during preflight, not silently worked around.
 
-### c1 recovery custody
+### Hermes recovery custody
 
-The offline recovery identity is, by current operator decision, held on c1.
-Until that custody moves, the offline recovery recipient in `.sops.yaml`
-decrypts to the c1-resident identity, and c1 is treated as part of the
-recovery trust set rather than as a separate application host.
+The active c0/OpenBao recovery identity is held only on the dedicated always-online Ubuntu
+recovery system `hermes`. Its private identity remains in
+`~/.config/sops/age/keys.txt` mode `0600` on Hermes and never reaches c0, c1, the developer
+workstation, Git, or CI. The public recipient is the third recipient in `.sops.yaml`, alongside
+the developer and c0 Doco identities. Hermes is the sole dedicated recovery-key host; no
+removable-media copy is required.
 
-Recommendation: take the offline recovery identity off c1 and onto a host
-that does not run other workloads. The recovery identity's job is to open
-ciphertext when both the workstation and c0 are unavailable; sharing that
-host with anything else re-introduces the very coupling the offline identity
-is meant to escape. The recovery runbook
-[openbao/BACKUP-RESTORE.md](openbao/BACKUP-RESTORE.md) documents the
-destructive restore proof that both the developer and offline identities
-must pass.
+The former c1 recovery recipient was removed only after Hermes used SOPS 3.13.3 to decrypt both a
+recipient-specific canary and an actual rekeyed repository ciphertext with plaintext output
+discarded. The obsolete c1 private identity was then deleted from c1. Historical ciphertext in Git
+may still name that former recipient; current ciphertext and `.sops.yaml` do not.
+
+The recovery runbook [openbao/BACKUP-RESTORE.md](openbao/BACKUP-RESTORE.md) documents the
+destructive restore proof that both the developer and Hermes recovery identities must pass.
 
 ### What stays in this guide
 

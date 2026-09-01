@@ -168,6 +168,22 @@
   no_log: true
   diff: false
 
+- name: Clear an unintended final administrator password-change gate
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_forgejo_url }}/api/v1/admin/users/{{ container_nodes_runtime_assets_forgejo_admin }}"
+    method: PATCH
+    url_username: "{{ container_nodes_runtime_assets_forgejo_admin }}"
+    url_password: "{{ runtime_forgejo_record.admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      must_change_password: false
+    status_code: 200
+  vars:
+    runtime_forgejo_record: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_forgejo') | first).json.data.data }}"
+  no_log: true
+  diff: false
+
 - name: Verify final administrator identity
   ansible.builtin.assert:
     that:

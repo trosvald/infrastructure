@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+FINDMNT_BIN="${FINDMNT_BIN:-findmnt}"; XFS_INFO_BIN="${XFS_INFO_BIN:-xfs_info}"
+XFS_QUOTA_BIN="${XFS_QUOTA_BIN:-xfs_quota}"; INSTALL_BIN="${INSTALL_BIN:-install}"
+STAT_BIN="${STAT_BIN:-stat}"; ID_BIN="${ID_BIN:-id}"
+STATE_DIR="${STATE_DIR:-/var/lib/c1-storage}"; PROJECTS_FILE="${PROJECTS_FILE:-/etc/projects}"
+PROJID_FILE="${PROJID_FILE:-/etc/projid}"; MOUNT="${MOUNT:-/srv/applications}"
+ROOT="${ROOT:-$MOUNT/apps/forgejo}"; readonly MOUNT ROOT
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+[[ "$($ID_BIN -u)" == 0 ]] || fail 'Forgejo quota helper must run as root'
+[[ $# -le 1 && "${1:-apply}" =~ ^(check|apply)$ ]] || fail 'usage: ensure-forgejo-quotas [check|apply]'
+mode="${1:-apply}"; uuid_file="$STATE_DIR/c1_applications.uuid"
+[[ -f "$uuid_file" && ! -L "$uuid_file" && "$($STAT_BIN -c '%u:%g:%a' "$uuid_file")" == 0:0:600 ]] \
+    || fail 'applications UUID state is missing or unsafe'
+IFS= read -r expected_uuid <"$uuid_file"; [[ "$expected_uuid" =~ ^[[:alnum:]-]+$ ]] || fail 'applications UUID state is invalid'
+read -r source actual_uuid fstype options < <("$FINDMNT_BIN" -n -o SOURCE,UUID,FSTYPE,OPTIONS --target "$MOUNT")
+[[ -n "$source" && "$actual_uuid" == "$expected_uuid" && "$fstype" == xfs ]] || fail 'applications mount identity changed'
+root_source="$("$FINDMNT_BIN" -n -o SOURCE --target /)"; [[ "$source" != "$root_source" ]] || fail 'applications storage resolves to the root filesystem'
+[[ ",$options," == *,rw,* && ",$options," == *,noatime,* && ",$options," == *,prjquota,* ]] || fail 'applications mount requires rw,noatime,prjquota'
+"$XFS_INFO_BIN" "$MOUNT" | grep -Eq 'ftype=1' || fail 'applications XFS lacks ftype=1'
+paths=("$ROOT" "$ROOT/app" "$ROOT/postgres" "$ROOT/app/repositories" "$ROOT/app/lfs" "$ROOT/app/packages" "$ROOT/app/attachments" "$ROOT/app/avatars" "$ROOT/app/archives" "$ROOT/app/sessions" "$ROOT/app/queues" "$ROOT/app/ssh" "$ROOT/staging" "$ROOT/logs" "$ROOT/logs/forgejo" "$ROOT/logs/postgres" "$ROOT/logs/backup")
+for path in "${paths[@]}"; do [[ ! -L "$path" ]] || fail "symlink bind source is prohibited: $path"; done
+if [[ "$mode" == apply ]]; then
+    "$INSTALL_BIN" -d -m 0755 -o root -g root "$MOUNT/apps" "$ROOT" "$ROOT/logs"
+    "$INSTALL_BIN" -d -m 0750 -o 1000 -g 1000 "$ROOT/app" "$ROOT/app/repositories" "$ROOT/app/lfs" "$ROOT/app/packages" "$ROOT/app/attachments" "$ROOT/app/avatars" "$ROOT/app/archives" "$ROOT/app/sessions" "$ROOT/app/queues" "$ROOT/app/ssh" "$ROOT/staging" "$ROOT/logs/forgejo" "$ROOT/logs/backup"
+    "$INSTALL_BIN" -d -m 0700 -o 70 -g 70 "$ROOT/postgres" "$ROOT/logs/postgres"
+    python3 - "$PROJECTS_FILE" "$PROJID_FILE" "$ROOT" <<'PY'
+import os,sys,tempfile
+projects,projid,root=sys.argv[1:]
+ids={"251501","251502","251503"}; names={"forgejo-app","forgejo-postgres","forgejo-staging"}
+project_paths={f"{root}/app",f"{root}/postgres",f"{root}/staging"}
+def update(path,rows,reject):
+ old=open(path,encoding="utf-8").readlines() if os.path.exists(path) else []
+ directory=os.path.dirname(path) or "."; fd,tmp=tempfile.mkstemp(prefix=".c1-quota-",dir=directory,text=True)
+ try:
+  with os.fdopen(fd,"w",encoding="utf-8") as stream:
+   stream.writelines([line for line in old if not reject(line.strip())]+sorted(rows)); stream.flush(); os.fsync(stream.fileno())
+  os.chmod(tmp,0o644); os.replace(tmp,path); dfd=os.open(directory,os.O_DIRECTORY); os.fsync(dfd); os.close(dfd)
+ except BaseException:
+  try: os.unlink(tmp)
+  except OSError: pass
+  raise
+update(projects,{f"251501:{root}/app\n",f"251502:{root}/postgres\n",f"251503:{root}/staging\n"},lambda line: line.split(":",1)[0] in ids or (":" in line and line.split(":",1)[1] in project_paths))
+update(projid,{"forgejo-app:251501\n","forgejo-postgres:251502\n","forgejo-staging:251503\n"},lambda line: line.split(":",1)[0] in names or (":" in line and line.split(":",1)[1] in ids))
+PY
+    for project in forgejo-app forgejo-postgres forgejo-staging; do "$XFS_QUOTA_BIN" -x -c "project -s $project" "$MOUNT"; done
+    "$XFS_QUOTA_BIN" -x -c 'limit -p bsoft=190g bhard=200g forgejo-app' "$MOUNT"
+    "$XFS_QUOTA_BIN" -x -c 'limit -p bsoft=45g bhard=50g forgejo-postgres' "$MOUNT"
+    "$XFS_QUOTA_BIN" -x -c 'limit -p bsoft=22g bhard=25g forgejo-staging' "$MOUNT"
+fi
+for item in \
+ "0:0:755:$ROOT" "0:0:755:$ROOT/logs" \
+ "1000:1000:750:$ROOT/app" "1000:1000:750:$ROOT/app/repositories" \
+ "1000:1000:750:$ROOT/app/lfs" "1000:1000:750:$ROOT/app/packages" \
+ "1000:1000:750:$ROOT/app/attachments" "1000:1000:750:$ROOT/app/avatars" \
+ "1000:1000:750:$ROOT/app/archives" "1000:1000:750:$ROOT/app/sessions" \
+ "1000:1000:750:$ROOT/app/queues" "1000:1000:750:$ROOT/app/ssh" \
+ "1000:1000:750:$ROOT/staging" "1000:1000:750:$ROOT/logs/forgejo" \
+ "1000:1000:750:$ROOT/logs/backup" "70:70:700:$ROOT/postgres" \
+ "70:70:700:$ROOT/logs/postgres"; do
+ IFS=: read -r uid gid permissions path <<<"$item"; [[ -d "$path" && ! -L "$path" ]] || fail "required bind source is absent or unsafe: $path"
+ [[ "$($STAT_BIN -c '%u:%g:%a' "$path")" == "$uid:$gid:$permissions" ]] || fail "bind source ownership or mode drift: $path"
+done
+python3 - "$PROJECTS_FILE" "$PROJID_FILE" "$ROOT" <<'PY' || fail 'project mappings drifted'
+import sys
+projects,projid,root=sys.argv[1:]
+expected_projects={f"251501:{root}/app",f"251502:{root}/postgres",f"251503:{root}/staging"}
+expected_projid={"forgejo-app:251501","forgejo-postgres:251502","forgejo-staging:251503"}
+project_lines=[x.strip() for x in open(projects,encoding="utf-8") if x.strip()]
+projid_lines=[x.strip() for x in open(projid,encoding="utf-8") if x.strip()]
+managed_projects=[x for x in project_lines if x.split(":",1)[0] in {"251501","251502","251503"} or (":" in x and x.split(":",1)[1] in {f"{root}/app",f"{root}/postgres",f"{root}/staging"})]
+managed_projid=[x for x in projid_lines if x.split(":",1)[0] in {"forgejo-app","forgejo-postgres","forgejo-staging"} or (":" in x and x.split(":",1)[1] in {"251501","251502","251503"})]
+raise SystemExit(0 if len(managed_projects)==3 and set(managed_projects)==expected_projects and len(managed_projid)==3 and set(managed_projid)==expected_projid else 1)
+PY
+report="$("$XFS_QUOTA_BIN" -x -c 'report -p -b -N' "$MOUNT")" || fail 'cannot read project quota limits'
+REPORT="$report" python3 - 199229440 209715200 47185920 52428800 23068672 26214400 <<'PY' || fail 'project quota limits drifted'
+import os,re,sys
+expected={"forgejo-app":tuple(map(int,sys.argv[1:3])),"forgejo-postgres":tuple(map(int,sys.argv[3:5])),"forgejo-staging":tuple(map(int,sys.argv[5:7]))}
+seen={}
+for line in os.environ["REPORT"].splitlines():
+ fields=line.split()
+ if fields and fields[0] in expected:
+  numbers=[int(x) for x in fields[1:] if re.fullmatch(r"\d+",x)]
+  if len(numbers)>=3: seen[fields[0]]=(numbers[1],numbers[2])
+raise SystemExit(0 if seen==expected else 1)
+PY
+printf 'Forgejo bind sources and XFS project quotas match the reviewed contract\n'

@@ -1,0 +1,13 @@
+---
+container_nodes_adoption_schema_version: 1
+container_nodes_adoption:
+  c0:
+    adopted: true
+    contract_version: 1
+    audit_schema_version: 1
+    audit_sha256: 9cf8a5b6e6b74a447a021507202ce0767974cf46fc7947fbf7da076a30b2ea4c
+  c1:
+    adopted: true
+    contract_version: 1
+    audit_schema_version: 1
+    audit_sha256: 6c3fd0e04f68d12be08a1b2de8374eb9270f7b11b9db7b081f8eedb1057d3f99

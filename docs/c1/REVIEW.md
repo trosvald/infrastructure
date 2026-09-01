@@ -21,8 +21,10 @@ metadata; exported runtime contents were observed only in the two approved `/run
 The writable-layer diff showed writes only on the `/run/secrets` paths (Compose config
 materialization) and on the `/data` bind (libreFS data). A checker false-negative was
 discovered: the Doco single-run response wraps run status under a
-top-level `.content` field; the source and test fix is in progress. Mission live gates complete
-after the user-approved controlled c1 reboot: outage and SSH recovery observed; post-reboot
+top-level `.content` field; the source and test fix was in progress. The predecessor mission's live
+gates completed after the user-approved controlled c1 reboot; this historical result does not
+satisfy the later container-node Ansible adoption gate. Outage and SSH recovery were observed;
+post-reboot
 verification passed on both XFS noatime mounts and assertion units, Docker, c1 SERVICES
 network/shim, exact management default route, bond/VLAN/LACP two 10 Gb members with zero
 link-failure counts, Doco/OpenBao token/controller canaries, healthy pinned `librefs-c1` at
@@ -31,11 +33,12 @@ writable-root containment scans passed again after reboot; scoped S3 ready/uploa
 checksum/delete/denial passed again after reboot (512 MiB at 542,280,200 B/s upload and
 2,014,577,014 B/s download — post-reboot confirmation, not a replacement of the pre-reboot
 baseline). User explicitly skipped optional bond-member failover; record intentionally not
-exercised, not a blocker. PR8 (`599fff0e01301d77f5a2e204bac5df9a519f1823`) is merged; the
-reviewed helper `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is installed
-`root:root` mode 0755 on c1. Final status `OPERATIONAL_WITHOUT_DURABILITY` solely because
-no off-host libreFS backup target/restore exists on c1; no durability claim. Mission live
-gates complete.
+exercised, not a blocker. PR8 (`599fff0e01301d77f5a2e204bac5df9a519f1823`) is merged; its
+then-installed libreFS rematerialization helper is historical live evidence and its maintained
+source has moved to `ansible/container-nodes/roles/runtime_assets/`. Final status was
+`OPERATIONAL_WITHOUT_DURABILITY` solely because no off-host libreFS backup target/restore existed
+on c1; this record makes no claim that the later container-node Ansible contract is adopted or
+converged.
 Scope: `DISCOVERY.md`, `DESIGN-AND-PLAN.md`, `SECRET-CONTRACT.md`, `LIBREFS.md`,
 `FUTURE-EDGE.md`, adjacent c0 conventions, OpenBao policy patterns, Docker validation, and the Junos
 adoption gate. This is a design review, not an implementation review or live authorization.
@@ -60,13 +63,13 @@ Disposition: `SUPERSEDED BY LIVE PROOF`. Under PR6
 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`) live proof showed that an ordinary KV
 value change alone does NOT redeploy or rematerialize the container when the Git source is
 unchanged: Doco and the existing `librefs-c1` container continue to hold the prior pair.
-Operator-gated rotation therefore uses the fail-closed rematerialize helper
-(`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh`) to stop the systemd service,
-remove only the stateless container, invoke an isolated local-only Git custom target through
-Doco to recreate with current provider values, normalize provenance to remote `main`,
-restart/check the systemd gate, and clean both the temporary source tree and the cache. The
-canary must reproduce the helper's outcome (current pair only in the two approved
-`/run/secrets` files; absent everywhere else), not a hash-driven redeploy.
+Operator-gated rotation now uses `just ansible container-nodes rotate-secrets`. The protected
+transaction invokes the Ansible-installed resident rematerializer to stop the exact project through
+its lifecycle gate, remove only the stateless container, let Doco recreate with current provider
+values, normalize provenance to remote `main`, verify, and clean temporary state. The canary must
+prove the current pair exists only in the two approved `/run/secrets` files and is absent everywhere
+else. Old accessors are revoked only after success; failure compensates or leaves the project
+stopped.
 
 ### HIGH-2 — stale file-backed bootstrap-secret mounts
 
@@ -274,9 +277,10 @@ Storage, network, the OpenBao checkpoint, the corrected credential-materializati
 Doco reconciliation under PR6 (`3ff1aaf1facc23f6f85e5c95bc80b9e599289207`), the credential
 rotation leakage gate, the S3 matrix, the network transport matrix, and the off-host libreFS
 backup check are all closed. PR8 (`599fff0e01301d77f5a2e204bac5df9a519f1823`) is merged;
-the reviewed helper `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is
-installed `root:root` mode 0755 on c1. Mission live gates complete after the user-approved
-controlled c1 reboot: outage and SSH recovery were observed, and post-reboot verification
+the then-installed rematerialization helper remains historical evidence, while its maintained
+source is now Ansible-owned. Those mission gates completed after the user-approved controlled c1
+reboot; they do not satisfy the later independent container-node adoption gate. Outage and SSH
+recovery were observed, and post-reboot verification
 passed on both XFS noatime mounts and assertion units, Docker, c1 SERVICES network/shim, the
 exact management default route, bond/VLAN/LACP two 10 Gb members with zero link-failure counts,
 Doco/OpenBao token/controller canaries, the healthy pinned `librefs-c1` at `.65` with no host
@@ -286,8 +290,9 @@ with a non-replacement post-reboot observation (512 MiB at 542,280,200 B/s uploa
 2,014,577,014 B/s download). User explicitly skipped optional bond-member failover; record
 intentionally not exercised, not a blocker.
 
-Final status `OPERATIONAL_WITHOUT_DURABILITY` solely because no off-host libreFS backup
-target/restore exists on c1; no durability claim. Mission live gates are complete.
+Historical final status was `OPERATIONAL_WITHOUT_DURABILITY` solely because no off-host libreFS
+backup target/restore existed on c1; no durability claim. The predecessor mission's gates were
+complete, not the later container-node adoption.
 
 Doco credential-materialization audit: the first live Doco 0.111.0 deploy attempted to feed
 Doco-resolved `LIBREFS_ROOT_USER` / `LIBREFS_ROOT_PASSWORD` into top-level Compose
@@ -318,6 +323,6 @@ These are enforced stop conditions, not implied approvals. The 512 GB device rem
 from any approval and is never an argument. Storage, network, OpenBao credential materialization,
 live Doco reconciliation, the credential rotation leakage gate, the post-reboot verification,
 the reviewed rematerialize helper, the S3 and performance matrices, and the off-host libreFS
-backup check are all closed. Mission live gates complete; final status
-`OPERATIONAL_WITHOUT_DURABILITY` solely because no off-host libreFS backup target/restore
-exists on c1.
+backup check were all closed under the predecessor contract. Its final status was
+`OPERATIONAL_WITHOUT_DURABILITY` solely because no off-host libreFS backup target/restore existed
+on c1. Container-node Ansible adoption and convergence remain unclaimed.

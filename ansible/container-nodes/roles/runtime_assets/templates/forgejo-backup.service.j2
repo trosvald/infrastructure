@@ -1,0 +1,9 @@
+[Unit]
+Description=Create and verify local Forgejo backup
+Requires=docker.service c1-applications-storage.service doco-project-librefs-c1.service doco-project-forgejo-c1.service
+After=docker.service c1-applications-storage.service doco-project-librefs-c1.service doco-project-forgejo-c1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/backup-c1-forgejo
+TimeoutStartSec=4h

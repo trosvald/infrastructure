@@ -1,0 +1,270 @@
+---
+- name: Validate Debian 13 baseline contract
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Debian'
+      - ansible_facts.distribution_major_version == '13'
+      - container_node_baseline_hostname == inventory_hostname
+      - container_node_baseline_timezone == 'Asia/Jakarta'
+      - container_node_baseline_resolvers == ['10.25.13.35']
+      - container_node_baseline_search_domains == ['monosense.io']
+      - (container_node_baseline_ntp_servers + container_node_baseline_fallback_ntp_servers) | length > 0
+      - container_node_baseline_sysctl['vm.swappiness'] | string == '10'
+      - container_node_baseline_critical_package_pins is mapping
+    quiet: true
+
+- name: Read current resolver policy
+  ansible.builtin.slurp:
+    src: /etc/resolv.conf
+  register: container_node_baseline_current_resolver
+  check_mode: false
+
+
+- name: Manage hostname
+  ansible.builtin.hostname:
+    name: "{{ container_node_baseline_hostname }}"
+    use: systemd
+
+- name: Manage Debian repositories
+  ansible.builtin.template:
+    src: debian.sources.j2
+    dest: /etc/apt/sources.list.d/debian.sources
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install ordinary baseline packages without general upgrade
+  ansible.builtin.apt:
+    name: "{{ container_node_baseline_packages }}"
+    state: present
+    update_cache: false
+
+- name: Install exact critical package versions
+  ansible.builtin.apt:
+    name: "{{ item.key }}={{ item.value }}"
+    state: present
+    allow_downgrade: false
+    update_cache: false
+  loop: "{{ container_node_baseline_critical_package_pins | dict2items | sort(attribute='key') }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"
+
+- name: Disable automatic apt timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+    masked: true
+    state: stopped
+  loop:
+    - apt-daily.timer
+    - apt-daily-upgrade.timer
+
+- name: Select managed locale generation
+  ansible.builtin.lineinfile:
+    path: /etc/locale.gen
+    regexp: "^#?[ ]*{{ container_node_baseline_locale | regex_escape }}[ ]+UTF-8$"
+    line: "{{ container_node_baseline_locale }} UTF-8"
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Generate locale
+
+- name: Manage default locale
+  ansible.builtin.copy:
+    dest: /etc/default/locale
+    content: "LANG={{ container_node_baseline_locale }}\nLC_ALL={{ container_node_baseline_locale }}\n"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Manage timezone name
+  ansible.builtin.copy:
+    dest: /etc/timezone
+    content: "{{ container_node_baseline_timezone }}\n"
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Manage timezone data link
+  ansible.builtin.file:
+    src: "/usr/share/zoneinfo/{{ container_node_baseline_timezone }}"
+    dest: /etc/localtime
+    owner: root
+    group: root
+    state: link
+    force: true
+
+- name: Manage timesyncd policy
+  ansible.builtin.template:
+    src: timesyncd.conf.j2
+    dest: /etc/systemd/timesyncd.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - Restart timesyncd
+    - Prove synchronized clock
+
+- name: Manage Blocky-only resolver
+  ansible.builtin.template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Read resolver policy after routine convergence
+  ansible.builtin.slurp:
+    src: /etc/resolv.conf
+  register: container_node_baseline_converged_resolver
+  check_mode: false
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode
+
+- name: Refuse a bootstrap resolver left after routine convergence
+  ansible.builtin.assert:
+    that:
+      - container_node_baseline_bootstrap_resolver not in (container_node_baseline_converged_resolver.content | b64decode)
+      - >-
+        ((container_node_baseline_converged_resolver.content | b64decode).splitlines()
+         | select('match', '^nameserver[ ]+')
+         | map('regex_replace', '^nameserver[ ]+', '')
+         | list) == container_node_baseline_resolvers
+      - >-
+        ((container_node_baseline_converged_resolver.content | b64decode).splitlines()
+         | select('match', '^search[ ]+')
+         | list) == [('search ' ~ (container_node_baseline_search_domains | join(' ')))]
+      - (container_node_baseline_converged_resolver.content | b64decode).splitlines() | length == 2
+    fail_msg: >-
+      Routine convergence did not leave the exact Blocky-only resolver policy;
+      bootstrap or fallback DNS remains.
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode
+
+- name: Manage persistent kernel modules
+  ansible.builtin.template:
+    src: modules.conf.j2
+    dest: /etc/modules-load.d/90-monosense.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Read currently loaded kernel modules
+  ansible.builtin.slurp:
+    src: /proc/modules
+  register: container_node_baseline_loaded_modules
+  check_mode: false
+
+- name: Load required kernel modules
+  ansible.builtin.command:
+    argv: [/usr/sbin/modprobe, "{{ item }}"]
+  loop: "{{ container_node_baseline_modules | sort }}"
+  when: not ((container_node_baseline_loaded_modules.content | b64decode).splitlines() | select('match', '^' ~ item ~ ' ') | list)
+  changed_when: true
+
+- name: Manage kernel parameters
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_file: /etc/sysctl.d/90-monosense.conf
+    reload: false
+  loop: "{{ container_node_baseline_sysctl | dict2items | sort(attribute='key') }}"
+  notify: Apply baseline sysctl
+
+- name: Manage journald bounds
+  ansible.builtin.template:
+    src: journald.conf.j2
+    dest: /etc/systemd/journald.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Reload journald configuration
+
+- name: Manage log rotation policy
+  ansible.builtin.template:
+    src: logrotate.conf.j2
+    dest: /etc/logrotate.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/sbin/logrotate --debug %s
+
+- name: Preserve absence of repository-specific resource limits
+  ansible.builtin.file:
+    path: /etc/security/limits.d/90-monosense.conf
+    state: absent
+  when: container_node_baseline_limits | length == 0
+
+- name: Manage reviewed repository-specific resource limits
+  ansible.builtin.template:
+    src: limits.conf.j2
+    dest: /etc/security/limits.d/90-monosense.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: container_node_baseline_limits | length > 0
+
+- name: Manage baseline service state
+  ansible.builtin.systemd_service:
+    name: "{{ item.key }}"
+    enabled: "{{ item.value.enabled }}"
+    state: "{{ item.value.state }}"
+  loop: "{{ container_node_baseline_services | dict2items | sort(attribute='key') }}"
+
+- name: Activate baseline handlers before operational proof
+  ansible.builtin.meta: flush_handlers
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode
+
+- name: Read time synchronization state
+  ansible.builtin.command:
+    argv: [/usr/bin/timedatectl, show, --property=NTPSynchronized, --value]
+  register: container_node_baseline_ntp_state
+  changed_when: false
+  check_mode: false
+
+- name: Require synchronized systemd-timesyncd
+  ansible.builtin.assert:
+    that:
+      - container_node_baseline_ntp_state.stdout == 'yes'
+    fail_msg: systemd-timesyncd is not synchronized; baseline acceptance fails closed.
+
+- name: Read active swap devices without changing them
+  ansible.builtin.command:
+    argv: [/usr/bin/tail, -n, +2, /proc/swaps]
+  register: container_node_baseline_active_swaps
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Publish preserved swap and sanitized firmware report
+  ansible.builtin.set_fact:
+    container_node_baseline_report:
+      resolver:
+        observed_before: >-
+          {{ (container_node_baseline_current_resolver.content | b64decode).splitlines()
+             | select('match', '^nameserver[ ]+')
+             | map('regex_replace', '^nameserver[ ]+', '')
+             | list }}
+        intended: "{{ container_node_baseline_resolvers }}"
+        bootstrap_present_before: >-
+          {{ container_node_baseline_bootstrap_resolver in
+             (container_node_baseline_current_resolver.content | b64decode) }}
+      swap:
+        active_count: "{{ container_node_baseline_active_swaps.stdout_lines | length }}"
+        identity_sha256: >-
+          {{ container_node_baseline_active_swaps.stdout_lines
+             | map('regex_replace', '^(\\S+\\s+\\S+\\s+\\S+)\\s+\\S+(\\s+\\S+)$', '\\1\\2')
+             | list | sort | join('\n') | hash('sha256') }}
+        swappiness: '10'
+      firmware:
+        system_vendor: "{{ ansible_facts.system_vendor | default('unknown') }}"
+        product_name: "{{ ansible_facts.product_name | default('unknown') }}"
+        bios_vendor: "{{ ansible_facts.bios_vendor | default('unknown') }}"
+        bios_version: "{{ ansible_facts.bios_version | default('unknown') }}"
+        bios_date: "{{ ansible_facts.bios_date | default('unknown') }}"
+        mutation: out-of-scope

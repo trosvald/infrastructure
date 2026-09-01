@@ -1,0 +1,130 @@
+---
+- name: Require complete reviewed host verification intent
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname in ['c0', 'c1']
+      - container_node_verification_host_units is defined
+      - container_node_verification_host_units | length > 0
+      - container_node_verification_host_paths is defined
+      - container_node_verification_host_paths | length > 0
+      - container_node_verification_docker_networks is defined
+      - container_node_verification_docker_networks | length > 0
+    fail_msg: >-
+      Host verification requires non-empty unit, protected-path, and Docker-network
+      contracts from reviewed inventory. Application and OpenBao checks are separate.
+
+- name: Validate host verification intent schema
+  ansible.builtin.assert:
+    that:
+      - (item.name | default(item)) | length > 0
+      - item.state | default('running') in ['running', 'stopped', 'any']
+  loop: "{{ container_node_verification_host_units }}"
+  loop_control:
+    label: "{{ item.name | default(item) }}"
+
+- name: Read systemd service state
+  ansible.builtin.service_facts:
+- name: Read exact systemd active states
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - is-active
+      - "{{ item.name | default(item) }}"
+  register: container_node_verification_unit_activity
+  changed_when: false
+  failed_when: false
+  loop: "{{ container_node_verification_host_units }}"
+  loop_control:
+    label: "{{ item.name | default(item) }}"
+
+
+- name: Verify required systemd units
+  ansible.builtin.assert:
+    that:
+      - >-
+        ((item.item.name | default(item.item)) ~ '.service') in ansible_facts.services or
+        (item.item.name | default(item.item)) in ansible_facts.services
+      - >-
+        (
+          (item.item.state | default('running')) == 'any' and
+          item.stdout in ['active', 'inactive']
+        ) or
+        item.stdout == (
+          'active'
+          if (item.item.state | default('running')) == 'running'
+          else 'inactive'
+        )
+      - >-
+        item.item.enabled is not defined or
+        ansible_facts.services[
+          (item.item.name | default(item.item))
+          if (item.item.name | default(item.item)) in ansible_facts.services
+          else (item.item.name | default(item.item)) ~ '.service'
+        ].status == ('enabled' if item.item.enabled | bool else 'disabled')
+    fail_msg: "Required unit {{ item.item.name | default(item.item) }} does not match its reviewed state"
+  loop: "{{ container_node_verification_unit_activity.results }}"
+  loop_control:
+    label: "{{ item.item.name | default(item.item) }}"
+
+- name: Inspect protected host paths
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+  loop: "{{ container_node_verification_host_paths }}"
+  loop_control:
+    label: "{{ item.path | default('invalid-path') }}"
+  register: container_node_verification_path_results
+
+- name: Verify protected host paths
+  ansible.builtin.assert:
+    that:
+      - item.item.path is defined
+      - item.stat.exists
+      - not item.stat.islnk
+      - item.item.type | default('any') == 'any' or (item.item.type == 'directory' and item.stat.isdir) or (item.item.type == 'file' and item.stat.isreg)
+      - item.item.mode is not defined or item.stat.mode == item.item.mode
+      - item.item.uid is not defined or item.stat.uid == item.item.uid
+      - item.item.gid is not defined or item.stat.gid == item.item.gid
+    fail_msg: "Protected path {{ item.item.path | default('invalid-path') }} failed verification"
+  loop: "{{ container_node_verification_path_results.results }}"
+  loop_control:
+    label: "{{ item.item.path | default('invalid-path') }}"
+
+- name: Verify Docker daemon is readable
+  ansible.builtin.command:
+    argv: [docker, info, --format, "{{ '{{json .ServerVersion}}' }}"]
+  changed_when: false
+  check_mode: false
+  register: container_node_verification_docker_info
+
+- name: Require a Docker server version
+  ansible.builtin.assert:
+    that:
+      - container_node_verification_docker_info.stdout | trim | length > 2
+
+- name: Read required external Docker networks
+  ansible.builtin.command:
+    argv:
+      - docker
+      - network
+      - inspect
+      - "{{ item.name }}"
+  changed_when: false
+  check_mode: false
+  loop: "{{ container_node_verification_docker_networks }}"
+  loop_control:
+    label: "{{ item.name | default('invalid-network') }}"
+  register: container_node_verification_network_results
+
+- name: Verify required external Docker networks without mutation
+  ansible.builtin.assert:
+    that:
+      - item.item.name is defined
+      - (item.stdout | from_json | first).Name == item.item.name
+      - (item.stdout | from_json | first).Internal == (item.item.internal | default(false) | bool)
+      - item.item.driver is not defined or (item.stdout | from_json | first).Driver == item.item.driver
+      - item.item.parent is not defined or (item.stdout | from_json | first).Options['parent'] == item.item.parent
+    fail_msg: "Docker network {{ item.item.name | default('invalid-network') }} has critical drift"
+  loop: "{{ container_node_verification_network_results.results }}"
+  loop_control:
+    label: "{{ item.item.name | default('invalid-network') }}"
