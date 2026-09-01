@@ -138,6 +138,8 @@ class SystemdOwnershipTests(unittest.TestCase):
         self.assertNotIn("doco-project-forgejo.service", backup)
         backup_script = (ROOT / "roles/runtime_assets/files/backup-c1-forgejo").read_text(encoding="utf-8")
         self.assertIn('docker exec --env KOPIA_LOG_DIR=/logs "$KOPIA"', backup_script)
+        self.assertIn("repository connect s3", backup_script)
+        self.assertIn("repository create s3", backup_script)
 
 
 class ProtectedRuntimeAssetTests(unittest.TestCase):
