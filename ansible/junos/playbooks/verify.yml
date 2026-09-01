@@ -167,7 +167,7 @@
       ansible.builtin.assert:
         that:
           - verify_operational.stdout is defined
-          - verify_operational.stdout | length == 11
+          - verify_operational.stdout | length == 12
           - verify_newest_commit_record | length > 0
           - verify_newest_commit_record | lower is search('commit confirmed|pending|rollback in')
           - >-

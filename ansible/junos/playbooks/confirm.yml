@@ -166,7 +166,7 @@
       ansible.builtin.set_fact:
         confirm_invariants:
           commit_output_shape: >-
-            {{ confirm_pending.stdout is defined and confirm_pending.stdout | length == 11 }}
+            {{ confirm_pending.stdout is defined and confirm_pending.stdout | length == 12 }}
           newest_commit_present: "{{ confirm_newest_commit_record | length > 0 }}"
           pending_commit_marker: >-
             {{ confirm_newest_commit_record | lower is search('commit confirmed|pending|rollback in') }}

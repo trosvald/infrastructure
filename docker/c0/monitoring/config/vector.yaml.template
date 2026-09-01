@@ -25,12 +25,15 @@ transforms:
     drop_on_error: true
     source: |
       text = string!(.message)
+      appname = to_string(.appname) ?? ""
+      msgid = to_string(.msgid) ?? ""
       allowed = contains(text, "haproxy") || contains(text, "forgejo") ||
         contains(text, "crowdsec") || contains(text, "backup") ||
-        contains(text, "certificate") || contains(text, "RT_FLOW") ||
+        contains(text, "certificate") || starts_with(appname, "RT_FLOW") ||
+        starts_with(appname, "RT_SCREEN") || starts_with(msgid, "RT_FLOW") ||
+        starts_with(msgid, "RT_SCREEN") || contains(text, "RT_FLOW") ||
         contains(text, "RT_SCREEN") || contains(text, "BGP") ||
         contains(text, "UI_AUTH_EVENT") || contains(text, "UI_COMMIT")
-      if !allowed { abort }
       del(.authorization)
       del(.headers)
       del(.cookies)

@@ -1,0 +1,81 @@
+---
+- name: Verify fixed SRX TLS syslog operational evidence
+  hosts: junos
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Read device identity before syslog verification
+      juniper.device.junos_facts:
+        gather_subset:
+          - default
+          - hardware
+      register: syslog_verify_facts
+      no_log: true
+
+    - name: Enforce approved device identity and release train
+      ansible.builtin.assert:
+        that:
+          - syslog_verify_facts.ansible_facts.ansible_net_model | upper == junos_expected_model
+          - syslog_verify_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
+          - syslog_verify_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
+      no_log: true
+
+    - name: Read fixed TLS syslog evidence
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/read_operational.py"
+          - syslog-verify
+      register: syslog_verify_raw
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Report only the safe fixed-command failure identity
+      ansible.builtin.assert:
+        that:
+          - syslog_verify_raw.rc == 0
+        fail_msg: "{{ syslog_verify_raw.stderr }}"
+
+    - name: Require exact TLS syslog configuration
+      ansible.builtin.assert:
+        that:
+          - (syslog_verify_raw.stdout | from_json).stdout | length == 5
+          - (syslog_verify_raw.stdout | from_json).stdout[0] is search('transport tls')
+          - (syslog_verify_raw.stdout | from_json).stdout[0] is search('port 6514')
+          - (syslog_verify_raw.stdout | from_json).stdout[0] is search('source-address 10[.]25[.]13[.]1')
+          - (syslog_verify_raw.stdout | from_json).stdout[0] is search('trusted-ca-group EDGE-SYSLOG-CA')
+        fail_msg: "The SRX TLS syslog configuration is incomplete."
+      no_log: true
+
+    - name: Require operational MGMT-to-EDGE session logging
+      ansible.builtin.assert:
+        that:
+          - (syslog_verify_raw.stdout | from_json).stdout[3] is search('MGMT-EDGE')
+          - (syslog_verify_raw.stdout | from_json).stdout[3] is search('(?i)session.*close|close.*session')
+          - (syslog_verify_raw.stdout | from_json).stdout[4] is search('MGMT-EDGE\\s+[1-9][0-9]*')
+        fail_msg: "The operational MGMT-to-EDGE policy does not report session-close logging."
+      no_log: true
+
+
+    - name: Require enabled SRX security logging
+      ansible.builtin.assert:
+        that:
+          - (syslog_verify_raw.stdout | from_json).stdout[2] is not search('(?i)disabled')
+        fail_msg: "SRX security logging is disabled."
+      no_log: true
+    - name: Require recent SRX flow evidence
+      ansible.builtin.assert:
+        that:
+          - (syslog_verify_raw.stdout | from_json).stdout[2] is search('(?i)session closed|RT_FLOW')
+        fail_msg: "The SRX security log has no recent flow events."
+      no_log: true
+
+    - name: Require active SRX TLS syslog connection
+      ansible.builtin.assert:
+        that:
+          - (syslog_verify_raw.stdout | from_json).stdout[1] is search('6514')
+        fail_msg: "The SRX has no active TLS syslog connection to Vector."
+      no_log: true
