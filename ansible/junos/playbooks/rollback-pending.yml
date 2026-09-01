@@ -1,0 +1,80 @@
+---
+- name: Explicitly roll back a failed pending Junos commit
+  hosts: junos
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Require the exact failed deployment digest
+      ansible.builtin.assert:
+        that:
+          - junos_expected_digest | default('') is match('^[0-9a-f]{64}$')
+        fail_msg: "Rollback requires the exact pending candidate digest."
+
+    - name: Read device identity before rollback
+      juniper.device.junos_facts:
+        gather_subset:
+          - default
+          - hardware
+      register: rollback_device_facts
+      no_log: true
+
+    - name: Enforce approved device identity and release train
+      ansible.builtin.assert:
+        that:
+          - rollback_device_facts.ansible_facts.ansible_net_model | upper == junos_expected_model
+          - rollback_device_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
+          - rollback_device_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
+      no_log: true
+
+    - name: Read the pending commit through the fixed operational reader
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/read_operational.py"
+          - postcommit
+      register: rollback_pending_raw
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Bind rollback to the exact pending candidate
+      ansible.builtin.assert:
+        that:
+          - (rollback_pending_raw.stdout | from_json).stdout is defined
+          - (rollback_pending_raw.stdout | from_json).stdout | length == 13
+          - (rollback_pending_raw.stdout | from_json).stdout[0] | lower is search('commit confirmed|pending|rollback in')
+          - (rollback_pending_raw.stdout | from_json).stdout[0] is search('(?m)^[ ]*Ansible candidate ' ~ junos_expected_digest ~ '[ ]*$')
+        fail_msg: "Newest commit is not the exact pending candidate requested for rollback."
+      no_log: true
+
+    - name: Restore and commit the preceding configuration
+      juniper.device.junos_config:
+        rollback: 1
+        check_commit: false
+        comment: "Rollback failed candidate {{ junos_expected_digest }}"
+      no_log: true
+
+    - name: Reset the persistent NETCONF connection
+      ansible.builtin.meta: reset_connection
+
+    - name: Re-read commit state after rollback
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/read_operational.py"
+          - postcommit
+      register: rollback_result_raw
+      changed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Require a completed non-pending rollback record
+      ansible.builtin.assert:
+        that:
+          - (rollback_result_raw.stdout | from_json).stdout is defined
+          - (rollback_result_raw.stdout | from_json).stdout | length == 13
+          - (rollback_result_raw.stdout | from_json).stdout[0] is search('(?m)^[ ]*Rollback failed candidate ' ~ junos_expected_digest ~ '[ ]*$')
+          - (rollback_result_raw.stdout | from_json).stdout[0] | lower is not search('commit confirmed|pending|rollback in')
+        fail_msg: "SRX did not report the exact completed rollback transaction."
+      no_log: true

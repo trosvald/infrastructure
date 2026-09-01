@@ -698,6 +698,12 @@ authentication path, apply-group, scoped policy order, direct-reservation confli
 operational evidence, then confirms through NETCONF. A mismatched digest or invariant leaves the
 transaction unconfirmed for automatic rollback.
 
+If verification failed and the pending timer has not restored the preceding configuration, run
+`just ansible junos rollback-pending`. Enter the failed candidate digest and the exact
+`rollback-pending <digest>` phrase. The action binds to the newest pending commit comment, restores
+only rollback slot 1, commits it immediately, and verifies the resulting non-pending rollback
+record. Then correct the protected topology gate and rerun drift before another deployment.
+
 
 ### Cilium BGP gates
 
