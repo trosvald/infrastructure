@@ -252,7 +252,7 @@
         - set security policies from-zone DEV to-zone MGMT policy DEV-INFRA-MGMT then permit
         - set security policies from-zone PROD to-zone DEV policy PROD-INFRA-DEV then permit
         - set security policies from-zone DEV to-zone PROD policy DEV-INFRA-PROD then permit
-        - set security policies from-zone HOME to-zone MGMT policy HOME-TO-DNS then permit
+        - set security policies from-zone HOME to-zone DEV policy HOME-TO-DNS then permit
         - set security policies from-zone HOME to-zone MGMT policy HOME-BLOCK-MGMT then deny
         - set security policies from-zone HOME to-zone PROD policy HOME-BLOCK-PROD then deny
         - set security policies from-zone HOME to-zone DEV policy HOME-BLOCK-DEV then deny
