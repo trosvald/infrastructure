@@ -28,6 +28,12 @@ case "$1" in
             exit 2
         }
         ;;
+    scripts/rotate-vector-srx-certificate.sh)
+        [[ $# == 1 ]] || {
+            echo "Vector SRX certificate rotator accepts no arguments" >&2
+            exit 2
+        }
+        ;;
     scripts/normalize-wildcard-metadata.sh)
         [[ $# == 1 ]] || {
             echo "Wildcard metadata normalizer accepts no arguments" >&2

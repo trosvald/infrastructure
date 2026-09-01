@@ -122,6 +122,11 @@ validate-monitoring:
         docker/c0/.host/openbao/install-wildcard-assets.sh \
         docker/c0/.host/openbao/materialize-monitoring-secrets.sh
     docker/c0/monitoring/tests/validate.sh
+    test "$(sops filestatus docker/c0/monitoring/encrypted/vector-srx-ca.yaml | jq -r '.encrypted')" = true
+    openssl verify -CAfile ansible/junos/files/vector-srx-root-ca.pem ansible/junos/files/vector-srx-root-ca.pem >/dev/null
+    openssl x509 -in ansible/junos/files/vector-srx-root-ca.pem -noout -checkend 283824000
+    bash -n scripts/rotate-vector-srx-certificate.sh
+    python3 -m py_compile ansible/junos/scripts/bootstrap_vector_ca.py
     python3 -m py_compile docker/scripts/install_certificate.py \
         docker/scripts/fetch_wildcard_certificate.py
 

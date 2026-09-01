@@ -329,6 +329,10 @@ def render_system(data: dict[str, Any]) -> list[str]:
     if system.get("domain"):
         out.append(cmd("system", "domain-name", system["domain"]))
     out += [cmd("system", "services", *row) for row in system.get("services", [])]
+    for profile in system.get("ssl_initiation_profiles", []):
+        base = ("services", "ssl", "initiation", "profile", profile["name"])
+        out.append(cmd(*base, "protocol-version", profile["protocol_version"]))
+        out.append(cmd(*base, "trusted-ca", profile["trusted_ca"]))
     out += [cmd("system", "name-server", address) for address in system.get("name_servers", [])]
     for server in system.get("ntp_servers", []):
         out.append(cmd("system", "ntp", "server", server["address"], "prefer" if server.get("prefer") else None))
@@ -563,10 +567,21 @@ def render_security(data: dict[str, Any]) -> list[str]:
         out.append(cmd("security", "address-book", "global", "address", address["name"], address["value"]))
     for screen in security.get("screens", []):
         out += [cmd("security", "screen", "ids-option", screen["name"], *option) for option in screen["options"]]
-    if security.get("log", {}).get("mode"):
-        out.append(cmd("security", "log", "mode", security["log"]["mode"]))
-    if security.get("log", {}).get("cache"):
+    log = security.get("log", {})
+    if log.get("mode"):
+        out.append(cmd("security", "log", "mode", log["mode"]))
+    if log.get("cache"):
         out.append(cmd("security", "log", "cache"))
+    if log.get("format"):
+        out.append(cmd("security", "log", "format", log["format"]))
+    if log.get("source_address"):
+        out.append(cmd("security", "log", "source-address", log["source_address"]))
+    for stream in log.get("streams", []):
+        base = ("security", "log", "stream", stream["name"])
+        out.append(cmd(*base, "host", stream["host"]))
+        out.append(cmd(*base, "host", "port", stream["port"]))
+        out.append(cmd(*base, "transport", "protocol", stream["protocol"]))
+        out.append(cmd(*base, "transport", "tls-profile", stream["tls_profile"]))
     flow = security.get("flow", {})
     if flow.get("tcp_mss"):
         mss = flow["tcp_mss"]
@@ -829,7 +844,35 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
     if intent["security"]["security"].get("pki_ca_profiles") != [
         {"name": expected_ca_profile, "ca_identity": expected_ca_profile}
     ]:
-        raise IntentError("SRX syslog CA profile must retain the reviewed identity")
+        raise IntentError("SRX system syslog CA profile must retain the reviewed identity")
+    if intent["security"]["security"].get("direct_pki_ca_profiles") != [
+        {"name": "VECTOR-SRX-ROOT", "ca_identity": "VECTOR-SRX-ROOT"}
+    ]:
+        raise IntentError("SRX Vector CA profile must retain the exact direct trust exception")
+    expected_stream_log = {
+        "mode": "stream",
+        "format": "sd-syslog",
+        "source_address": dotted(topology, "networks.dev.gateway"),
+        "streams": [
+            {
+                "name": "VECTOR",
+                "host": expected_vector_address,
+                "port": 6514,
+                "protocol": "tls",
+                "tls_profile": "VECTOR-SRX-TLS",
+            }
+        ],
+    }
+    if intent["security"]["security"].get("log") != expected_stream_log:
+        raise IntentError("SRX flow logging must retain the exact verified TLS stream")
+    if intent["system"]["system"].get("ssl_initiation_profiles") != [
+        {
+            "name": "VECTOR-SRX-TLS",
+            "protocol_version": "tls12",
+            "trusted_ca": "VECTOR-SRX-ROOT",
+        }
+    ]:
+        raise IntentError("SRX flow stream must trust only the dedicated Vector CA")
     expected_remote_syslog = [
         ["host", expected_vector_host, "any", "any"],
         ["host", expected_vector_host, "port", 6514],

@@ -170,8 +170,9 @@ class NetconfContractTests(unittest.TestCase):
             self.assertIn("Read managed-group exclusions with a bounded NETCONF XPath", text)
             self.assertIn('<filter type="xpath" select="', text)
             self.assertIn("local-name()='apply-groups-except'", text)
-            self.assertIn("stdout | length == 12", text)
+            self.assertIn("stdout | length == 13", text)
             self.assertIn("stdout is not search('apply-groups-except')", text)
+            self.assertIn("VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT", text)
         role = self.read("roles/junos_intent/tasks/main.yml")
         self.assertIn("scripts/read_operational.py", role)
         self.assertNotIn(
@@ -312,9 +313,15 @@ class NetconfContractTests(unittest.TestCase):
         self.assertIn("syslog-verify", dispatch)
         self.assertIn("playbooks/syslog-verify.yml", runtime)
         self.assertIn('"syslog-verify": SYSLOG_VERIFY_COMMANDS', reader)
-        self.assertIn("show security log | last 20", reader)
+        self.assertIn("show security log stream | no-more", reader)
+        self.assertIn("show security pki ca-certificate ca-profile VECTOR-SRX-ROOT", reader)
         self.assertIn("show system connections | match 6514", reader)
+        installer = self.read("scripts/bootstrap_vector_ca.py")
         self.assertIn("no_log: true", playbook)
+        self.assertIn("hostkey_verify=True", installer)
+        self.assertIn("VECTOR-SRX-ROOT", installer)
+        self.assertIn("credential_record=admin", runtime)
+        self.assertIn("pki-bootstrap", dispatch)
 
     def test_operational_evidence_is_concrete(self):
         literal_reader = self.read("scripts/read_operational.py")

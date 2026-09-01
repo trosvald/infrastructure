@@ -46,6 +46,7 @@ services:
       - { type: bind, source: /var/lib/monosense-monitoring/secrets/vector.yaml, target: /etc/vector/vector.yaml, read_only: true, bind: { create_host_path: false } }
       - vector-evidence:/var/lib/vector
       - { type: bind, source: /var/lib/monosense-monitoring/tls, target: /run/tls, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /var/lib/monosense-monitoring/vector-tls, target: /run/vector-tls, read_only: true, bind: { create_host_path: false } }
     tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
     networks:
       c0_services: { ipv4_address: 10.25.13.37 }

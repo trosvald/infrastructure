@@ -25,12 +25,16 @@ POSTCOMMIT_COMMANDS = (
     "show bgp summary group CILIUM | no-more",
     "show route 10.25.20.0/24 exact | no-more",
     "show interfaces terse ge-0/0/0.0 | no-more",
+    "show configuration security pki ca-profile VECTOR-SRX-ROOT | display set | no-more",
 )
 
 SYSLOG_VERIFY_COMMANDS = (
     "show configuration system syslog | display inheritance no-comments | display set | no-more",
+    "show configuration security log | display inheritance no-comments | display set | no-more",
+    "show services ssl initiation profile VECTOR-SRX-TLS detail | no-more",
+    "show security pki ca-certificate ca-profile VECTOR-SRX-ROOT detail | no-more",
+    "show security log stream | no-more",
     "show system connections | match 6514",
-    "show security log | last 20",
     "show security policies from-zone MGMT to-zone EDGE detail | no-more",
     "show security policies hit-count from-zone MGMT to-zone EDGE | no-more",
 )
@@ -114,9 +118,9 @@ def main() -> int:
             output[0] = newest_commit_record(output[0])
             output[1] = canonical_group(output[1])
         elif sys.argv[1] == "syslog-verify":
-            output[4] = "\n".join(
+            output[7] = "\n".join(
                 line
-                for line in output[4].splitlines()
+                for line in output[7].splitlines()
                 if re.search(
                     r"MGMT-EDGE|hit|session.*log|log.*session",
                     line,

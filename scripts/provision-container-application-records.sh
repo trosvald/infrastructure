@@ -183,6 +183,7 @@ for pair in \
     bao kv get -mount=kv -format=json "$1" >/dev/null
 done
 printf '%s\n' 'OpenBao application records verified'
+scripts/rotate-vector-srx-certificate.sh
 rm -f "$runtime/librefs-created" "$runtime/committed-records"
 
 printf '%s\n' 'OpenBao application records, scoped libreFS account, and initial wildcard certificate committed'

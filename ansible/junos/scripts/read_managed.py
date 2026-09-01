@@ -164,6 +164,10 @@ def main() -> int:
                 "show configuration apply-groups | display set | no-more",
                 warning=False,
             )
+            direct_vector_ca_profile = device.cli(
+                "show configuration security pki ca-profile VECTOR-SRX-ROOT | display set | no-more",
+                warning=False,
+            )
             apply_groups_exceptions = normalize_apply_groups_exceptions_xml(
                 device._conn.get_config(
                     source="running",
@@ -183,7 +187,11 @@ def main() -> int:
             direct_reservation_paths = normalize_direct_reservation_paths(
                 "\n".join(direct_reservation_output)
             )
-        if not isinstance(group, str) or not isinstance(apply_groups, str):
+        if (
+            not isinstance(group, str)
+            or not isinstance(apply_groups, str)
+            or not isinstance(direct_vector_ca_profile, str)
+        ):
             raise RuntimeError("Junos did not return text managed configuration")
         json.dump(
             {
@@ -191,6 +199,7 @@ def main() -> int:
                 "apply_groups": apply_groups,
                 "apply_groups_exceptions": apply_groups_exceptions,
                 "direct_reservation_paths": direct_reservation_paths,
+                "direct_vector_ca_profile": direct_vector_ca_profile,
             },
             sys.stdout,
             separators=(",", ":"),

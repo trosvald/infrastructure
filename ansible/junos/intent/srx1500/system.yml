@@ -20,6 +20,8 @@ system:
     - address: { topology: ntp.preferred }
       prefer: true
     - address: { topology: ntp.secondary }
+  ssl_initiation_profiles:
+    - { name: VECTOR-SRX-TLS, protocol_version: tls12, trusted_ca: VECTOR-SRX-ROOT }
   syslog:
     - [archive, size, 10m]
     - [archive, files, 10]

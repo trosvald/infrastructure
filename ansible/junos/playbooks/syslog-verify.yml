@@ -39,43 +39,44 @@
           - syslog_verify_raw.rc == 0
         fail_msg: "{{ syslog_verify_raw.stderr }}"
 
-    - name: Require exact TLS syslog configuration
+    - name: Require exact TLS syslog and flow-stream configuration
       ansible.builtin.assert:
         that:
-          - (syslog_verify_raw.stdout | from_json).stdout | length == 5
+          - (syslog_verify_raw.stdout | from_json).stdout | length == 8
           - (syslog_verify_raw.stdout | from_json).stdout[0] is search('transport tls')
-          - (syslog_verify_raw.stdout | from_json).stdout[0] is search('port 6514')
-          - (syslog_verify_raw.stdout | from_json).stdout[0] is search('source-address 10[.]25[.]13[.]1')
           - (syslog_verify_raw.stdout | from_json).stdout[0] is search('trusted-ca-group EDGE-SYSLOG-CA')
-        fail_msg: "The SRX TLS syslog configuration is incomplete."
+          - (syslog_verify_raw.stdout | from_json).stdout[1] is search('mode stream')
+          - (syslog_verify_raw.stdout | from_json).stdout[1] is search('format sd-syslog')
+          - (syslog_verify_raw.stdout | from_json).stdout[1] is search('source-address 10[.]25[.]13[.]1')
+          - (syslog_verify_raw.stdout | from_json).stdout[1] is search('stream VECTOR host 10[.]25[.]13[.]37')
+          - (syslog_verify_raw.stdout | from_json).stdout[1] is search('stream VECTOR host port 6514')
+          - (syslog_verify_raw.stdout | from_json).stdout[1] is search('transport protocol tls')
+          - (syslog_verify_raw.stdout | from_json).stdout[1] is search('tls-profile VECTOR-SRX-TLS')
+        fail_msg: "The SRX TLS syslog or security flow stream configuration is incomplete."
+      no_log: true
+
+    - name: Require exact dedicated TLS trust
+      ansible.builtin.assert:
+        that:
+          - (syslog_verify_raw.stdout | from_json).stdout[2] is search('VECTOR-SRX-ROOT')
+          - (syslog_verify_raw.stdout | from_json).stdout[2] is search('(?i)tls12|TLSv1[.]2')
+          - (syslog_verify_raw.stdout | from_json).stdout[3] is search('(?i)2579E1AA95A2E40ABD3713234390F7F2165C4231')
+        fail_msg: "The SRX does not retain the exact dedicated Vector CA."
+      no_log: true
+
+    - name: Require active SRX flow stream
+      ansible.builtin.assert:
+        that:
+          - (syslog_verify_raw.stdout | from_json).stdout[4] is search('VECTOR|10[.]25[.]13[.]37')
+          - (syslog_verify_raw.stdout | from_json).stdout[5] is search('6514')
+        fail_msg: "The SRX has no active TLS security-log stream to Vector."
       no_log: true
 
     - name: Require operational MGMT-to-EDGE session logging
       ansible.builtin.assert:
         that:
-          - (syslog_verify_raw.stdout | from_json).stdout[3] is search('MGMT-EDGE')
-          - (syslog_verify_raw.stdout | from_json).stdout[3] is search('(?i)session.*close|close.*session')
-          - (syslog_verify_raw.stdout | from_json).stdout[4] is search('MGMT-EDGE\\s+[1-9][0-9]*')
+          - (syslog_verify_raw.stdout | from_json).stdout[6] is search('MGMT-EDGE')
+          - (syslog_verify_raw.stdout | from_json).stdout[6] is search('(?i)session.*close|close.*session')
+          - (syslog_verify_raw.stdout | from_json).stdout[7] is search('MGMT-EDGE\\s+[1-9][0-9]*')
         fail_msg: "The operational MGMT-to-EDGE policy does not report session-close logging."
-      no_log: true
-
-
-    - name: Require enabled SRX security logging
-      ansible.builtin.assert:
-        that:
-          - (syslog_verify_raw.stdout | from_json).stdout[2] is not search('(?i)disabled')
-        fail_msg: "SRX security logging is disabled."
-      no_log: true
-    - name: Require recent SRX flow evidence
-      ansible.builtin.assert:
-        that:
-          - (syslog_verify_raw.stdout | from_json).stdout[2] is search('(?i)session closed|RT_FLOW')
-        fail_msg: "The SRX security log has no recent flow events."
-      no_log: true
-
-    - name: Require active SRX TLS syslog connection
-      ansible.builtin.assert:
-        that:
-          - (syslog_verify_raw.stdout | from_json).stdout[1] is search('6514')
-        fail_msg: "The SRX has no active TLS syslog connection to Vector."
       no_log: true

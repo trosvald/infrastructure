@@ -167,7 +167,7 @@
       ansible.builtin.assert:
         that:
           - verify_operational.stdout is defined
-          - verify_operational.stdout | length == 12
+          - verify_operational.stdout | length == 13
           - verify_newest_commit_record | length > 0
           - verify_newest_commit_record | lower is search('commit confirmed|pending|rollback in')
           - >-
@@ -180,6 +180,10 @@
           - verify_running_authentication_count | int == 1
           - verify_running_apply_lines == verify_reviewed_apply_lines
           - (verify_running_order.stdout | from_json) == (verify_reviewed_order.stdout | from_json)
+          - >-
+            verify_operational.stdout[12].splitlines()
+            | map('trim') | reject('equalto', '') | list
+            == ['set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT']
         fail_msg: "Newest pending commit or complete managed configuration is not bound to this digest."
       no_log: true
 

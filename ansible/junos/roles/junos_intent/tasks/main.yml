@@ -228,6 +228,11 @@
       {{ (junos_intent_direct_reservations.stdout | from_json).group.splitlines()
          | select('search', ' protocols bgp group CILIUM authentication-key ')
          | list | length }}
+    junos_intent_preload_reviewed_vector_ca_profile:
+      - set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT
+    junos_intent_preload_running_vector_ca_profile: >-
+      {{ (junos_intent_direct_reservations.stdout | from_json).direct_vector_ca_profile.splitlines()
+         | map('trim') | reject('equalto', '') | list | sort }}
     junos_intent_preload_reviewed_ordered_lines: >-
       {{ junos_intent_fresh_candidate_lines
          | select('match', '^set groups ANSIBLE_SRX1500 (policy-options policy-statement|security policies from-zone) ')
@@ -275,6 +280,9 @@
         {{ junos_intent_current_configuration.apply_groups.splitlines()
            | map('trim') | reject('equalto', '') | list
            == ['set apply-groups ANSIBLE_SRX1500'] }}
+      vector_ca_profile: >-
+        {{ junos_intent_preload_running_vector_ca_profile
+           == junos_intent_preload_reviewed_vector_ca_profile }}
       policy_order: >-
         {{ (junos_intent_preload_reviewed_order.stdout | from_json)
            == (junos_intent_preload_running_order.stdout | from_json) }}
@@ -373,6 +381,7 @@
     - junos_intent_operation == 'deploy'
     - junos_intent_candidate_result.changed | default(false) | bool
 
+
 - name: Verify post-commit operational state
   ansible.builtin.command:
     argv:
@@ -470,7 +479,7 @@
   ansible.builtin.assert:
     that:
       - junos_intent_postcheck_result.stdout is defined
-      - junos_intent_postcheck_result.stdout | length == 12
+      - junos_intent_postcheck_result.stdout | length == 13
       - junos_intent_reviewed_group_lines | length > 0
       - junos_intent_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
       - junos_intent_running_group_lines == junos_intent_reviewed_group_lines
@@ -488,6 +497,10 @@
       - junos_intent_postcheck_result.stdout[7] is search('HOME-TO-XLSATU')
       - junos_intent_postcheck_result.stdout[7] is search('MGMT-TO-MYREP')
       - junos_intent_postcheck_result.stdout[7] is search('PROD-TO-MYREP')
+      - >-
+        junos_intent_postcheck_result.stdout[12].splitlines()
+        | map('trim') | reject('equalto', '') | list
+        == ['set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT']
       - junos_intent_postcheck_result.stdout[7] is search('DEV-TO-MYREP')
       - >-
         (junos_intent_postcheck_result.stdout[9]

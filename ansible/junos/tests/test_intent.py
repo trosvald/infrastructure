@@ -45,7 +45,12 @@ class IntentTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(first[0], "delete groups ANSIBLE_SRX1500")
         self.assertEqual(first[-1], "set apply-groups ANSIBLE_SRX1500")
-        self.assertTrue(all(command.startswith(("delete groups ", "set groups ", "set apply-groups ")) for command in first))
+        self.assertTrue(
+            all(
+                command.startswith(("delete groups ", "set groups ", "set apply-groups "))
+                for command in first
+            )
+        )
 
     def test_reconciled_live_relationships_are_rendered(self):
         commands = self.build()
@@ -306,8 +311,17 @@ class IntentTests(unittest.TestCase):
             "system syslog host logs-ingest.example.invalid structured-data",
             text,
         )
-        self.assertIn("security log mode event", text)
-        self.assertIn("security log cache", text)
+        self.assertIn("security log mode stream", text)
+        self.assertIn("security log format sd-syslog", text)
+        self.assertIn("security log source-address 192.0.2.33", text)
+        self.assertIn("security log stream VECTOR host 198.18.2.37", text)
+        self.assertIn("security log stream VECTOR host port 6514", text)
+        self.assertIn("security log stream VECTOR transport protocol tls", text)
+        self.assertIn("security log stream VECTOR transport tls-profile VECTOR-SRX-TLS", text)
+        self.assertIn(
+            "services ssl initiation profile VECTOR-SRX-TLS trusted-ca VECTOR-SRX-ROOT",
+            text,
+        )
         self.assertIn("security policies pre-id-default-policy then log session-close", text)
         for policy in (
             "PROD-INTERNET",
