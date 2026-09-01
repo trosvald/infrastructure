@@ -48,7 +48,6 @@
       juniper.device.junos_command:
         commands:
           - show interfaces terse ge-0/0/1.0 | no-more
-        formats: text
       register: myrep_interface
       no_log: true
 
