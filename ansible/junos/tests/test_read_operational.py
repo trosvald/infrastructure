@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.read_operational import newest_commit_record
+from scripts.read_operational import MODES, newest_commit_record
 
 
 class NewestCommitRecordTests(unittest.TestCase):
@@ -21,6 +21,17 @@ class NewestCommitRecordTests(unittest.TestCase):
     def test_rejects_missing_newest_record(self):
         with self.assertRaisesRegex(RuntimeError, "no newest record"):
             newest_commit_record("commit history unavailable")
+
+    def test_precutover_baseline_uses_only_fixed_aggregate_commands(self):
+        self.assertEqual(
+            MODES["precutover-baseline"],
+            (
+                "show security flow session summary | no-more",
+                "show security monitoring performance spu | no-more",
+                "show security screen statistics zone WAN-MYREP | no-more",
+                "show interfaces terse ge-0/0/1.0 | no-more",
+            ),
+        )
 
 
 if __name__ == "__main__":

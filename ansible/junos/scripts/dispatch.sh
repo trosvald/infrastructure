@@ -78,6 +78,10 @@ case "$action" in
     require_mise_tools ansible-playbook
     exec scripts/with-openbao-runtime.sh live ansible-playbook playbooks/operational-verify.yml
     ;;
+  precutover-baseline)
+    require_mise_tools ansible-playbook
+    exec scripts/with-openbao-runtime.sh live ansible-playbook playbooks/precutover-baseline.yml
+    ;;
   syslog-verify)
     require_mise_tools ansible-playbook
     exec scripts/with-openbao-runtime.sh live ansible-playbook playbooks/syslog-verify.yml
@@ -100,7 +104,7 @@ case "$action" in
     ;;
   *)
     echo "Unknown Junos action: ${action:-<missing>}" >&2
-    echo "Supported actions: bootstrap lint test render check diff pki-bootstrap deploy confirm-pending operational-verify myrep-preflight syslog-verify bgp-preflight bgp-verify drift backup" >&2
+    echo "Supported actions: bootstrap lint test render check diff pki-bootstrap deploy confirm-pending operational-verify myrep-preflight precutover-baseline syslog-verify bgp-preflight bgp-verify drift backup" >&2
     exit 2
     ;;
 esac

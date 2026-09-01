@@ -581,6 +581,7 @@ reservation IPs.
 | `just ansible junos diff` | Live | Yes | Temporary | No | No | Value-free reviewed diff |
 | `just ansible junos deploy` | Live | Yes | Yes | Confirmed | Yes | Digest only |
 | `just ansible junos myrep-preflight` | Live | Yes | No | No | No | Public address only |
+| `just ansible junos precutover-baseline` | Live | Yes | No | No | No | Aggregate counters |
 | `just ansible junos syslog-verify` | Live | Yes | No | No | No | Suppressed |
 | `just ansible junos bgp-preflight` | Live | Yes | No | No | No | Suppressed |
 | `just ansible junos bgp-verify` | Live | Yes | No | No | No | Suppressed |
