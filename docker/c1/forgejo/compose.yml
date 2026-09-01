@@ -100,6 +100,7 @@ services:
     security_opt: [no-new-privileges:true]
     environment:
       KOPIA_PASSWORD_FILE: /run/secrets/kopia_password
+      KOPIA_LOG_DIR: /logs
     volumes:
       - { type: bind, source: /srv/applications/apps/forgejo/secrets/kopia_password, target: /run/secrets/kopia_password, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/forgejo/secrets/librefs_access_key, target: /run/secrets/librefs_access_key, read_only: true, bind: { create_host_path: false } }
