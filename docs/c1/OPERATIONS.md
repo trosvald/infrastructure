@@ -167,12 +167,14 @@ PROXYv2 SSH, and the 10 GiB upload boundary.
 
 Candidate B requires all prior evidence plus the stable MYREP IPv4 from OpenBao, external
 reachability of TCP 22/80/443, an active CrowdSec/AppSec path, healthy Vector/Gatus evidence, and a
-verified backup. Set `edge.public_enabled: true` and deploy commit-confirmed. After direct-origin
+verified backup. Run `just enable-junos-public-edge`, review `just ansible junos diff`, and deploy
+the exact digest commit-confirmed. `just disable-junos-public-edge` renders the rollback candidate;
+deploy that candidate before removing public DNS if any public check fails. After direct-origin
 tests pass, create DNS-only `edge.monosense.io A <MYREP IPv4>`, then
 `edge-test.monosense.io CNAME edge.monosense.io` and
 `git.monosense.io CNAME edge.monosense.io`, with `proxied=false` and no AAAA records. Remove the
-temporary `edge-test` record and echo backend after acceptance. If any public check fails, roll back
-Candidate B first, remove public DNS, and retain the private deployment.
+temporary `edge-test` record and echo backend after acceptance. Retain the private deployment
+during rollback.
 
 The Kopia repository at `https://s3.monosense.io` uses a scoped non-root identity, retains 30 daily
 and 12 monthly snapshots, and deletes staging only after snapshot verification. It is on the same

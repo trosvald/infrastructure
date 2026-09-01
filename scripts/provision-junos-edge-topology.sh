@@ -5,6 +5,15 @@ set -euo pipefail
     printf '%s\n' 'ERROR: run only through scripts/with-openbao-runtime.sh' >&2
     exit 1
 }
+readonly mode="${1:-provision}"
+case "$mode" in
+    provision|enable-public|disable-public) ;;
+    *)
+        printf '%s\n' 'ERROR: expected no argument, enable-public, or disable-public' >&2
+        exit 2
+        ;;
+esac
+
 readonly path=network/junos/srx1500/topology
 readonly response="$OPENBAO_RUNTIME_DIR/edge-topology-current.json"
 readonly payload="$OPENBAO_RUNTIME_DIR/edge-topology-updated.json"
@@ -13,7 +22,7 @@ readonly changed_file="$OPENBAO_RUNTIME_DIR/edge-topology-changed"
 
 bao kv get -mount=kv -format=json "$path" >"$response"
 chmod 0600 "$response"
-python3 - "$response" "$payload" "$version_file" "$changed_file" <<'PY'
+python3 - "$response" "$payload" "$version_file" "$changed_file" "$mode" <<'PY'
 import ipaddress
 import json
 import os
@@ -22,7 +31,10 @@ import ssl
 import sys
 import urllib.request
 
-source, target, version_path, changed_path = map(pathlib.Path, sys.argv[1:])
+source, target, version_path, changed_path, mode = (
+    pathlib.Path(value) if index < 4 else value
+    for index, value in enumerate(sys.argv[1:])
+)
 response = json.loads(source.read_text(encoding="utf-8"))
 record = response["data"]["data"]
 version = response["data"]["metadata"]["version"]
@@ -46,7 +58,7 @@ if not isinstance(observed, ipaddress.IPv4Address) or not observed.is_global:
 required = {
     "dns.internal": "10.25.13.35",
     "dns.internal_cidr": "10.25.13.35/32",
-    "edge.public_enabled": False,
+    "edge.public_enabled": mode == "enable-public",
     "monitoring.gatus_cidr": "10.25.13.36/32",
     "monitoring.vector_address": "10.25.13.37",
     "monitoring.vector_cidr": "10.25.13.37/32",
@@ -62,6 +74,9 @@ required = {
 allowed_previous = {
     "dns.internal": {"10.25.10.100"},
     "dns.internal_cidr": {"10.25.10.100/32"},
+    "edge.public_enabled": {
+        mode == "disable-public",
+    },
 }
 changed = False
 for dotted, expected in required.items():
@@ -98,7 +113,7 @@ PY
 if [[ "$(cat "$changed_file")" == true ]]; then
     version="$(cat "$version_file")"
     bao kv put -mount=kv -cas="$version" "$path" @"$payload" >/dev/null
-    printf '%s\n' 'Protected Junos EDGE/monitoring topology fields migrated with CAS'
+    printf 'Protected Junos topology updated with CAS for mode %s\n' "$mode"
 else
-    printf '%s\n' 'Protected Junos EDGE/monitoring topology fields already match'
+    printf 'Protected Junos topology already matches mode %s\n' "$mode"
 fi
