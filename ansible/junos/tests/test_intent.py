@@ -100,6 +100,11 @@ class IntentTests(unittest.TestCase):
             text,
         )
         self.assertNotIn("system services dhcp-local-server delete-binding-on-renegotiation", text)
+        self.assertIn(
+            "policy-options policy-statement IMPORT-MASTER-INTERNAL-INTO-HOME term EDGE "
+            "from route-filter 198.18.1.0/24 exact",
+            text,
+        )
         for ruleset in ("HOME-TO-XLSATU", "MGMT-TO-MYREP", "PROD-TO-MYREP", "DEV-TO-MYREP"):
             self.assertIn(f"security nat source rule-set {ruleset}", text)
         for port, name in ((22, "EDGE-SSH"), (80, "EDGE-HTTP"), (443, "EDGE-HTTPS")):
@@ -403,6 +408,26 @@ class IntentTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(module.IntentError, "VR-XLSATU"):
             self.build(intent_dir=bad_routing)
+        bad_home_import = self.with_intent(
+            "routing",
+            lambda value: next(
+                policy
+                for policy in value["routing"]["policies"]
+                if policy["name"] == "IMPORT-MASTER-INTERNAL-INTO-HOME"
+            ).update(
+                terms=[
+                    term
+                    for term in next(
+                        policy
+                        for policy in value["routing"]["policies"]
+                        if policy["name"] == "IMPORT-MASTER-INTERNAL-INTO-HOME"
+                    )["terms"]
+                    if term["name"] != "EDGE"
+                ]
+            ),
+        )
+        with self.assertRaisesRegex(module.IntentError, "HOME route import"):
+            self.build(intent_dir=bad_home_import)
         bad_zone = self.with_intent(
             "security",
             lambda value: value["security"]["zones"][5].update(interfaces=["ge-0/0/1.0"]),

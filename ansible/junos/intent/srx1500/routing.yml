@@ -18,6 +18,7 @@ routing:
         - { name: MGMT, from_instance: master, route_filter: { topology: networks.mgmt.subnet }, action: accept }
         - { name: PROD, from_instance: master, route_filter: { topology: networks.prod.subnet }, action: accept }
         - { name: DEV, from_instance: master, route_filter: { topology: networks.dev.subnet }, action: accept }
+        - { name: EDGE, from_instance: master, route_filter: { topology: networks.edge.subnet }, action: accept }
         - { name: REJECT-REST, action: reject }
     - name: IMPORT-CILIUM-LB
       terms:
