@@ -1,0 +1,30 @@
+#!/usr/bin/python3
+"""Fail closed when a Doco controller protected input has drifted."""
+
+import os
+import stat
+from pathlib import Path
+
+PROTECTED_FILES = {{ doco_controller_protected_files | to_json }}
+
+
+def main() -> None:
+    if os.geteuid() != 0:
+        raise SystemExit("doco-controller-preflight: must run as root")
+    for contract in PROTECTED_FILES:
+        path = Path(contract["path"])
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            raise SystemExit(f"doco-controller-preflight: protected file is missing: {path}")
+        expected_mode = int(str(contract["mode"]), 8)
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+            raise SystemExit(f"doco-controller-preflight: protected path is not a regular file: {path}")
+        if metadata.st_uid != 0 or metadata.st_gid != 0 or stat.S_IMODE(metadata.st_mode) != expected_mode:
+            raise SystemExit(f"doco-controller-preflight: protected file custody mismatch: {path}")
+        if metadata.st_size == 0:
+            raise SystemExit(f"doco-controller-preflight: protected file is empty: {path}")
+
+
+if __name__ == "__main__":
+    main()

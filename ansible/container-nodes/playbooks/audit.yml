@@ -1,0 +1,34 @@
+---
+- name: Audit container nodes without mutation
+  hosts: container_nodes
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: audit
+  roles:
+    - role: audit
+  tasks:
+    - name: Create private controller audit directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../.build/audit"
+        state: directory
+        mode: '0700'
+      delegate_to: localhost
+      become: false
+    - name: Write canonical sanitized audit artifact
+      ansible.builtin.copy:
+        content: "{{ container_node_audit_canonical_json }}"
+        dest: "{{ playbook_dir }}/../.build/audit/{{ inventory_hostname }}.json"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+    - name: Write reviewed digest sidecar
+      ansible.builtin.copy:
+        content: "{{ container_node_audit_sha256 }}  {{ inventory_hostname }}.json\n"
+        dest: "{{ playbook_dir }}/../.build/audit/{{ inventory_hostname }}.sha256"
+        mode: '0600'
+      delegate_to: localhost
+      become: false

@@ -1,0 +1,40 @@
+---
+ansible_user: monosense
+ansible_become: true
+ansible_become_method: sudo
+ansible_python_interpreter: /usr/bin/python3
+container_node_access_authorized_keys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJUBq68Uj0DnSbde5qgIYHZnrTF/NCSlIODfK8jTsDQu monosense@monomax-m3.monosense.dev
+container_node_access_login_allowlist:
+  - root
+  - monosense
+
+container_nodes_contract_version: 1
+container_node_baseline_timezone: Asia/Jakarta
+container_node_baseline_locale: en_US.UTF-8
+container_node_baseline_resolvers:
+  - 10.25.13.35
+
+container_nodes_rollback_root: /var/lib/monosense-ansible/rollback
+container_nodes_rollback_generations: 5
+container_nodes_rollback_common_files:
+  - /etc/apt/sources.list.d/debian.sources
+  - /etc/default/locale
+  - /etc/hostname
+  - /etc/localtime
+  - /etc/logrotate.conf
+  - /etc/modules-load.d/90-monosense.conf
+  - /etc/network/interfaces
+  - /etc/resolv.conf
+  - /etc/security/limits.d/90-monosense.conf
+  - /etc/ssh/sshd_config.d/00-monosense.conf
+  - /etc/sudoers.d/90-monosense
+  - /etc/systemd/journald.conf
+  - /etc/systemd/timesyncd.conf
+  - /home/monosense/.ssh/authorized_keys
+  - /opt/doco-cd/docker-compose.app.yaml
+  - /opt/doco-cd/poll-config.yml
+  - /usr/local/libexec/install_certificate.py
+  - /usr/local/libexec/monosense/doco-controller-preflight
+  - /usr/local/libexec/monosense/doco-controller-ready
+  - /usr/local/libexec/monosense/doco-project-lifecycle

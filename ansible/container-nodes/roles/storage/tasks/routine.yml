@@ -1,0 +1,399 @@
+---
+# Every identity-critical check precedes the first mutating task. Routine deploy
+# intentionally has no include, handler, or tag that reaches tasks/provision.yml.
+- name: Inspect root-owned storage state
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+    follow: false
+  loop:
+    - {path: "{{ container_nodes_storage.state_dir }}", mode: '0700', kind: directory}
+    - {path: "{{ container_nodes_storage.state_dir }}/approved-plan", mode: '0600', kind: file}
+    - {path: "{{ container_nodes_storage.state_dir }}/c1_librefs.uuid", mode: '0600', kind: file}
+    - {path: "{{ container_nodes_storage.state_dir }}/c1_applications.uuid", mode: '0600', kind: file}
+  register: storage_state_stats
+  check_mode: false
+
+- name: Refuse unsafe or incomplete storage state
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - not item.stat.islnk
+      - >-
+          (item.item.kind == 'directory' and item.stat.isdir)
+          or (item.item.kind == 'file' and item.stat.isreg)
+      - item.stat.pw_name == 'root'
+      - item.stat.gr_name == 'root'
+      - item.stat.mode == item.item.mode
+    fail_msg: >-
+      Storage identity state is missing or unsafe: {{ item.item.path }}
+  loop: "{{ storage_state_stats.results }}"
+
+- name: Read installed storage identity
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - "{{ container_nodes_storage.state_dir }}/approved-plan"
+    - "{{ container_nodes_storage.state_dir }}/c1_librefs.uuid"
+    - "{{ container_nodes_storage.state_dir }}/c1_applications.uuid"
+  register: storage_identity_files
+  check_mode: false
+  no_log: true
+
+- name: Decode installed storage identity
+  ansible.builtin.set_fact:
+    storage_approved_plan: "{{ storage_identity_files.results[0].content | b64decode }}"
+    storage_librefs_uuid: "{{ storage_identity_files.results[1].content | b64decode | trim }}"
+    storage_applications_uuid: "{{ storage_identity_files.results[2].content | b64decode | trim }}"
+  no_log: true
+
+- name: Validate approved plan and UUID syntax
+  ansible.builtin.assert:
+    that:
+      - storage_approved_plan is regex('(?m)^C1_STORAGE_PLAN_VERSION=2$')
+      - storage_approved_plan is regex('(?m)^PLAN_SHA256=[0-9a-f]{64}$')
+      - storage_approved_plan is regex('(?m)^1TB_PATH=/dev/disk/by-id/[^/]+$')
+      - storage_approved_plan is regex('(?m)^1TB_DEVICE=/dev/[^/]+$')
+      - storage_approved_plan is regex('(?m)^1TB_MODEL=.+$')
+      - storage_approved_plan is regex('(?m)^1TB_SIZE=[0-9]+$')
+      - storage_approved_plan is regex('(?m)^1TB_LOGICAL_SECTOR=[0-9]+$')
+      - storage_approved_plan is regex('(?m)^PART1_START=[0-9]+$')
+      - storage_approved_plan is regex('(?m)^PART1_END=[0-9]+$')
+      - storage_approved_plan is regex('(?m)^PART2_START=[0-9]+$')
+      - storage_approved_plan is regex('(?m)^PART2_END=[0-9]+$')
+      - storage_approved_plan is regex('(?m)^PART1_GPT_LABEL=c1_librefs$')
+      - storage_approved_plan is regex('(?m)^PART1_FS_LABEL=c1_librefs$')
+      - storage_approved_plan is regex('(?m)^PART2_GPT_LABEL=c1_applications$')
+      - storage_approved_plan is regex('(?m)^PART2_FS_LABEL=c1_apps$')
+      - storage_librefs_uuid is regex('^[A-Za-z0-9-]+$')
+      - storage_applications_uuid is regex('^[A-Za-z0-9-]+$')
+    fail_msg: Installed storage identity state is malformed.
+
+- name: Bind approved plan fields
+  ansible.builtin.set_fact:
+    storage_plan_digest: >-
+      {{ storage_approved_plan
+      | regex_search('(?m)^PLAN_SHA256=([0-9a-f]{64})$', '\1') | first }}
+    storage_plan_body: >-
+      {{ storage_approved_plan
+      | regex_replace('(?s)\nPLAN_SHA256=[0-9a-f]{64}\n?$', '') }}
+    storage_device_by_id_installed: >-
+      {{ storage_approved_plan
+      | regex_search('(?m)^1TB_PATH=(.+)$', '\1') | first }}
+    storage_device_installed: >-
+      {{ storage_approved_plan
+      | regex_search('(?m)^1TB_DEVICE=(.+)$', '\1') | first }}
+    storage_device_model_installed: >-
+      {{ storage_approved_plan
+      | regex_search('(?m)^1TB_MODEL=(.+)$', '\1') | first }}
+    storage_device_size_installed: >-
+      {{ storage_approved_plan
+      | regex_search('(?m)^1TB_SIZE=([0-9]+)$', '\1') | first }}
+    storage_device_sector_installed: >-
+      {{ storage_approved_plan
+      | regex_search('(?m)^1TB_LOGICAL_SECTOR=([0-9]+)$', '\1') | first }}
+    storage_part1_start: >-
+      {{ storage_approved_plan
+      | regex_search('(?m)^PART1_START=([0-9]+)$', '\1') | first }}
+    storage_part1_end: >-
+      {{ storage_approved_plan
+      | regex_search('(?m)^PART1_END=([0-9]+)$', '\1') | first }}
+    storage_part2_start: >-
+      {{ storage_approved_plan
+      | regex_search('(?m)^PART2_START=([0-9]+)$', '\1') | first }}
+    storage_part2_end: >-
+      {{ storage_approved_plan
+      | regex_search('(?m)^PART2_END=([0-9]+)$', '\1') | first }}
+  no_log: true
+
+- name: Verify approved plan digest
+  ansible.builtin.assert:
+    that:
+      - (storage_plan_body ~ '\n') | hash('sha256') == storage_plan_digest
+    fail_msg: Root-owned approved storage plan failed its SHA-256 binding.
+
+- name: Resolve stable storage device
+  ansible.builtin.command:
+    argv:
+      - realpath
+      - -e
+      - --
+      - "{{ storage_device_by_id_installed }}"
+  register: storage_realpath
+  changed_when: false
+  check_mode: false
+
+- name: Inspect storage device identity
+  ansible.builtin.command:
+    argv:
+      - lsblk
+      - -bdnro
+      - TYPE,MODEL,SIZE,LOG-SEC
+      - --
+      - "{{ storage_realpath.stdout }}"
+  register: storage_device_identity
+  changed_when: false
+  check_mode: false
+
+- name: Refuse device identity drift before mutation
+  ansible.builtin.assert:
+    that:
+      - storage_realpath.stdout == storage_device_installed
+      - >-
+          storage_device_identity.stdout
+          is regex('^disk\s+'
+          ~ (storage_device_model_installed | regex_escape)
+          ~ '\s+' ~ storage_device_size_installed
+          ~ '\s+' ~ storage_device_sector_installed ~ '$')
+    fail_msg: >-
+      Stable path, model, size, or logical-sector identity differs from the approved storage plan.
+
+- name: Inspect installed GPT layout
+  ansible.builtin.command:
+    argv:
+      - sfdisk
+      - --json
+      - "{{ storage_device_installed }}"
+  register: storage_partition_table
+  changed_when: false
+  check_mode: false
+
+- name: Refuse installed GPT layout drift
+  ansible.builtin.assert:
+    that:
+      - >-
+          (storage_partition_table.stdout | from_json).partitiontable.label
+          == 'gpt'
+      - >-
+          (storage_partition_table.stdout | from_json).partitiontable.partitions
+          | length == 2
+      - >-
+          (storage_partition_table.stdout | from_json).partitiontable.partitions[0].start
+          | int == storage_part1_start | int
+      - >-
+          (storage_partition_table.stdout | from_json).partitiontable.partitions[0].size
+          | int == (storage_part1_end | int - storage_part1_start | int + 1)
+      - >-
+          (storage_partition_table.stdout | from_json).partitiontable.partitions[0].name
+          == container_nodes_storage.librefs.gpt_label
+      - >-
+          (storage_partition_table.stdout | from_json).partitiontable.partitions[0].type
+          | upper == '0FC63DAF-8483-4772-8E79-3D69D8477DE4'
+      - >-
+          (storage_partition_table.stdout | from_json).partitiontable.partitions[1].start
+          | int == storage_part2_start | int
+      - >-
+          (storage_partition_table.stdout | from_json).partitiontable.partitions[1].size
+          | int == (storage_part2_end | int - storage_part2_start | int + 1)
+      - >-
+          (storage_partition_table.stdout | from_json).partitiontable.partitions[1].name
+          == container_nodes_storage.applications.gpt_label
+      - >-
+          (storage_partition_table.stdout | from_json).partitiontable.partitions[1].type
+          | upper == '0FC63DAF-8483-4772-8E79-3D69D8477DE4'
+    fail_msg: Installed GPT layout differs from the approved plan.
+
+- name: Inspect installed mounts
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - -n
+      - -o
+      - SOURCE,UUID,FSTYPE,OPTIONS
+      - --target
+      - "{{ item.mount }}"
+  loop:
+    - {role: librefs,
+       mount: "{{ container_nodes_storage.librefs.mount }}",
+       uuid: "{{ storage_librefs_uuid }}",
+       label: "{{ container_nodes_storage.librefs.fs_label }}",
+       source: "{{ storage_device_installed }}{{ 'p' if storage_device_installed is regex('[0-9]$') else '' }}1"}
+    - {role: applications,
+       mount: "{{ container_nodes_storage.applications.mount }}",
+       uuid: "{{ storage_applications_uuid }}",
+       label: "{{ container_nodes_storage.applications.fs_label }}",
+       source: "{{ storage_device_installed }}{{ 'p' if storage_device_installed is regex('[0-9]$') else '' }}2"}
+  register: storage_mounts
+  changed_when: false
+  check_mode: false
+
+- name: Refuse mount identity or option drift before mutation
+  ansible.builtin.assert:
+    that:
+      - (item.stdout.split() | first) == item.item.source
+      - item.item.uuid in item.stdout
+      - "' xfs ' in item.stdout"
+      - "'rw' in (item.stdout.split() | last).split(',')"
+      - "'noatime' in (item.stdout.split() | last).split(',')"
+      - >-
+          item.item.role != 'applications'
+          or 'prjquota' in (item.stdout.split() | last).split(',')
+    fail_msg: "Critical mount identity/options drift at {{ item.item.mount }}"
+  loop: "{{ storage_mounts.results }}"
+
+- name: Inspect filesystem labels and UUIDs
+  ansible.builtin.command:
+    argv:
+      - blkid
+      - -o
+      - export
+      - "{{ item.source }}"
+  loop:
+    - {source: "{{ storage_device_installed }}{{ 'p' if storage_device_installed is regex('[0-9]$') else '' }}1",
+       uuid: "{{ storage_librefs_uuid }}",
+       label: "{{ container_nodes_storage.librefs.fs_label }}"}
+    - {source: "{{ storage_device_installed }}{{ 'p' if storage_device_installed is regex('[0-9]$') else '' }}2",
+       uuid: "{{ storage_applications_uuid }}",
+       label: "{{ container_nodes_storage.applications.fs_label }}"}
+  register: storage_blkid
+  changed_when: false
+  check_mode: false
+
+- name: Refuse filesystem label or UUID drift
+  ansible.builtin.assert:
+    that:
+      - item.stdout is regex('(?m)^TYPE=xfs$')
+      - item.stdout is regex('(?m)^UUID=' ~ item.item.uuid ~ '$')
+      - item.stdout is regex('(?m)^LABEL=' ~ item.item.label ~ '$')
+  loop: "{{ storage_blkid.results }}"
+
+- name: Verify XFS directory-entry support
+  ansible.builtin.command:
+    argv:
+      - xfs_info
+      - "{{ item.mount }}"
+  loop:
+    - "{{ container_nodes_storage.librefs }}"
+    - "{{ container_nodes_storage.applications }}"
+  register: storage_xfs_info
+  changed_when: false
+  failed_when: storage_xfs_info.rc != 0 or 'ftype=1' not in storage_xfs_info.stdout
+  check_mode: false
+
+- name: Inspect OS and Docker backing filesystems
+  ansible.builtin.command:
+    argv:
+      - findmnt
+      - -n
+      - -o
+      - SOURCE
+      - --target
+      - "{{ item }}"
+  loop:
+    - /
+    - /var/lib/docker
+    - /var/lib/containerd
+  register: storage_os_roots
+  changed_when: false
+  check_mode: false
+
+- name: Refuse moving Docker data roots onto application storage
+  ansible.builtin.assert:
+    that:
+      - storage_os_roots.results[1].stdout == storage_os_roots.results[0].stdout
+      - storage_os_roots.results[2].stdout == storage_os_roots.results[0].stdout
+    fail_msg: Docker or containerd data-root no longer resides on the OS root filesystem.
+
+- name: Preserve exact storage fstab entries
+  ansible.posix.mount:
+    path: "{{ item.mount }}"
+    src: "UUID={{ item.uuid }}"
+    fstype: xfs
+    opts: "{{ item.options }}"
+    dump: '0'
+    passno: '2'
+    state: present
+  loop:
+    - {mount: "{{ container_nodes_storage.librefs.mount }}", uuid: "{{ storage_librefs_uuid }}", options: "{{ container_nodes_storage.librefs.fstab_options }}"}
+    - {mount: "{{ container_nodes_storage.applications.mount }}",
+       uuid: "{{ storage_applications_uuid }}",
+       options: "{{ container_nodes_storage.applications.fstab_options }}"}
+
+- name: Verify exact unique fstab entries
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - >-
+        import sys;
+        p, m, u, o = sys.argv[1:];
+        rows = [
+          x.split()
+          for x in open(p)
+          if x.strip()
+          and not x.lstrip().startswith('#')
+          and len(x.split()) > 1
+          and x.split()[1] == m
+        ];
+        expected = [[f'UUID={u}', m, 'xfs', o, '0', '2']];
+        raise SystemExit(0 if rows == expected else 1)
+      - /etc/fstab
+      - "{{ item.mount }}"
+      - "{{ item.uuid }}"
+      - "{{ item.options }}"
+  loop:
+    - {mount: "{{ container_nodes_storage.librefs.mount }}", uuid: "{{ storage_librefs_uuid }}", options: "{{ container_nodes_storage.librefs.fstab_options }}"}
+    - {mount: "{{ container_nodes_storage.applications.mount }}",
+       uuid: "{{ storage_applications_uuid }}",
+       options: "{{ container_nodes_storage.applications.fstab_options }}"}
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+
+- name: Install resident storage helpers
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/sbin/{{ item }}"
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - assert-c1-mount
+    - ensure-forgejo-quotas
+    - ensure-c1-edge-state
+
+- name: Install storage boot gates
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - c1-librefs-storage.service
+    - c1-applications-storage.service
+    - c1-forgejo-quotas.service
+    - c1-edge-state.service
+  register: storage_units
+
+- name: Reload systemd after storage unit changes  # noqa: no-handler
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: storage_units.changed
+
+- name: Converge and verify Forgejo project mappings, quotas, and bind sources
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/ensure-forgejo-quotas
+      - "{{ 'check' if ansible_check_mode else 'apply' }}"
+  register: storage_forgejo_state
+  changed_when: false
+  check_mode: false
+
+- name: Converge and verify edge bind-source state
+  ansible.builtin.command:
+    argv:
+      - /usr/local/sbin/ensure-c1-edge-state
+      - "{{ 'check' if ansible_check_mode else 'apply' }}"
+  register: storage_edge_state
+  changed_when: false
+  check_mode: false
+
+- name: Enable storage boot gates without starting them
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+  loop:
+    - c1-librefs-storage.service
+    - c1-applications-storage.service
+    - c1-forgejo-quotas.service
+    - c1-edge-state.service

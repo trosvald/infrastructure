@@ -7,6 +7,7 @@ services:
     image: docker.io/mbentley/omada-controller:6.2.14.11@sha256:157f0e730e6ce4211ab5df533af656495c9803791356ced7fcec28b3caca03ad
     platform: linux/amd64
     user: 0:0
+    restart: "no"
     network_mode: none
     entrypoint:
       - /bin/sh
@@ -39,7 +40,7 @@ services:
     image: docker.io/mbentley/omada-controller:6.2.14.11@sha256:157f0e730e6ce4211ab5df533af656495c9803791356ced7fcec28b3caca03ad
     platform: linux/amd64
     user: 508:508
-    restart: unless-stopped
+    restart: "no"
     stop_grace_period: 60s
     depends_on:
       volume-init:

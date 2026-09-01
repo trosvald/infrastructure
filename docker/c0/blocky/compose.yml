@@ -14,7 +14,7 @@ services:
     sysctls:
       net.ipv4.ip_unprivileged_port_start: "53"
     mem_swappiness: 0
-    restart: unless-stopped
+    restart: "no"
     stop_grace_period: 15s
     cpus: 0.5
     mem_limit: 256m

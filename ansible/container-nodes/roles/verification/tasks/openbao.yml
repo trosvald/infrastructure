@@ -1,0 +1,82 @@
+---
+- name: Require explicit OpenBao verification intent
+  ansible.builtin.assert:
+    that:
+      - container_node_verification_openbao_address is defined
+      - container_node_verification_openbao_address is match('^https://')
+      - container_node_verification_openbao_token_file is defined
+      - container_node_verification_openbao_token_file | length > 0
+      - container_node_verification_openbao_records is defined
+      - container_node_verification_openbao_records | length > 0
+    fail_msg: >-
+      OpenBao verification was selected without an HTTPS address, controller-side
+      token file, and exact record-schema contracts.
+
+- name: Read OpenBao seal status without credentials
+  ansible.builtin.uri:
+    url: "{{ container_node_verification_openbao_address | regex_replace('/+$', '') }}/v1/sys/seal-status"
+    method: GET
+    return_content: true
+    status_code: 200
+    validate_certs: true
+    timeout: 10
+  delegate_to: localhost
+  changed_when: false
+  check_mode: false
+  register: container_node_verification_openbao_seal
+
+- name: Require initialized and explicitly unsealed OpenBao
+  ansible.builtin.assert:
+    that:
+      - container_node_verification_openbao_seal.json.initialized | bool
+      - not container_node_verification_openbao_seal.json.sealed | bool
+    fail_msg: "Application/OpenBao verification requires an explicitly unsealed server"
+
+- name: Verify controller-side scoped OpenBao token file
+  ansible.builtin.stat:
+    path: "{{ container_node_verification_openbao_token_file }}"
+    follow: false
+  delegate_to: localhost
+  register: container_node_verification_openbao_token_stat
+  no_log: true
+
+- name: Require a protected regular token file
+  ansible.builtin.assert:
+    that:
+      - container_node_verification_openbao_token_stat.stat.exists
+      - container_node_verification_openbao_token_stat.stat.isreg
+      - not container_node_verification_openbao_token_stat.stat.islnk
+      - container_node_verification_openbao_token_stat.stat.mode in ['0400', '0600']
+  no_log: true
+
+- name: Read exact OpenBao KV v2 records
+  ansible.builtin.uri:
+    url: "{{ container_node_verification_openbao_address | regex_replace('/+$', '') }}/v1/{{ item.mount | default('kv') }}/data/{{ item.path }}"
+    method: GET
+    return_content: true
+    status_code: 200
+    validate_certs: true
+    timeout: 10
+    headers:
+      X-Vault-Token: "{{ lookup('ansible.builtin.file', container_node_verification_openbao_token_file) | trim }}"
+  delegate_to: localhost
+  changed_when: false
+  check_mode: false
+  loop: "{{ container_node_verification_openbao_records }}"
+  loop_control:
+    label: "{{ item.name | default(item.path | default('protected-record')) }}"
+  register: container_node_verification_openbao_results
+  no_log: true
+
+- name: Verify exact OpenBao record schemas and versions
+  ansible.builtin.assert:
+    that:
+      - item.item.path is defined
+      - item.item['keys'] is defined
+      - item.item['keys'] | length > 0
+      - (item.json.data.data | dict2items | map(attribute='key') | list | sort) ==
+          (item.item['keys'] | sort)
+      - (item.json.data.metadata.version | int) >= (item.item.minimum_version | default(1) | int)
+    fail_msg: "An OpenBao record failed its exact protected schema/version contract"
+  loop: "{{ container_node_verification_openbao_results.results }}"
+  no_log: true

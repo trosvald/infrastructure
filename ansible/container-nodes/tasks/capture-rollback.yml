@@ -1,0 +1,85 @@
+---
+- name: Validate rollback capture contract
+  ansible.builtin.assert:
+    that:
+      - container_nodes_rollback_root == '/var/lib/monosense-ansible/rollback'
+      - container_nodes_rollback_generations == 5
+      - container_nodes_rollback_common_files | length > 0
+      - container_nodes_rollback_host_files[inventory_hostname] | length > 0
+      - >-
+        (container_nodes_rollback_common_files +
+         container_nodes_rollback_host_files[inventory_hostname]) |
+        select('match', '^/opt/doco-cd/secrets(?:/|$)') | list | length == 0
+      - >-
+        (container_nodes_rollback_common_files +
+         container_nodes_rollback_host_files[inventory_hostname]) |
+        select('match', '^/(?:srv|var/lib/docker|var/lib/containerd)(?:/|$)') |
+        list | length == 0
+    fail_msg: Rollback capture must be a non-secret exact host-file allowlist.
+
+- name: Bind rollback generation to host contract and current audit
+  ansible.builtin.set_fact:
+    container_nodes_rollback_generation_id: >-
+      {{ ([inventory_hostname, container_nodes_contract_version | string,
+           container_node_audit_sha256] | join(':')) | hash('sha256') }}
+    container_nodes_rollback_capture_files: >-
+      {{ (container_nodes_rollback_common_files +
+          container_nodes_rollback_host_files[inventory_hostname]) | unique | sort }}
+
+- name: Create atomic checksummed rollback generation
+  become: true
+  ansible.builtin.script:
+    cmd: >-
+      {{ playbook_dir }}/../scripts/capture_rollback.py
+      --root {{ container_nodes_rollback_root | quote }}
+      --generation {{ container_nodes_rollback_generation_id | quote }}
+      --host {{ inventory_hostname | quote }}
+      --audit-sha256 {{ container_node_audit_sha256 | quote }}
+      --contract {{ container_nodes_contract_version }}
+    executable: /usr/bin/python3
+  environment:
+    CONTAINER_NODES_ROLLBACK_PATHS: "{{ container_nodes_rollback_capture_files | to_json }}"
+  register: container_nodes_rollback_capture
+  changed_when: container_nodes_rollback_capture.stdout | trim == 'created'
+
+- name: Inspect complete rollback generations
+  become: true
+  ansible.builtin.find:
+    paths: "{{ container_nodes_rollback_root }}"
+    file_type: directory
+    recurse: false
+    hidden: false
+  register: container_nodes_rollback_existing
+
+- name: Inspect atomic completion markers
+  become: true
+  ansible.builtin.stat:
+    path: "{{ item.path }}/complete"
+    follow: false
+  loop: "{{ container_nodes_rollback_existing.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  register: container_nodes_rollback_markers
+
+- name: Refuse unsafe or incomplete rollback generations
+  ansible.builtin.assert:
+    that:
+      - item.item.path | basename is match('^[0-9a-f]{64}$')
+      - item.item.pw_name == 'root'
+      - item.item.mode == '0700'
+      - item.stat.isreg | default(false)
+      - item.stat.pw_name == 'root'
+      - item.stat.mode == '0600'
+    fail_msg: Rollback retention found an unsafe or incomplete generation.
+  loop: "{{ container_nodes_rollback_markers.results }}"
+  loop_control:
+    label: "{{ item.item.path }}"
+
+- name: Retain only the newest five complete generations
+  become: true
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ (container_nodes_rollback_existing.files | sort(attribute='mtime', reverse=true))[container_nodes_rollback_generations:] }}"
+  loop_control:
+    label: "{{ item.path }}"

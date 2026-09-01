@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import os
 import pathlib
 import re
@@ -233,6 +234,35 @@ def rollback_pair(target_dir: pathlib.Path, reload_pid: int | None) -> None:
     if previous is None:
         raise CertificateError("no previous certificate generation exists")
     switched = _switch_current(target_dir, previous)
+    fence_path = target_dir / ".openbao-certificate-fence.json"
+    if fence_path.exists():
+        if fence_path.is_symlink():
+            raise CertificateError("certificate fence is a symlink")
+        fence = json.loads(fence_path.read_text(encoding="utf-8"))
+        if set(fence) != {"kv_version", "blocked_version", "serial"}:
+            raise CertificateError("certificate fence schema is invalid")
+        version = fence["kv_version"]
+        if not isinstance(version, int) or version <= 0:
+            raise CertificateError("certificate fence version is invalid")
+        previous_serial = pathlib.PurePosixPath(previous).name
+        descriptor, name = tempfile.mkstemp(prefix=".openbao-certificate-fence.", dir=target_dir)
+        temporary = pathlib.Path(name)
+        try:
+            os.fchmod(descriptor, 0o600)
+            os.fchown(descriptor, 0, 0)
+            content = json.dumps(
+                {"kv_version": version, "blocked_version": version, "serial": previous_serial},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("ascii") + b"\n"
+            with os.fdopen(descriptor, "wb") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, fence_path)
+            _fsync_directory(target_dir)
+        finally:
+            temporary.unlink(missing_ok=True)
     if reload_pid is not None and switched:
         os.kill(reload_pid, signal.SIGHUP)
 

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DOCKER_BIN="${DOCKER_BIN:-docker}"; IP_BIN="${IP_BIN:-ip}"; PYTHON_BIN="${PYTHON_BIN:-python3}"; NAME=c0_services
+fail(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+parent="$("$IP_BIN" -j -d link show dev enp0s31f6.2513)" || fail 'missing c0 SERVICES parent'
+addresses="$("$IP_BIN" -j address show dev enp0s31f6.2513)" || fail 'cannot inspect c0 SERVICES parent addresses'
+"$PYTHON_BIN" -c 'import json,sys
+l=json.loads(sys.argv[1]);a=json.loads(sys.argv[2]);x=l[0] if len(l)==1 else {};ok=(x.get("ifname")=="enp0s31f6.2513" and x.get("mtu")==1496 and "UP" in x.get("flags",[]) and x.get("linkinfo",{}).get("info_kind")=="vlan" and x.get("linkinfo",{}).get("info_data",{}).get("id")==2513 and len(a)==1 and not a[0].get("addr_info",[]));raise SystemExit(0 if ok else 1)' "$parent" "$addresses" || fail 'c0 SERVICES parent has critical drift'
+error="$(mktemp)"; trap 'rm -f "$error"' EXIT
+set +e; document="$("$DOCKER_BIN" network inspect "$NAME" 2>"$error")"; status=$?; set -e
+(( status == 0 )) || { [[ "$(<"$error")" == "Error response from daemon: network $NAME not found" ]] && fail 'critical active c0_services network is absent; refusing creation'; fail "failed to inspect $NAME: $(<"$error")"; }
+"$PYTHON_BIN" -c 'import json,sys
+n=json.load(sys.stdin)
+expected=[("blocky-c0-blocky-1","10.25.13.35/24",""),("openbao-c0-openbao-1","10.25.13.34/24",""),("powerdns-c0-powerdns-1","10.25.13.33/24","")]
+try:
+ x=n[0];e=sorted((v.get("Name"),v.get("IPv4Address"),v.get("IPv6Address","")) for v in x.get("Containers",{}).values());ok=(len(n)==1 and x["Name"]=="c0_services" and x["Driver"]=="ipvlan" and x["Scope"]=="local" and x["EnableIPv4"] is True and x["EnableIPv6"] is False and x["Internal"] is False and x["Attachable"] is False and x["Ingress"] is False and x["ConfigOnly"] is False and x["IPAM"]["Driver"]=="default" and x["IPAM"].get("Options",{})=={} and x["IPAM"]["Config"]==[{"Subnet":"10.25.13.0/24","Gateway":"10.25.13.1"}] and x["Options"]=={"parent":"enp0s31f6.2513","ipvlan_mode":"l2","ipvlan_flag":"bridge","com.docker.network.driver.mtu":"1496"} and x["Labels"]=={} and e==expected)
+except (IndexError,KeyError,TypeError,ValueError):ok=False
+raise SystemExit(0 if ok else 1)' <<<"$document" || fail 'c0_services immutable state or active endpoint allowlist mismatch; refusing mutation'
+printf 'c0_services exact active contract matches\n'

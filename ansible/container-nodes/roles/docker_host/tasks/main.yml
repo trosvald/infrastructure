@@ -1,0 +1,125 @@
+---
+- name: Validate exact Docker host intent
+  ansible.builtin.assert:
+    that:
+      - docker_host_packages | length == 5
+      - docker_host_server_version | length > 0
+      - docker_host_compose_version | length > 0
+      - docker_host_daemon_config_state == 'absent'
+      - "'containerd.io' in docker_host_packages"
+      - "'docker-buildx-plugin' in docker_host_packages"
+      - "'docker-ce' in docker_host_packages"
+      - "'docker-ce-cli' in docker_host_packages"
+      - "'docker-compose-plugin' in docker_host_packages"
+    fail_msg: Exact Docker package, Engine, Compose, and daemon intent is required.
+
+- name: Install reviewed Docker package versions during maintenance only
+  become: true
+  ansible.builtin.apt:
+    name: "{{ item.key }}={{ item.value }}"
+    state: present
+    allow_downgrade: false
+    policy_rc_d: 101
+    update_cache: false
+  register: docker_host_package_maintenance
+  when: (container_nodes_action | default('')) == 'upgrade'
+  loop: "{{ docker_host_packages | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Activate reviewed Docker package changes during maintenance only
+  become: true
+  ansible.builtin.systemd_service:
+    name: docker.service
+    state: restarted
+  when:
+    - (container_nodes_action | default('')) == 'upgrade'
+    - docker_host_package_maintenance.results | selectattr('changed') | list | length > 0
+
+- name: Collect installed package facts
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Assert exact Docker package versions
+  ansible.builtin.assert:
+    that:
+      - item.key in ansible_facts.packages
+      - ansible_facts.packages[item.key] | length == 1
+      - ansible_facts.packages[item.key][0].version == item.value
+    fail_msg: >-
+      Docker package {{ item.key }} must be exactly {{ item.value }}; package drift is activated
+      only by the reviewed upgrade action.
+  loop: "{{ docker_host_packages | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Inspect Docker daemon configuration path
+  ansible.builtin.stat:
+    path: "{{ docker_host_daemon_config_path }}"
+    follow: false
+  register: docker_host_daemon_config
+
+- name: Preserve the reviewed daemon configuration absence
+  ansible.builtin.assert:
+    that:
+      - not docker_host_daemon_config.stat.exists
+    fail_msg: >-
+      {{ docker_host_daemon_config_path }} is unmanaged critical drift; routine deploy will not
+      replace it or restart Docker.
+
+- name: Inspect Docker service state
+  ansible.builtin.service_facts:
+
+- name: Assert Docker is enabled and running
+  ansible.builtin.assert:
+    that:
+      - "'docker.service' in ansible_facts.services"
+      - ansible_facts.services['docker.service'].status == 'enabled'
+      - ansible_facts.services['docker.service'].state == 'running'
+    fail_msg: Docker daemon lifecycle drift requires reviewed maintenance.
+
+- name: Read Docker daemon facts
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/docker
+      - info
+      - --format
+      - json
+  changed_when: false
+  check_mode: false
+  register: docker_host_info_raw
+
+- name: Read Docker version facts
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/docker
+      - version
+      - --format=json
+  changed_when: false
+  check_mode: false
+  register: docker_host_version_raw
+
+- name: Read Docker Compose version
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/docker
+      - compose
+      - version
+      - --short
+  changed_when: false
+  check_mode: false
+  register: docker_host_compose_raw
+
+- name: Assert exact Docker daemon contract
+  vars:
+    docker_host_info: "{{ docker_host_info_raw.stdout | from_json }}"
+    docker_host_version: "{{ docker_host_version_raw.stdout | from_json }}"
+  ansible.builtin.assert:
+    that:
+      - docker_host_version.Server.Version == docker_host_server_version
+      - docker_host_compose_raw.stdout | trim == docker_host_compose_version
+      - docker_host_info.Driver == docker_host_storage_driver
+      - docker_host_info.DockerRootDir == docker_host_root_directory
+      - docker_host_info.CgroupDriver == docker_host_cgroup_driver
+      - docker_host_info.CgroupVersion | string == docker_host_cgroup_version
+    fail_msg: Docker daemon identity or storage/cgroup contract drifted; refusing mutation.

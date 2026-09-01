@@ -232,7 +232,7 @@ generation. `openbao-acme` is the Certbot lineage tree.
 | ----------------------------------------- | --------------------------------------------- | ------------------------------------------------------------- |
 | Workstation developer age identity        | `~/.config/sops/age/keys.txt`                 | Developer account, mode `0600`, never in Git                  |
 | c0 Doco-CD age identity                   | `/opt/doco-cd/secrets/sops_age_key`           | Root-only on c0, mode `0600`; installed via SSH pipe from `age-keygen` |
-| Offline recovery age identity             | Offline recovery system `~/.config/sops/age/keys.txt` | By operator decision the recovery identity is currently held on c1; developer workstation and CI do not receive it. Recovery proof uses both developer and offline private identities. |
+| Hermes recovery age identity             | Hermes `~/.config/sops/age/keys.txt`          | Sole dedicated recovery-key host, mode `0600`; developer workstation, c0, c1, and CI do not receive it |
 | SOPS ciphertext                           | `docker/c0/openbao/encrypted/{acme.env,cloudflare.ini}` | Git, decryptable by any of the three recipients                |
 | Doco-CD decrypted ciphertext (existing files in working clone) | Doco-CD data volume on c0  | Mode `0644` preserved by Doco v0.111; reachable only via `/var/lib/docker` which is `root:root` mode `0710` |
 | ACME account email                        | Decrypted `acme.env` only                     | Operator mailbox, never logged                                |
@@ -240,7 +240,7 @@ generation. `openbao-acme` is the Certbot lineage tree.
 | Doco-CD API secret                        | `/opt/doco-cd/secrets/api_secret`             | Root-only on c0, unchanged from existing deployment           |
 | OpenBao Shamir shares                     | Offline media (operator custody)              | Three shares, threshold two; never in Git, SOPS, logs, or chat |
 | OpenBao userpass passwords                | Operator password manager / offline custody   | Plaintext retained off-host only; OpenBao retains only the verifier and never the password |
-| OpenBao Raft snapshot                     | `$HOME/.local/share/openbao-backups/c0/*.snap.age` on operator workstation | Encrypted with developer and offline recipients; also copied to offline recovery system |
+| OpenBao Raft snapshot                     | `$HOME/.local/share/openbao-backups/c0/*.snap.age` on operator workstation | Encrypted with developer and Hermes recovery recipients; copied to Hermes |
 
 The matrix is enforced by the repository's `.sops.yaml` creation rule and
 the `docker/c0/[^/]+/encrypted/.*` path scope. CI receives no age identity
@@ -262,10 +262,10 @@ and performs no decryption.
   intent rather than relying on host swap configuration.
 - `c0_services` is an external Docker network created out-of-band; the
   project declares it as `external: true` and never recreates it.
-- Recovery identity custody is currently on c1 by operator decision.
-  Until that custody moves, the offline recovery recipient in
-  `.sops.yaml` is the c1-resident identity, and c1 is treated as part of
-  the recovery trust set rather than as a separate application host.
+- Recovery identity custody is on the dedicated recovery host Hermes. The former c1 recipient was
+  removed from current ciphertext only after Hermes decrypted a SOPS canary and an actual rekeyed
+  repository ciphertext. The obsolete c1 private identity was then deleted; historical Git
+  ciphertext may still name that former recipient.
 
 ## Recovery and dependency model
 
@@ -279,10 +279,10 @@ do not all have to succeed for the system to recover.
   `/opt/doco-cd/secrets/sops_age_key`. Allows the host-bootstrap Doco-CD
   container to decrypt SOPS inputs and apply Compose configuration to c0.
   This identity never exists on the workstation, in Git, or in chat.
-- **Offline recovery identity.** Currently resident on c1 by operator
-  decision. Its private half never reaches the workstation or CI; its
-  public recipient in `.sops.yaml` allows ciphertext to be opened offline
-  or on c1 without contacting the developer or the deployed host.
+- **Hermes recovery identity.** Resident only on the dedicated always-online Hermes host. Its
+  private half never reaches the workstation, c0, c1, or CI; its public recipient in `.sops.yaml`
+  allows ciphertext to be opened without contacting the developer or deployed host. No
+  removable-media copy or attached external storage is required.
 
 Doco-CD remains recoverable without OpenBao. The Doco container does not
 contact OpenBao, has no OpenBao policy, and mounts no OpenBao volume.

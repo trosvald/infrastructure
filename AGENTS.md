@@ -35,9 +35,16 @@ existing `Secret` resources. Images are normally digest-pinned.
 
 ### Docker on c0
 
-`docker/c0/.doco-cd.yaml` owns host deployment settings, while the bootstrap-owned controller
-source lives in `docker/c0/.doco-cd/`. Doco-CD polls published `origin/main`; application projects
-are direct children of `docker/c0/`, and host prerequisites live under `docker/c0/.host/`.
+`docker/c0/.doco-cd.yaml` owns application deployment settings, while the controller source lives
+in `docker/c0/.doco-cd/`. Doco-CD polls published `origin/main`; application projects are direct
+children of `docker/c0/`. The isolated `ansible/container-nodes/` project owns c0/c1 host state and
+installs the resident prerequisite and lifecycle helpers; Doco-CD remains the sole owner of
+application Compose deployment, creation, and recreation.
+
+Container-node operations use only `just ansible container-nodes <fixed-action>`; host adoption,
+secret provisioning/rotation, network activation, and destructive storage are separate gates.
+Galaxy pins remain centralized in `ansible/requirements.yml` and must not be duplicated inside the
+project.
 
 - OpenBao: Git → Doco-CD → Compose control plane; Raft and ACME data live in preserved named
   volumes. Certificate installation uses validated, fsynced generations and atomic symlink changes.
@@ -79,10 +86,11 @@ identity and operational evidence immediately before confirmation.
 - `kubernetes/apps/`: namespace/app declarations and dependency-gated reconciliation.
 - `kubernetes/components/`: reusable Kustomize components.
 - `talos/`: node inventory and machine/network Minijinja templates.
-- `docker/c0/.doco-cd/`: bootstrap-owned Doco-CD controller source.
-- `docker/c0/.host/`: c0 host prerequisites that Doco-CD must not manage.
-- `docker/c0/`: host Doco configuration and direct-child OpenBao, PowerDNS, Blocky, and Omada
-  Controller applications.
+- `docker/c0/.doco-cd/`: Doco-CD controller application source; its host installation and systemd
+  lifecycle are managed by `ansible/container-nodes/roles/doco_controller/`.
+- `docker/c0/` and `docker/c1/`: host Doco configuration and direct-child Doco-managed applications.
+- `ansible/container-nodes/`: isolated c0/c1 Debian host inventory, roles, runtime assets, tests,
+  fixed dispatcher, and per-host adoption records.
 - `ansible/junos/`: isolated inventory, intent, roles, scripts, fixtures, tests, and the fixed
   adoption record.
 - `docs/`: operational, backup/restore, secret-custody, and migration runbooks.

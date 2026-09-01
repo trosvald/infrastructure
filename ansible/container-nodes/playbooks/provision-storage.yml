@@ -1,0 +1,60 @@
+---
+- name: Provision independently approved c1 storage
+  hosts: c1
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: provision-storage
+  vars_prompt:
+    - name: container_nodes_storage_device_by_id
+      prompt: Exact approved /dev/disk/by-id path
+      private: false
+    - name: container_nodes_storage_plan_sha256
+      prompt: Reviewed storage plan SHA-256
+      private: false
+    - name: container_nodes_storage_approval_header
+      prompt: 'Approval line 1'
+      private: true
+    - name: container_nodes_storage_approval_device
+      prompt: 'Approval line 2'
+      private: true
+    - name: container_nodes_storage_approval_digest
+      prompt: 'Approval line 3'
+      private: true
+    - name: container_nodes_storage_approval_signatures
+      prompt: 'Approval line 4'
+      private: true
+    - name: container_nodes_storage_approval_layout
+      prompt: 'Approval line 5'
+      private: true
+    - name: container_nodes_storage_approval_wipe
+      prompt: 'Approval line 6'
+      private: true
+  tasks:
+    - name: Re-audit c1 identity-critical state
+      ansible.builtin.include_role: {name: audit}
+    - name: Require exact reviewed c1 adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+    - name: Assemble byte-exact protected approval
+      ansible.builtin.set_fact:
+        container_nodes_storage_typed_approval: >-
+          {{ container_nodes_storage_approval_header ~ '\n' ~
+             container_nodes_storage_approval_device ~ '\n' ~
+             container_nodes_storage_approval_digest ~ '\n' ~
+             container_nodes_storage_approval_signatures ~ '\n' ~
+             container_nodes_storage_approval_layout ~ '\n' ~
+             container_nodes_storage_approval_wipe }}
+      no_log: true
+    - name: Run destructive storage plan and approval transaction
+      block:
+        - name: Invoke storage provisioning boundary
+          ansible.builtin.include_role:
+            name: storage
+            tasks_from: provision.yml
+      rescue:
+        - name: Stop after storage compensation
+          ansible.builtin.fail:
+            msg: Storage provisioning failed; inspect the protected plan and role compensation output

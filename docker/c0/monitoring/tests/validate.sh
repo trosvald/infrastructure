@@ -48,8 +48,4 @@ for host_endpoint in ("tcp://10.25.13.16:22", "tcp://10.25.10.101:22"):
 assert "env_file" not in compose and "MONITORING_" not in compose
 for forbidden in ("victoriametrics", "victorialogs", "alertmanager", "/var/run/docker.sock"):
     assert forbidden not in combined.lower(), forbidden
-installer = Path("docker/c0/.host/openbao/install-wildcard-assets.sh").read_text()
-materializer = Path("docker/c0/.host/openbao/materialize-monitoring-secrets.sh").read_text()
-assert "install -d -o 65534 -g 65534 -m 0700 /var/lib/monosense-monitoring/vector-tls" in installer
-assert "os.chown(tls_root, 65534, 65534)" in materializer
 PY

@@ -1,0 +1,68 @@
+---
+- name: Leave c0 firewall ownership unchanged
+  ansible.builtin.debug:
+    msg: c0 has no repository-owned nftables table in the reviewed container-node contract.
+  when: inventory_hostname == 'c0'
+
+- name: Install c1 repository firewall directory
+  ansible.builtin.file:
+    path: /etc/nftables.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: inventory_hostname == 'c1'
+- name: Install shared resident helper directory
+  ansible.builtin.file:
+    path: /usr/local/libexec/monosense-ansible
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: inventory_hostname == 'c1'
+
+
+- name: Install exact c1 Forgejo egress policy
+  ansible.builtin.copy:
+    src: c1-forgejo-egress.nft
+    dest: /etc/nftables.d/monosense-c1-forgejo-egress.nft
+    owner: root
+    group: root
+    mode: '0644'
+  when: inventory_hostname == 'c1'
+
+- name: Install fail-closed c1 firewall reconciler
+  ansible.builtin.copy:
+    src: ensure-c1-forgejo-egress
+    dest: /usr/local/libexec/monosense-ansible/ensure-c1-forgejo-egress
+    owner: root
+    group: root
+    mode: '0755'
+  when: inventory_hostname == 'c1'
+
+- name: Install c1 firewall prerequisite unit
+  ansible.builtin.copy:
+    src: c1-forgejo-egress.service
+    dest: /etc/systemd/system/c1-forgejo-egress.service
+    owner: root
+    group: root
+    mode: '0644'
+  when: inventory_hostname == 'c1'
+
+- name: Enable firewall prerequisite without starting or restarting it
+  ansible.builtin.systemd_service:
+    name: c1-forgejo-egress.service
+    enabled: true
+    daemon_reload: true
+  when: inventory_hostname == 'c1'
+
+- name: Assert or safely create only the repository-owned table
+  ansible.builtin.command:
+    argv:
+      - /usr/local/libexec/monosense-ansible/ensure-c1-forgejo-egress
+      - apply
+  register: container_node_firewall_reconcile
+  changed_when: "'would create' not in container_node_firewall_reconcile.stdout and 'exact contract matches' not in container_node_firewall_reconcile.stdout"
+  when:
+    - inventory_hostname == 'c1'
+    - not ansible_check_mode

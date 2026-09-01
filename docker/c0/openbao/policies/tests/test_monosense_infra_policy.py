@@ -21,6 +21,7 @@ readonly_paths = {
     "kv/data/platform/talos/bsd/secrets",
 }
 managed_records = {
+    "docker/c1/librefs",
     "docker/c1/edge",
     "docker/c1/forgejo",
     "docker/c0/monitoring",
@@ -31,8 +32,10 @@ expected["kv/data/network/junos/srx1500/topology"] = ["read", "update"]
 for record in managed_records:
     expected[f"kv/data/{record}"] = ["create", "read", "update", "patch", "delete"]
     expected[f"kv/metadata/{record}"] = ["read", "delete"]
-for role in ("wildcard-publisher", "wildcard-reader-c0", "wildcard-reader-c1"):
+for role in ("doco-c1", "wildcard-publisher", "wildcard-reader-c0", "wildcard-reader-c1"):
     expected[f"auth/token/create/{role}"] = ["update"]
+    expected[f"auth/token/roles/{role}"] = ["read"]
+expected["auth/token/revoke-accessor"] = ["update"]
 assert parsed == expected
 assert len(blocks) == len(expected)
 assert "*" not in text and "+" not in text

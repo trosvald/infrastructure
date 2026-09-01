@@ -1,0 +1,4 @@
+# Managed by Ansible.
+{% for limit in container_node_baseline_limits | sort(attribute='domain') %}
+{{ '%-16s %-8s %-12s %s' | format(limit.domain, limit.type, limit.item, limit.value) }}
+{% endfor %}

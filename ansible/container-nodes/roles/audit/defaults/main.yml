@@ -1,0 +1,30 @@
+---
+container_node_audit_schema_version_expected: 1
+container_node_audit_packages:
+  - containerd.io
+  - docker-ce
+  - docker-ce-cli
+  - docker-compose-plugin
+  - ifupdown
+  - linux-image-amd64
+  - nftables
+  - openssh-server
+  - python3
+  - systemd-timesyncd
+  - xfsprogs
+container_node_audit_services:
+  - apt-daily.timer
+  - apt-daily-upgrade.timer
+  - docker.service
+  - ssh.service
+  - systemd-timesyncd.service
+container_node_audit_files:
+  - /etc/hostname
+  - /etc/resolv.conf
+  - /etc/default/locale
+  - /etc/timezone
+  - /etc/systemd/timesyncd.conf
+  - /etc/systemd/journald.conf
+  - /etc/security/limits.d/90-monosense.conf
+  - /etc/ssh/sshd_config
+  - /etc/ssh/sshd_config.d/00-monosense.conf

@@ -1,0 +1,134 @@
+---
+- name: Require independently confirmed OOB access
+  ansible.builtin.assert:
+    that:
+      - container_node_network_oob_verified | bool
+      - container_node_network_interfaces_content | length > 0
+      - container_node_network_interfaces_sha256 | length == 64
+      - container_node_network_activation_interfaces | length > 0
+      - container_node_network_verify_routes | length > 0
+      - container_node_network_verify_container_paths | length > 0
+    fail_msg: Network activation requires reviewed intent, OOB confirmation, activation interfaces, route probes, and existing-container path probes.
+
+- name: Read currently installed network intent
+  ansible.builtin.slurp:
+    src: /etc/network/interfaces
+  register: container_node_network_installed
+
+- name: Bind activation to deployed reviewed intent
+  ansible.builtin.assert:
+    that:
+      - (container_node_network_installed.content | b64decode | hash('sha256')) == container_node_network_interfaces_sha256
+    fail_msg: Installed interfaces content is not the reviewed activation generation.
+
+- name: Read deployed c1 EDGE fragment identity
+  ansible.builtin.stat:
+    path: /etc/network/interfaces.d/c1-edge
+    checksum_algorithm: sha256
+  register: container_node_network_c1_edge_deployed
+  when: inventory_hostname == 'c1'
+
+- name: Bind c1 EDGE activation to the reviewed dotted-VLAN fix
+  ansible.builtin.assert:
+    that:
+      - container_node_network_c1_edge_deployed.stat.isreg
+      - container_node_network_c1_edge_deployed.stat.checksum == (lookup('ansible.builtin.file', role_path + '/files/c1-edge.interfaces') | hash('sha256'))
+  when: inventory_hostname == 'c1'
+
+- name: Require captured known-working rollback generation
+  ansible.builtin.stat:
+    path: "{{ container_node_network_state_dir }}/{{ container_node_network_interfaces_sha256 }}/{{ item }}"
+  loop:
+    - interfaces.before
+    - interfaces.before.sha256
+    - interfaces.list
+  register: container_node_network_rollback_assets
+
+- name: Refuse activation without complete protected rollback assets
+  ansible.builtin.assert:
+    that:
+      - container_node_network_rollback_assets.results | map(attribute='stat.exists') | min
+      - container_node_network_rollback_assets.results | map(attribute='stat.isreg') | min
+      - container_node_network_rollback_assets.results | map(attribute='stat.pw_name') | unique | list == ['root']
+
+- name: Verify captured rollback checksum before arming watchdog
+  ansible.builtin.command:
+    argv: [sha256sum, --check, --strict, interfaces.before.sha256]
+    chdir: "{{ container_node_network_state_dir }}/{{ container_node_network_interfaces_sha256 }}"
+  changed_when: false
+
+- name: Clear an old rollback timer name
+  ansible.builtin.command:
+    argv: [systemctl, stop, monosense-network-rollback.timer]
+  failed_when: false
+  changed_when: false
+
+- name: Arm timed rollback before activation
+  ansible.builtin.command:
+    argv:
+      - systemd-run
+      - --unit=monosense-network-rollback
+      - "--on-active={{ container_node_network_rollback_seconds }}s"
+      - "{{ container_node_network_bin_dir }}/network-transaction"
+      - rollback
+      - "{{ container_node_network_interfaces_sha256 }}"
+  changed_when: true
+
+- name: Activate reviewed interfaces asynchronously
+  ansible.builtin.command:
+    argv: >-
+      {{ [container_node_network_bin_dir + '/network-transaction',
+          'activate', container_node_network_interfaces_sha256] +
+         container_node_network_activation_interfaces }}
+  async: "{{ container_node_network_rollback_seconds - 30 }}"
+  poll: 0
+  changed_when: true
+
+- name: Force a fresh controller SSH transport
+  ansible.builtin.meta: reset_connection
+
+- name: Prove fresh SSH after activation
+  ansible.builtin.wait_for_connection:
+    connect_timeout: 10
+    sleep: 5
+    timeout: "{{ container_node_network_rollback_seconds - 60 }}"
+
+- name: Read post-activation routes
+  ansible.builtin.command:
+    argv: [ip, -j, route, get, "{{ item.destination }}"]
+  loop: "{{ container_node_network_verify_routes }}"
+  register: container_node_network_routes
+  changed_when: false
+  failed_when: >-
+    container_node_network_routes.rc != 0 or
+    item.interface not in container_node_network_routes.stdout or
+    (item.gateway | default('') | length > 0 and item.gateway not in container_node_network_routes.stdout)
+
+- name: Read active resolver configuration
+  ansible.builtin.slurp:
+    src: /etc/resolv.conf
+  register: container_node_network_resolv_conf
+
+- name: Require Blocky-only host DNS
+  ansible.builtin.assert:
+    that:
+      - "('nameserver ' + container_node_network_dns_server) in (container_node_network_resolv_conf.content | b64decode)"
+      - "'nameserver 10.25.10.100' not in (container_node_network_resolv_conf.content | b64decode)"
+
+- name: Resolve through the active host resolver
+  ansible.builtin.command:
+    argv: [getent, ahostsv4, vault.monosense.io]
+  changed_when: false
+
+- name: Verify declared existing-container network paths
+  ansible.builtin.command:
+    argv: "{{ item.argv }}"
+  loop: "{{ container_node_network_verify_container_paths }}"
+  loop_control:
+    label: "{{ item.name }}"
+  changed_when: false
+
+- name: Cancel rollback only after all fresh-path verification succeeds
+  ansible.builtin.command:
+    argv: [systemctl, stop, monosense-network-rollback.timer]
+  changed_when: true

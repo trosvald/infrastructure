@@ -29,6 +29,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Migrated repository ownership of c0/c1 Debian host state and resident lifecycle helpers into the
+  isolated `ansible/container-nodes/` project, with fixed adoption-, secret-, network-, and
+  storage-gated Just actions. Doco-CD remains the sole application Compose deployment owner. This
+  repository migration does not claim live host adoption, convergence, secret rotation, network
+  activation, or application deployment.
+
 - Refactored c0 into a host-scoped Doco-CD layout under `docker/c0/`, separating controller source,
   host prerequisites, and direct-child managed applications.
 - Completed the reviewed SRX1500 direct-configuration adoption into `ANSIBLE_SRX1500`: encrypted

@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DOCKER_BIN="${DOCKER_BIN:-docker}"; IP_BIN="${IP_BIN:-ip}"; PYTHON_BIN="${PYTHON_BIN:-python3}"
+fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+parent_ok() {
+ local b l a; b="$("$IP_BIN" -j -d link show dev bond0)"; l="$("$IP_BIN" -j -d link show dev bond0.2515)"; a="$("$IP_BIN" -j address show dev bond0.2515)"
+ "$PYTHON_BIN" -c 'import json,sys
+b=json.loads(sys.argv[1]);l=json.loads(sys.argv[2]);a=json.loads(sys.argv[3]); x=b[0] if len(b)==1 else {}; y=l[0] if len(l)==1 else {}
+ok=(x.get("ifname")=="bond0" and x.get("mtu")==1500 and "UP" in x.get("flags",[]) and x.get("linkinfo",{}).get("info_kind")=="bond" and x.get("linkinfo",{}).get("info_data",{}).get("mode")=="active-backup" and y.get("ifname")=="bond0.2515" and y.get("mtu")==1496 and "UP" in y.get("flags",[]) and y.get("linkinfo",{}).get("info_kind")=="vlan" and y.get("linkinfo",{}).get("info_data",{}).get("id")==2515 and len(a)==1 and not a[0].get("addr_info",[]))
+raise SystemExit(0 if ok else 1)' "$b" "$l" "$a" || fail 'bond0 or EDGE parent has critical drift'
+}
+validate() {
+ local name=$1
+ "$PYTHON_BIN" -c 'import json,sys
+name=sys.argv[1]; n=json.load(sys.stdin)
+try:
+ x=n[0]; e=sorted((v.get("Name"),v.get("IPv4Address"),v.get("IPv6Address","")) for v in x.get("Containers",{}).values()); common=(len(n)==1 and x["Name"]==name and x["Scope"]=="local" and x["EnableIPv4"] is True and x["EnableIPv6"] is False and x["Attachable"] is False and x["Ingress"] is False and x["ConfigOnly"] is False and x["Labels"]=={"io.monosense.infrastructure.managed-by":"bootstrap","io.monosense.infrastructure.purpose":("c1-edge" if name=="c1_edge" else "c1-forgejo-frontend")})
+ if name=="c1_edge": ok=(common and x["Driver"]=="ipvlan" and x["Internal"] is False and x["IPAM"]["Driver"]=="default" and x["IPAM"].get("Options",{})=={} and x["IPAM"]["Config"]==[{"Subnet":"10.25.15.0/24","IPRange":"10.25.15.8/29","Gateway":"10.25.15.1"}] and x["Options"]=={"parent":"bond0.2515","ipvlan_mode":"l2","ipvlan_flag":"bridge"} and e in ([],[("haproxy-c1","10.25.15.10/24","")]))
+ else: ok=(common and x["Driver"]=="bridge" and x["Internal"] is True and x["IPAM"]["Driver"]=="default" and x["IPAM"].get("Options",{})=={} and x["IPAM"]["Config"]==[{"Subnet":"172.30.15.0/28","Gateway":"172.30.15.1"}] and x["Options"]=={} and len(e)<=2 and len({v[0] for v in e})==len(e) and all(v[0] in {"haproxy-c1","forgejo-c1"} and v[2]=="" for v in e))
+except (IndexError,KeyError,TypeError,ValueError): ok=False
+raise SystemExit(0 if ok else 1)' "$name" || fail "$name has immutable drift or an unapproved endpoint"
+}
+ensure() {
+ local mode=$1 name=$2 document error status names; error="$(mktemp)"
+ set +e; document="$("$DOCKER_BIN" network inspect "$name" 2>"$error")"; status=$?; set -e
+ if (( status==0 )); then rm -f "$error"; validate "$name" <<<"$document"; return; fi
+ [[ "$(<"$error")" == "Error response from daemon: network $name not found" ]] || { local message; message="$(<"$error")"; rm -f "$error"; fail "failed to inspect $name: $message"; }; rm -f "$error"
+ names="$("$DOCKER_BIN" network ls --filter "name=^${name}$" --format '{{.Name}}')" || fail "failed to confirm absence for $name"; [[ -z "$names" ]] || fail "ambiguous absence for $name"
+ [[ "$mode" == apply ]] || { printf '%s is absent; apply would create it\n' "$name"; return; }
+ if [[ "$name" == c1_edge ]]; then "$DOCKER_BIN" network create --driver ipvlan --scope local --ipv4 --ipv6=false --subnet 10.25.15.0/24 --gateway 10.25.15.1 --ip-range 10.25.15.8/29 --opt parent=bond0.2515 --opt ipvlan_mode=l2 --opt ipvlan_flag=bridge --label io.monosense.infrastructure.managed-by=bootstrap --label io.monosense.infrastructure.purpose=c1-edge "$name" >/dev/null || fail "failed to create $name"; else "$DOCKER_BIN" network create --driver bridge --scope local --internal --ipv4 --ipv6=false --subnet 172.30.15.0/28 --gateway 172.30.15.1 --label io.monosense.infrastructure.managed-by=bootstrap --label io.monosense.infrastructure.purpose=c1-forgejo-frontend "$name" >/dev/null || fail "failed to create $name"; fi
+ document="$("$DOCKER_BIN" network inspect "$name")" || fail "post-create inspect failed for $name"; validate "$name" <<<"$document"
+}
+mode="${1:-check}"; [[ $# -le 1 && ( "$mode" == check || "$mode" == apply ) ]] || fail 'usage: ensure-c1-edge-networks [check|apply]'; parent_ok; ensure "$mode" c1_edge; ensure "$mode" c1_forgejo_frontend

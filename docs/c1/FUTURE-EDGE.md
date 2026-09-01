@@ -1,8 +1,10 @@
 # c1 Future Edge and Applications
 
 Date: 2026-08-26
-Status: design reservation only; nothing in this document is deployed by the current mission;
-application paths revised to `/srv/applications`
+Status: historical design reservation only; it is not live state or an operator runbook. Doco owns
+application Compose; `ansible/container-nodes/` owns host network, storage, firewall, controller,
+and resident runtime prerequisites. Use only its fixed Just actions and the current reviewed c1
+operations plan for any host work.
 
 ## Boundary
 

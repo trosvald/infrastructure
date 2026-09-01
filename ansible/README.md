@@ -7,13 +7,13 @@
 
 </div>
 
-`ansible/` is a shared command namespace, not a shared Ansible project. Every child owns its inventory, configuration, roles, collections, tests, runtime inputs, and local output.
+`ansible/` is a shared command namespace, not a shared Ansible project. Every child owns its inventory, configuration, roles, tests, runtime inputs, collection installation directory, and local output. Galaxy pins live only in the central `ansible/requirements.yml`.
 
 ```mermaid
 flowchart LR
   Root["root .justfile"] --> Dispatcher["ansible/mod.just"]
   Dispatcher --> Junos["junos — SRX1500"]
-  Dispatcher -. reserved .-> Nodes["container-nodes — Debian c0/c1"]
+  Dispatcher --> Nodes["container-nodes — Debian c0/c1"]
 ```
 
 ## Project catalog
@@ -21,11 +21,12 @@ flowchart LR
 | Project | Status | Purpose | Guide |
 |---|---|---|---|
 | `junos` | Active, pre-adoption gate closed | Structured SRX1500 intent, safe NETCONF deployment, verification, drift, and encrypted backup | [Junos operator handbook](junos/README.md) |
+| `container-nodes` | Active, per-host adoption gates closed | Debian c0/c1 host state, resident lifecycle gates, verification, and drift without application deployment ownership | [Container-node operator handbook](container-nodes/README.md) |
 
 | Projects may share | Projects must not share |
 |---|---|
 | Root mise configuration and lockfile | Inventory or host/group variables |
-| `just ansible <project> <action>` grammar | `ansible.cfg` or Galaxy installation directory |
+| Central Galaxy pins and `just ansible <project> <action>` grammar | `ansible.cfg` or Galaxy installation directory |
 | CI hardening and public-safety conventions | Roles, playbooks, topology, secrets, or runtime state |
 | Documentation conventions | Project-specific tests and operational evidence |
 
@@ -48,6 +49,9 @@ just ansible <project> <action>
 just ansible junos bootstrap
 just ansible junos test
 just ansible junos render
+just ansible container-nodes bootstrap
+just ansible container-nodes audit
+just ansible container-nodes check
 ```
 
 The root exposes one `ansible` module. `ansible/mod.just` validates and dispatches project actions, so adding a project does not require a new root module or nested project `mod.just`.
@@ -98,7 +102,7 @@ SOPS is a repository-level tool but is not part of Junos secret handling. Cross-
 
 ## Adding a project
 
-- Create `ansible/<project>/` with its own configuration, inventory, Galaxy manifest, roles, playbooks, tests, and ignored state.
+- Create `ansible/<project>/` with its own configuration, inventory, roles, playbooks, tests, isolated collection installation directory, and ignored state; add required exact Galaxy pins only to `ansible/requirements.yml`.
 - Add a validated branch to `ansible/mod.just`; do not add a nested Just module.
 - Preserve `just ansible <project> <action>` as the public grammar.
 - Never import Junos inventory, topology, OpenBao paths, roles, collections, or secrets.
@@ -106,4 +110,4 @@ SOPS is a repository-level tool but is not part of Junos secret handling. Cross-
 - Run bootstrap, test, and lint through the same Just interface locally and in CI.
 - Add the project to this catalog and write a project-specific operator guide.
 
-Continue with the [Junos operator handbook](junos/README.md) for controller setup and operations.
+Continue with the [Junos operator handbook](junos/README.md) or [container-node operator handbook](container-nodes/README.md) for project-specific operations.

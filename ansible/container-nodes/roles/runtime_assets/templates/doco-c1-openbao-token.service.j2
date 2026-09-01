@@ -1,0 +1,17 @@
+[Unit]
+Description=Validate c1 Doco-CD OpenBao token lifetime
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/local/sbin/check-c1-openbao-token
+SyslogIdentifier=doco-c1-openbao-token
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/opt/doco-cd/secrets/openbao-token

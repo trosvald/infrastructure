@@ -1,0 +1,12 @@
+---
+doco_controller_repository_root: "{{ playbook_dir }}/../../.."
+doco_controller_source_directory: >-
+  {{ doco_controller_repository_root }}/docker/{{ inventory_hostname }}/.doco-cd
+doco_controller_install_directory: /opt/doco-cd
+doco_controller_api_secret_file: /opt/doco-cd/secrets/api_secret
+doco_controller_api_url: http://127.0.0.1:8080
+doco_controller_api_timeout: 30
+doco_controller_unit_name: ""
+doco_controller_prerequisites: []
+doco_controller_protected_files: []
+doco_controller_projects: []

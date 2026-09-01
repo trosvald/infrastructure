@@ -1,0 +1,253 @@
+---
+- name: Validate access intent
+  ansible.builtin.assert:
+    that:
+      - container_node_access_user == 'monosense'
+      - container_node_access_uid | int > 0
+      - container_node_access_gid | int > 0
+      - container_node_access_home == '/home/monosense'
+      - container_node_access_shell in ['/bin/bash', '/bin/sh']
+      - container_node_access_authorized_keys | length > 0
+      - container_node_access_authorized_keys | unique | length == container_node_access_authorized_keys | length
+      - container_node_access_login_allowlist | sort == ['monosense', 'root']
+      - container_node_access_known_hosts_file is match('^/')
+    quiet: true
+
+- name: Validate reviewed public key forms
+  ansible.builtin.assert:
+    that:
+      - item is match('^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521))[ ]+[A-Za-z0-9+/]+={0,2}([ ].*)?$')
+      - not item.startswith('-----BEGIN')
+    quiet: true
+  loop: "{{ container_node_access_authorized_keys }}"
+  loop_control:
+    label: reviewed-public-key
+
+- name: Check committed known-host trust file on controller
+  ansible.builtin.stat:
+    path: "{{ container_node_access_known_hosts_file }}"
+  delegate_to: localhost
+  become: false
+  register: container_node_access_known_hosts_stat
+
+- name: Require protected committed known-host trust
+  ansible.builtin.assert:
+    that:
+      - container_node_access_known_hosts_stat.stat.exists
+      - container_node_access_known_hosts_stat.stat.isreg
+    fail_msg: A dedicated committed known_hosts file is required; TOFU and ssh-keyscan are forbidden.
+
+- name: Prove target is present in committed known-host trust
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/ssh-keygen
+      - -F
+      - >-
+        {{ ('[' ~ container_node_access_ssh_host ~ ']:' ~
+           (container_node_access_ssh_port | string)) if
+           (container_node_access_ssh_port | int != 22) else
+           container_node_access_ssh_host }}
+      - -f
+      - "{{ container_node_access_known_hosts_file }}"
+  delegate_to: localhost
+  become: false
+  register: container_node_access_known_host_lookup
+  changed_when: false
+  failed_when: container_node_access_known_host_lookup.rc != 0 or not container_node_access_known_host_lookup.stdout
+  no_log: true
+
+- name: Collect login account and group databases
+  ansible.builtin.getent:
+    database: "{{ item }}"
+  loop: [passwd, group]
+  check_mode: false
+
+- name: Read approved login shells
+  ansible.builtin.slurp:
+    src: /etc/shells
+  register: container_node_access_shells_raw
+  check_mode: false
+
+- name: Derive exact login-capable account set
+  ansible.builtin.set_fact:
+    container_node_access_login_users: >-
+      {{ ansible_facts.getent_passwd | dict2items
+         | selectattr('value.5', 'in', (container_node_access_shells_raw.content | b64decode).splitlines())
+         | map(attribute='key') | list | sort }}
+
+- name: Fail closed on unexpected login-capable accounts
+  ansible.builtin.assert:
+    that:
+      - container_node_access_login_users | difference(container_node_access_login_allowlist) | length == 0
+      - >-
+        (container_node_access_login_users | difference([container_node_access_user]) | sort) ==
+        (container_node_access_login_allowlist | difference([container_node_access_user]) | sort)
+      - >-
+        container_node_access_user not in ansible_facts.getent_passwd or
+        (ansible_facts.getent_passwd[container_node_access_user][1] | int == container_node_access_uid | int and
+         ansible_facts.getent_passwd[container_node_access_user][2] | int == container_node_access_gid | int and
+         ansible_facts.getent_passwd[container_node_access_user][4] == container_node_access_home and
+         ansible_facts.getent_passwd[container_node_access_user][5] == container_node_access_shell)
+      - >-
+        container_node_access_group not in ansible_facts.getent_group or
+        ansible_facts.getent_group[container_node_access_group][1] | int == container_node_access_gid | int
+    fail_msg: Critical account identity drift requires review; no account is changed or deleted.
+
+- name: Read SSH include contract
+  ansible.builtin.slurp:
+    src: /etc/ssh/sshd_config
+  register: container_node_access_sshd_main
+  check_mode: false
+
+- name: Require Debian SSH drop-in model
+  ansible.builtin.assert:
+    that:
+      - >-
+        (container_node_access_sshd_main.content | b64decode) is
+        regex('(?m)^[ ]*Include[ ]+/etc/ssh/sshd_config[.]d/[*][.]conf[ ]*$')
+    fail_msg: SSH drop-ins are not active; refusing to stage policy outside the effective configuration.
+
+- name: Inspect critical access files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - "{{ container_node_access_home }}/.ssh/authorized_keys"
+    - "/etc/sudoers.d/90-{{ container_node_access_user }}"
+    - /etc/ssh/sshd_config.d/00-monosense.conf
+  register: container_node_access_critical_stats
+
+- name: Fail closed on critical access metadata drift
+  ansible.builtin.assert:
+    that:
+      - >-
+        not container_node_access_critical_stats.results[0].stat.exists or
+        (container_node_access_critical_stats.results[0].stat.pw_name == container_node_access_user and
+         container_node_access_critical_stats.results[0].stat.gr_name == container_node_access_group and
+         container_node_access_critical_stats.results[0].stat.mode == '0600')
+      - >-
+        not container_node_access_critical_stats.results[1].stat.exists or
+        (container_node_access_critical_stats.results[1].stat.pw_name == 'root' and
+         container_node_access_critical_stats.results[1].stat.gr_name == 'root' and
+         container_node_access_critical_stats.results[1].stat.mode == '0440')
+      - >-
+        not container_node_access_critical_stats.results[2].stat.exists or
+        (container_node_access_critical_stats.results[2].stat.pw_name == 'root' and
+         container_node_access_critical_stats.results[2].stat.gr_name == 'root' and
+         container_node_access_critical_stats.results[2].stat.mode == '0644')
+    fail_msg: Critical access file ownership or mode drift requires explicit review.
+
+- name: Read existing critical access files
+  ansible.builtin.slurp:
+    src: "{{ item.item }}"
+  loop: "{{ container_node_access_critical_stats.results }}"
+  when: item.stat.exists
+  register: container_node_access_critical_contents
+  no_log: true
+
+- name: Build existing critical content map
+  ansible.builtin.set_fact:
+    container_node_access_existing_content: >-
+      {{ container_node_access_existing_content | default({}) |
+         combine({item.item.item: (item.content | b64decode)}) }}
+  loop: "{{ container_node_access_critical_contents.results }}"
+  when: not item.skipped | default(false)
+  no_log: true
+
+- name: Fail closed on authorized-key drift
+  ansible.builtin.assert:
+    that:
+      - >-
+        container_node_access_user not in ansible_facts.getent_passwd or
+        (container_node_access_home ~ '/.ssh/authorized_keys') in (container_node_access_existing_content | default({}))
+      - >-
+        (container_node_access_home ~ '/.ssh/authorized_keys') not in (container_node_access_existing_content | default({})) or
+        (((container_node_access_existing_content[container_node_access_home ~ '/.ssh/authorized_keys']).splitlines()
+          | reject('match', '^(#|[ ]*$)') | list | sort) ==
+         (container_node_access_authorized_keys | sort))
+    fail_msg: Existing monosense authorized keys differ from reviewed intent; refusing replacement.
+  no_log: true
+
+- name: Fail closed on existing sudo and ssh policy drift
+  ansible.builtin.assert:
+    that:
+      - >-
+        ('/etc/sudoers.d/90-' ~ container_node_access_user) not in
+        (container_node_access_existing_content | default({})) or
+        container_node_access_existing_content['/etc/sudoers.d/90-' ~
+          container_node_access_user].strip() ==
+        (lookup('ansible.builtin.template', 'sudoers.j2')).strip()
+      - >-
+        '/etc/ssh/sshd_config.d/00-monosense.conf' not in
+        (container_node_access_existing_content | default({})) or
+        container_node_access_existing_content[
+          '/etc/ssh/sshd_config.d/00-monosense.conf'].strip() ==
+        (lookup('ansible.builtin.template', 'sshd.conf.j2')).strip()
+    fail_msg: >-
+      Existing repository-owned sudo or SSH policy has critical drift;
+      refusing mutation.
+  no_log: true
+
+- name: Manage monosense primary group
+  ansible.builtin.group:
+    name: "{{ container_node_access_group }}"
+    gid: "{{ container_node_access_gid }}"
+    state: present
+
+- name: Manage locked monosense account identity
+  ansible.builtin.user:
+    name: "{{ container_node_access_user }}"
+    uid: "{{ container_node_access_uid }}"
+    group: "{{ container_node_access_group }}"
+    home: "{{ container_node_access_home }}"
+    shell: "{{ container_node_access_shell }}"
+    create_home: true
+    password_lock: true
+    state: present
+
+- name: Manage monosense SSH directory
+  ansible.builtin.file:
+    path: "{{ container_node_access_home }}/.ssh"
+    state: directory
+    owner: "{{ container_node_access_user }}"
+    group: "{{ container_node_access_group }}"
+    mode: '0700'
+
+- name: Manage exact reviewed authorized keys
+  ansible.builtin.template:
+    src: authorized_keys.j2
+    dest: "{{ container_node_access_home }}/.ssh/authorized_keys"
+    owner: "{{ container_node_access_user }}"
+    group: "{{ container_node_access_group }}"
+    mode: '0600'
+
+- name: Manage exact passwordless sudo policy
+  ansible.builtin.template:
+    src: sudoers.j2
+    dest: "/etc/sudoers.d/90-{{ container_node_access_user }}"
+    owner: root
+    group: root
+    mode: '0440'
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Ensure SSH drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/ssh/sshd_config.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Stage key-only SSH access policy
+  ansible.builtin.template:
+    src: sshd.conf.j2
+    dest: /etc/ssh/sshd_config.d/00-monosense.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: /usr/sbin/sshd -t -f %s
+  notify:
+    - Validate staged SSH configuration
+    - Prove effective staged SSH policy
+    - Prove fresh monosense SSH session
+    - Reload SSH after proof

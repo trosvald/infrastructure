@@ -1,0 +1,14 @@
+---
+container_node_access_user: monosense
+container_node_access_uid: 1000
+container_node_access_group: monosense
+container_node_access_gid: 1000
+container_node_access_home: /home/monosense
+container_node_access_shell: /bin/bash
+container_node_access_authorized_keys: []
+container_node_access_login_allowlist:
+  - root
+  - monosense
+container_node_access_known_hosts_file: "{{ inventory_dir }}/known_hosts"
+container_node_access_ssh_port: "{{ ansible_port | default(22) }}"
+container_node_access_ssh_host: "{{ ansible_host | default(inventory_hostname) }}"

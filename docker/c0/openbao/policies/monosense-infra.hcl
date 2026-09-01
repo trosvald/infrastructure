@@ -22,6 +22,14 @@ path "kv/data/platform/talos/bsd/secrets" {
   capabilities = ["read"]
 }
 
+path "kv/data/docker/c1/librefs" {
+  capabilities = ["create", "read", "update", "patch", "delete"]
+}
+
+path "kv/metadata/docker/c1/librefs" {
+  capabilities = ["read", "delete"]
+}
+
 path "kv/data/docker/c1/edge" {
   capabilities = ["create", "read", "update", "patch", "delete"]
 }
@@ -58,10 +66,34 @@ path "auth/token/create/wildcard-publisher" {
   capabilities = ["update"]
 }
 
+path "auth/token/roles/wildcard-publisher" {
+  capabilities = ["read"]
+}
+
 path "auth/token/create/wildcard-reader-c0" {
   capabilities = ["update"]
 }
 
+path "auth/token/roles/wildcard-reader-c0" {
+  capabilities = ["read"]
+}
+
 path "auth/token/create/wildcard-reader-c1" {
+  capabilities = ["update"]
+}
+
+path "auth/token/roles/wildcard-reader-c1" {
+  capabilities = ["read"]
+}
+
+path "auth/token/create/doco-c1" {
+  capabilities = ["update"]
+}
+
+path "auth/token/roles/doco-c1" {
+  capabilities = ["read"]
+}
+
+path "auth/token/revoke-accessor" {
   capabilities = ["update"]
 }

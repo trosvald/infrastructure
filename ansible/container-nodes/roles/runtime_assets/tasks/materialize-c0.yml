@@ -19,6 +19,18 @@
           | replace('@@vector_ingest_token@@', runtime_monitoring.vector_ingest_token) }}"
         owner: '65534'
         group: '65534'
+      - path: /var/lib/monosense-monitoring/vector-tls/fullchain.pem
+        content: "{{ runtime_monitoring.vector_tls_fullchain }}"
+        owner: '65534'
+        group: '65534'
+        parent_owner: '65534'
+        parent_group: '65534'
+      - path: /var/lib/monosense-monitoring/vector-tls/privkey.pem
+        content: "{{ runtime_monitoring.vector_tls_private_key }}"
+        owner: '65534'
+        group: '65534'
+        parent_owner: '65534'
+        parent_group: '65534'
   no_log: true
 
 - name: Read protected c0 Doco API secret

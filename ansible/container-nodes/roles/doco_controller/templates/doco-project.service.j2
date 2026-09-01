@@ -1,0 +1,23 @@
+[Unit]
+Description=Prerequisite-gated Doco project {{ item.name }}
+Requires={{ doco_controller_unit_name }}{% for unit in item.prerequisites %} {{ unit }}{% endfor %}
+After={{ doco_controller_unit_name }}{% for unit in item.prerequisites %} {{ unit }}{% endfor %}
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=DOCO_API_SECRET_FILE={{ doco_controller_api_secret_file }}
+Environment=DOCO_API_URL={{ doco_controller_api_url }}
+ExecStart=/usr/local/libexec/monosense/doco-project-lifecycle start {{ item.name }}
+ExecStop=/usr/local/libexec/monosense/doco-project-lifecycle stop {{ item.name }}
+TimeoutStartSec=45
+TimeoutStopSec=45
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths={{ doco_controller_api_secret_file }} /etc/monosense/doco-projects
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

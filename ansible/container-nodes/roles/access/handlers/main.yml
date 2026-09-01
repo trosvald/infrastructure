@@ -1,0 +1,72 @@
+---
+- name: Validate staged SSH configuration
+  ansible.builtin.command:
+    argv: [/usr/sbin/sshd, -t, -f, /etc/ssh/sshd_config]
+  changed_when: false
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode
+
+- name: Prove effective staged SSH policy
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/sshd
+      - -T
+      - -f
+      - /etc/ssh/sshd_config
+      - -C
+      - "user={{ container_node_access_user }},host={{ inventory_hostname }},addr=127.0.0.1"
+  register: container_node_access_effective_sshd
+  changed_when: false
+  failed_when: >-
+    container_node_access_effective_sshd.rc != 0 or
+    'permitrootlogin no' not in container_node_access_effective_sshd.stdout_lines or
+    'passwordauthentication no' not in container_node_access_effective_sshd.stdout_lines or
+    'kbdinteractiveauthentication no' not in container_node_access_effective_sshd.stdout_lines or
+    'pubkeyauthentication yes' not in container_node_access_effective_sshd.stdout_lines or
+    'authenticationmethods publickey' not in container_node_access_effective_sshd.stdout_lines or
+    ('allowusers ' ~ container_node_access_user) not in container_node_access_effective_sshd.stdout_lines
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode
+
+- name: Prove fresh monosense SSH session
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/ssh
+      - -F
+      - /dev/null
+      - -o
+      - BatchMode=yes
+      - -o
+      - StrictHostKeyChecking=yes
+      - -o
+      - "UserKnownHostsFile={{ container_node_access_known_hosts_file }}"
+      - -o
+      - ControlMaster=no
+      - -o
+      - ControlPath=none
+      - -o
+      - ControlPersist=no
+      - -o
+      - ConnectTimeout=10
+      - -p
+      - "{{ container_node_access_ssh_port | string }}"
+      - -l
+      - "{{ container_node_access_user }}"
+      - "{{ container_node_access_ssh_host }}"
+      - /usr/bin/true
+  delegate_to: localhost
+  become: false
+  changed_when: false
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode
+
+- name: Reload SSH after proof
+  ansible.builtin.systemd_service:
+    name: ssh.service
+    state: reloaded
+  when:
+    - (container_nodes_action | default('')) == 'deploy'
+    - not ansible_check_mode

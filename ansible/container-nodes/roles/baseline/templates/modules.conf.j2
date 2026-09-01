@@ -1,0 +1,4 @@
+# Managed by Ansible.
+{% for module in container_node_baseline_modules | sort %}
+{{ module }}
+{% endfor %}

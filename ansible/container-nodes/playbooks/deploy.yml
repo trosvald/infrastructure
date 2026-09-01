@@ -1,0 +1,51 @@
+---
+- name: Converge adopted container-node host state
+  hosts: container_nodes
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  force_handlers: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: deploy
+  tasks:
+    - name: Re-audit identity-critical state
+      ansible.builtin.include_role:
+        name: audit
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+    - name: Capture atomic non-secret rollback generation
+      ansible.builtin.include_tasks: ../tasks/capture-rollback.yml
+    - name: Converge non-secret host state transaction
+      block:
+        - name: Converge baseline
+          ansible.builtin.include_role:
+            name: baseline
+        - name: Converge access policy
+          ansible.builtin.include_role:
+            name: access
+        - name: Install network intent without activation
+          ansible.builtin.include_role:
+            name: network
+        - name: Converge Docker host state without daemon restart
+          ansible.builtin.include_role:
+            name: docker_host
+        - name: Converge installed storage state
+          ansible.builtin.include_role:
+            name: storage
+        - name: Converge repository firewall tables
+          ansible.builtin.include_role:
+            name: firewall
+        - name: Converge Doco controller and lifecycle gates
+          ansible.builtin.include_role:
+            name: doco_controller
+        - name: Converge resident runtime assets
+          ansible.builtin.include_role:
+            name: runtime_assets
+      rescue:
+        - name: Stop after role-local compensation
+          ansible.builtin.fail:
+            msg: >-
+              Deployment failed. The failing role's compensation completed or
+              reported its own failure; no later concern was changed.

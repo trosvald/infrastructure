@@ -1,0 +1,25 @@
+[Unit]
+Description=Doco-CD deployment controller for {{ inventory_hostname }}
+Wants=network-online.target
+After={{ (['network-online.target', 'docker.service'] + doco_controller_prerequisites) | unique | join(' ') }}
+Requires={{ (['docker.service'] + doco_controller_prerequisites) | unique | join(' ') }}
+Before={% for project in doco_controller_projects %}doco-project-{{ project.name }}.service{% if not loop.last %} {% endif %}{% endfor %}
+
+[Service]
+Type=simple
+WorkingDirectory={{ doco_controller_install_directory }}
+Environment=DOCO_API_SECRET_FILE={{ doco_controller_api_secret_file }}
+Environment=DOCO_API_URL={{ doco_controller_api_url }}
+ExecStartPre=/usr/local/libexec/monosense/doco-controller-preflight
+ExecStart=/usr/bin/docker compose -f {{ doco_controller_install_directory }}/docker-compose.app.yaml up --no-build --no-deps doco-cd
+ExecStartPost=/usr/local/libexec/monosense/doco-controller-ready
+ExecStop=/usr/bin/docker compose -f {{ doco_controller_install_directory }}/docker-compose.app.yaml stop --timeout 60 doco-cd
+Restart=no
+TimeoutStartSec=180
+TimeoutStopSec=90
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

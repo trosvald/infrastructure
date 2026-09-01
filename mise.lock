@@ -250,6 +250,21 @@ url = "https://github.com/mikefarah/yq/releases/download/v4.53.6/yq_darwin_arm64
 url_api = "https://api.github.com/repos/mikefarah/yq/releases/assets/522028033"
 provenance = "cosign"
 
+[[tools."aqua:minio/mc"]]
+version = "RELEASE.2025-08-13T08-35-41Z"
+backend = "aqua:minio/mc"
+specifiers = ["RELEASE.2025-08-13T08-35-41Z"]
+
+[tools."aqua:minio/mc"."platforms.linux-x64"]
+checksum = "sha256:01f866e9c5f9b87c2b09116fa5d7c06695b106242d829a8bb32990c00312e891"
+url = "https://dl.min.io/client/mc/release/linux-amd64/archive/mc.RELEASE.2025-08-13T08-35-41Z"
+provenance = "minisign"
+
+[tools."aqua:minio/mc"."platforms.macos-arm64"]
+checksum = "sha256:a877fd0c183409da9f20f9d6e1811987298bbbca1aa03428eebdffba79fb9445"
+url = "https://dl.min.io/client/mc/release/darwin-arm64/archive/mc.RELEASE.2025-08-13T08-35-41Z"
+provenance = "minisign"
+
 [[tools."aqua:mitsuhiko/minijinja"]]
 version = "2.24.0"
 backend = "aqua:mitsuhiko/minijinja"

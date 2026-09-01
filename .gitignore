@@ -13,6 +13,10 @@ __pycache__/
 ansible/junos/.ansible/
 ansible/junos/.build/
 
+# Container-node Ansible controller state and sanitized local evidence
+ansible/container-nodes/.ansible/
+ansible/container-nodes/.build/
+
 # Docker local secrets and mutable state
 docker/**/.env
 docker/**/secrets/

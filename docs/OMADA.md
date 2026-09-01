@@ -134,47 +134,38 @@ functional traffic; environment values are not evidence.
 
 ## External network lifecycle
 
-Compose declares `c0_omada_mgmt` as external. Doco-CD cannot create or remove it. The c0 host
-prerequisite is `docker/c0/.host/networks/omada-mgmt/ensure.sh`; it owns only the Docker network
-object and never changes host interfaces, routes, addresses, SRX, switches, or IPAM. Relocating the
-helper does not mutate or replace the live network.
+Compose declares `c0_omada_mgmt` as external. Doco-CD cannot create or remove it. Ansible owns the
+network object through `ansible/container-nodes/roles/network/files/ensure-c0-omada-network`; it
+does not make Doco an owner and does not change SRX, switches, or external IPAM.
 
-> **OPERATOR-ONLY — LIVE/DANGEROUS. DO NOT RUN FROM CI OR AS PART OF REPOSITORY VALIDATION.** Run on
-> c0 from the root of a reviewed checkout only after the IPAM and switch-policy prerequisites pass.
+Host review and convergence use only the fixed controller actions:
 
 ```sh
-sudo ./docker/c0/.host/networks/omada-mgmt/ensure.sh
-sudo docker network inspect c0_omada_mgmt
+just ansible container-nodes audit
+just ansible container-nodes check
+just ansible container-nodes diff
+just ansible container-nodes deploy
+just ansible container-nodes verify
 ```
 
-The ensure operation is deterministic:
+`audit`, `check`, and `diff` are permitted before adoption. `deploy` requires c0's independently
+reviewed host key, complete sanitized audit, matching adoption digest, and all network/IPAM
+prerequisites. It adopts the exact live network if present and creates it only after an exact
+not-found result; immutable drift blocks rather than deleting, repairing, or recreating the
+network. Routine deploy does not activate interfaces or restart Docker. If host interface
+activation is separately required, obtain confirmed console/OOB access and use only
+`just ansible container-nodes activate-network`, whose rollback watchdog and fresh-SSH checks are
+mandatory.
 
-1. If Docker is unavailable or inspection fails unexpectedly, it exits without mutation.
-2. If the network exists, every critical field must match: name; local scope; non-internal,
-   non-attachable, non-ingress, non-config-only state; IPv4 enabled and IPv6 disabled; `ipvlan`
-   driver in L2 bridge mode; parent `enp0s31f6`; read-only parent preflight requiring the interface
-   to be up at MTU `1500`; default IPAM with subnet `10.25.10.0/24`, gateway `10.25.10.1`, range
-   `10.25.10.26/32`, and auxiliary address `c0=10.25.10.20`; plus the exact host-prerequisite
-   ownership/purpose labels. Any mismatch fails closed; it never repairs or replaces the object.
-3. If absent, it creates exactly that object once and immediately re-inspects it. A mismatched or
-   failed post-create check is an error, not acceptance.
-4. Docker persists the object across reboot. After a host rebuild, run the same ensure step before
-   Doco-CD can discover the application.
+The reconciler verifies name, local scope, flags, IPv4/IPv6 state, IPvlan L2 mode, parent and MTU,
+and exact IPAM/labels, then immediately re-inspects any newly created object. Docker persists the
+object across reboot, and Ansible-installed resident gates ensure the prerequisite exists before
+Doco starts an already-created Omada application. Doco remains responsible for first application
+deployment and later reconciliation.
 
-Never hand-create a near-match. To remove the network, first stop Doco-CD polling, stop and detach
-Omada without deleting its volumes, then require zero endpoints:
-
-> **OPERATOR-ONLY — LIVE/DESTRUCTIVE NETWORK REMOVAL.**
-
-```sh
-sudo docker network inspect \
-    --format '{{len .Containers}}' c0_omada_mgmt
-# Continue only when the preceding command prints exactly 0.
-sudo docker network rm c0_omada_mgmt
-```
-
-Do not remove a network with attached endpoints and do not remove it merely to fix drift. Diagnose
-why live state differs from reviewed intent first.
+There is no routine network-removal action. Never hand-create a near-match or remove the network to
+repair drift. A separately reviewed rollback must stop Doco polling and the application, preserve
+its volumes, prove zero endpoints, and maintain a recovery path before any removal is introduced.
 
 ## Serialized first cutover
 

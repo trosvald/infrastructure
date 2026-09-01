@@ -1,7 +1,8 @@
 # c1 Secret Contract
 
 Date: 2026-08-26
-Status: design; storage and network applied and verified (1 TB split: `c1_librefs` at `/srv/librefs`,
+Historical predecessor status (not container-node Ansible adoption or convergence): storage and
+network were applied and verified (1 TB split: `c1_librefs` at `/srv/librefs`,
 `c1_apps` at `/srv/applications`, `defaults,noatime`; Docker/containerd `SOURCE` equals `/` source;
 `c1-svc-shim` and `c1-services-network.service` active; 512 GB excluded). OpenBao checkpoint
 completed: policy `doco-c1` installed; KV v2 `kv/docker/c1/librefs` v1 provisioned with the exact
@@ -21,17 +22,12 @@ the second rotation proved the prior pair absent from runtime files, inspect/env
 and libreFS journals, Doco volume/worktrees, Docker container metadata, containerd, and the
 export; the current pair existed only in the two approved `/run/secrets` files. Short-lived
 admin token revoked; local rotation/comparison material removed. No secrets, recipients, hashes,
-or token values are recorded here. PR8 (`599fff0e01301d77f5a2e204bac5df9a519f1823`) is merged
-and the reviewed helper `docker/c1/.host/openbao/rematerialize-librefs-credentials.sh` is
-installed `root:root` mode 0755 on c1. Mission live gates complete after the user-approved
-controlled c1 reboot (outage and SSH recovery observed; post-reboot verification passed on both
-XFS noatime mounts and assertion units, Docker, c1 SERVICES network/shim, exact management
-default route, bond/VLAN/LACP two 10 Gb members with zero link-failure counts, Doco/OpenBao
-token/controller canaries, healthy pinned `librefs-c1` at `.65` with no host ports and
-credential files UID/GID 1000 mode 0400; exact-value leakage and writable-root containment
-scans passed again after reboot). User explicitly skipped optional bond-member failover;
-record intentionally not exercised, not a blocker. Final status `OPERATIONAL_WITHOUT_DURABILITY`
-solely because no off-host libreFS backup target/restore exists on c1; no durability claim.
+or token values are recorded here. PR8 (`599fff0e01301d77f5a2e204bac5df9a519f1823`) is merged;
+its then-installed libreFS rematerialization helper is historical live evidence. The maintained
+source now lives under `ansible/container-nodes/roles/runtime_assets/`. Those mission gates
+completed after the user-approved controlled c1 reboot, but do not claim later container-node
+Ansible adoption or convergence. Final status was `OPERATIONAL_WITHOUT_DURABILITY` solely because
+no off-host libreFS backup target/restore existed on c1; no durability claim.
 
 OpenBao is authoritative for c1 application runtime secrets. Doco-CD resolves KV values only while
 it deploys a project. It is not a runtime sidecar and does not refresh an already-running
@@ -165,40 +161,38 @@ recreates Doco as described below.
 
 Token rotation:
 
-1. authenticate with the approved hidden administrator flow;
-2. create a replacement with the same policy and period;
-3. prove exact allowed and denied capabilities;
-4. atomically install and fsync the c1 token file;
-5. restart the systemd-owned `doco-cd-c1.service`; its foreground Compose command force-recreates
-   only the controller and preserves the named data volume, while the real `ExecStartPre` TTL gate
-   prevents an expired token from starting Doco;
-6. wait for container health, trigger an authenticated Doco poll, and require its tracked run to
-   succeed, proving the remounted token through the OpenBao-backed controller path;
-7. revoke the old token by accessor;
-8. retain only the accessor and sanitized audit evidence.
+1. use `just ansible container-nodes rotate-secrets` from the trusted controller;
+2. authenticate through the protected OpenBao/SOPS flow without plaintext argv, output, or facts;
+3. validate the replacement role, policy, period, renewability, record version, and exact
+   allowed/denied capabilities while retaining the old accessor;
+4. stage and fsync the replacement with exact directory/file ownership and mode;
+5. verify the exact consumer through the Ansible-installed lifecycle gate;
+6. commit one consumer at a time and prove the provider/application canary;
+7. revoke the old token by accessor only after success; otherwise restore the prior file and
+   consumer runtime state, verify it, and revoke the replacement;
+8. retain only accessors and sanitized audit evidence.
 
-The Doco token cannot create or rotate itself. An immortal broad token is prohibited.
+The Doco token cannot create or rotate itself. An immortal broad token is prohibited. Routine
+`deploy` never reads or changes protected material.
 
 ## Rotation matrix
 
 | Value | Trigger | Procedure | Runtime impact | Custody/backup |
 |---|---|---|---|---|
-| Doco API secret | suspected disclosure or scheduled operator rotation | generate at least 256 CSPRNG bits, atomic root-only install, restart the systemd-owned controller, require controller poll canary | controller recreation only | regenerate on loss; no backup |
-| Doco OpenBao token | before period/lifecycle policy change, suspected disclosure, scheduled rotation, or expiry | replacement/test/atomic install/systemd restart/provider-canary/revoke-by-accessor sequence above | controller recreation; apps continue | accessor recorded; token value never recorded or backed up |
-| libreFS root user/password | suspected disclosure, administrator rotation, or initial bootstrap | stop the systemd service, write a new KV version with CAS, then run the fail-closed rematerialize helper (`docker/c1/.host/openbao/rematerialize-librefs-credentials.sh`) which removes only the stateless container, invokes an isolated local-only Git custom target through Doco to recreate with the new pair, normalizes provenance to remote `main`, restarts/checks the systemd gate, and cleans both the temporary source tree and the cache | libreFS container recreation only; `/data` and named volumes preserved | OpenBao KV history and approved encrypted OpenBao backup |
-| c1 edge record | issuance credential, MaxMind credential, CrowdSec key, or ingestion token rotation | write with CAS through `monosense-infra`, run the root-owned c1 application-secret materializer, then recreate only the edge project and verify old-value absence | affected edge helper or security service recreation; HAProxy remains on its prior valid configuration where possible | OpenBao KV history and encrypted OpenBao backup |
-| Forgejo record | database/application/bootstrap/SMTP/Kopia/libreFS credential rotation | write with CAS through `monosense-infra`, drain Forgejo, run the root-owned c1 application-secret materializer, recreate the exact project, and verify health plus old-value absence | Forgejo/PostgreSQL or backup interruption according to the changed key | OpenBao KV history and encrypted OpenBao backup; same-host Kopia is not secret custody |
-| c0 monitoring record | Telegram, ingestion, or backup heartbeat token rotation | write with CAS through `monosense-infra`, rematerialize c0 monitoring and the c1 heartbeat file, verify authenticated ingest, heartbeat, and alert delivery | Gatus/Vector recreation and c1 backup timer | OpenBao KV history and encrypted OpenBao backup |
-| wildcard TLS record and service tokens | certificate renewal, short validity, key compromise, token disclosure, or role-policy change | publisher validates and writes all five fields atomically; host reader validates a new local generation before atomic activation; token replacement is capability-tested before old accessor revocation | consumer reload only after validation; failed fetch/install retains prior generation | OpenBao KV history and encrypted OpenBao backup |
+| Doco API secret | suspected disclosure or scheduled operator rotation | `rotate-secrets`: generate at least 256 CSPRNG bits, atomically stage, verify/restart only the controller, and require its poll canary before commit | controller recreation only | regenerate on loss; no backup |
+| Doco OpenBao token | before period/lifecycle policy change, suspected disclosure, scheduled rotation, or expiry | `rotate-secrets`: replacement capability/period tests, protected install, provider canary, compensation, then old-accessor revocation | controller recreation; apps continue | accessor recorded; token value never recorded or backed up |
+| libreFS root user/password | suspected disclosure, administrator rotation, or initial bootstrap | operator writes the application KV version through the approved Bao workflow, then `rotate-secrets` validates it and invokes the resident fail-closed rematerializer; only the stateless container is replaced through Doco and `/data` is preserved | libreFS container recreation only | OpenBao KV history and approved encrypted OpenBao backup |
+| c1 edge record | issuance credential, MaxMind credential, CrowdSec key, or ingestion token rotation | operator updates KV through the approved Bao workflow; `rotate-secrets` validates schema/version and shared values, atomically materializes files, verifies the exact consumer, and compensates failure | affected edge helper or security service; Doco owns any application recreation | OpenBao KV history and encrypted OpenBao backup |
+| Forgejo record | database/application/SMTP/Kopia/libreFS credential rotation | operator updates KV through the approved Bao workflow; `rotate-secrets` drains through the lifecycle gate, materializes and verifies the exact consumer, and compensates before old credential revocation | Forgejo/PostgreSQL or backup interruption according to the changed key; Doco owns recreation | OpenBao KV history and encrypted OpenBao backup; same-host Kopia is not secret custody |
+| c0 monitoring record | Telegram, ingestion, or backup heartbeat token rotation | operator updates KV through the approved Bao workflow; `rotate-secrets` materializes c0 monitoring and the c1 heartbeat, then verifies authenticated ingest, heartbeat, and alert delivery | Gatus/Vector and c1 backup timer as required; Doco owns recreation | OpenBao KV history and encrypted OpenBao backup |
+| wildcard TLS record and service tokens | certificate renewal, short validity, key compromise, token disclosure, or role-policy change | `provision-secrets` or `rotate-secrets` validates publisher/reader capabilities and fenced certificate fields; resident readers validate a generation before atomic activation | consumer reload only after validation; failure retains the prior generation | OpenBao KV history and encrypted OpenBao backup |
 
-Doco 0.111.0 does not receive the c1 edge or Forgejo values. Before the controller starts, the
-root-owned `/usr/local/sbin/materialize-c1-app-secrets` helper uses the protected c1 OpenBao token
-to read exactly those two records, validates their complete key sets, renders repository-owned
-templates, and atomically installs mode-0400 files below the applications mount. Compose contains
-only `create_host_path: false` bind paths. Rotation therefore requires rerunning the materializer
-and recreating only the affected project; rollback restores the prior KV version with CAS, reruns
-the materializer, and recreates that project. The existing libreFS pair remains on its separate
-fail-closed Doco rematerialization path because that already-proven service predates this contract.
+Doco 0.111.0 does not receive the c1 edge or Forgejo values. The Ansible-owned
+`roles/runtime_assets/` transactions validate the exact existing application records and
+atomically install mode-0400 files below the applications mount; they do not create or update
+application KV values. Compose contains only `create_host_path: false` bind paths. Doco remains the
+sole owner of application deployment and recreation. The existing libreFS pair retains its
+separate proven rematerialization transaction because that service predates this contract.
 
 ## Leakage gates
 

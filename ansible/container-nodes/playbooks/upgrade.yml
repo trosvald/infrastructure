@@ -1,0 +1,31 @@
+---
+- name: Apply reviewed container-node package upgrades
+  hosts: container_nodes
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: upgrade
+  tasks:
+    - name: Collect pre-upgrade audit
+      ansible.builtin.include_role: {name: audit}
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+    - name: Upgrade with role-local compensation
+      block:
+        - name: Invoke reviewed baseline upgrade boundary
+          ansible.builtin.include_role:
+            name: baseline
+            tasks_from: upgrade.yml
+        - name: Apply exact reviewed Docker package versions
+          ansible.builtin.include_role:
+            name: docker_host
+        - name: Collect post-upgrade operational evidence
+          ansible.builtin.include_role:
+            name: verification
+      rescue:
+        - name: Stop and report service impact
+          ansible.builtin.fail:
+            msg: Upgrade failed; inspect the baseline compensation and service-impact output

@@ -20,9 +20,9 @@ validate-c0: validate-openbao validate-powerdns validate-blocky validate-omada-c
     from pathlib import Path
 
     recognized = {"compose.yaml", "compose.yml", "docker-compose.yml", "docker-compose.yaml"}
-    for boundary in (Path("docker/c0/.doco-cd"), Path("docker/c0/.host")):
-        offenders = sorted(path for path in boundary.rglob("*") if path.name in recognized)
-        assert not offenders, f"Doco-CD can auto-discover forbidden files: {offenders}"
+    boundary = Path("docker/c0/.doco-cd")
+    offenders = sorted(path for path in boundary.rglob("*") if path.name in recognized)
+    assert not offenders, f"Doco-CD can auto-discover forbidden files: {offenders}"
     PY
 
 [doc('Validate the c1 host-scoped Doco-CD and libreFS configuration')]
@@ -117,18 +117,14 @@ validate-monitoring:
     cd "{{ source_directory() }}/.."
     yamllint docker/c0/monitoring/.doco-cd.yaml docker/c0/monitoring/compose.yml
     yq -e '.name == "monitoring-c0"' docker/c0/monitoring/.doco-cd.yaml >/dev/null
-    bash -n docker/c0/monitoring/tests/validate.sh \
-        docker/c0/.host/openbao/update-wildcard-certificate.sh \
-        docker/c0/.host/openbao/install-wildcard-assets.sh \
-        docker/c0/.host/openbao/materialize-monitoring-secrets.sh
+    bash -n docker/c0/monitoring/tests/validate.sh
     docker/c0/monitoring/tests/validate.sh
     test "$(sops filestatus docker/c0/monitoring/encrypted/vector-srx-ca.yaml | jq -r '.encrypted')" = true
     openssl verify -CAfile ansible/junos/files/vector-srx-root-ca.pem ansible/junos/files/vector-srx-root-ca.pem >/dev/null
     openssl x509 -in ansible/junos/files/vector-srx-root-ca.pem -noout -checkend 283824000
     bash -n scripts/rotate-vector-srx-certificate.sh
     python3 -m py_compile ansible/junos/scripts/bootstrap_vector_ca.py
-    python3 -m py_compile docker/scripts/install_certificate.py \
-        docker/scripts/fetch_wildcard_certificate.py
+    python3 -m py_compile docker/scripts/install_certificate.py
 
 [private]
 validate-blocky:
@@ -225,7 +221,7 @@ validate-blocky:
         and .services.blocky.security_opt == ["no-new-privileges:true"]
         and .services.blocky.sysctls == {"net.ipv4.ip_unprivileged_port_start": "53"}
         and ((.services.blocky.mem_swappiness // 0) == 0)
-        and .services.blocky.restart == "unless-stopped"
+        and .services.blocky.restart == "no"
         and .services.blocky.stop_grace_period == "15s"
         and .services.blocky.cpus == 0.5
         and (.services.blocky.mem_limit | tonumber) == 268435456
@@ -266,8 +262,6 @@ validate-omada-controller:
     yamllint docker/c0/omada-controller/.doco-cd.yaml docker/c0/omada-controller/compose.yml
     yq -e '.name == "omada-controller-c0" and has("force_recreate") == false' docker/c0/omada-controller/.doco-cd.yaml >/dev/null
     yq -e '.name == "omada-controller-c0" and .services["omada-controller"].mem_swappiness == 0' docker/c0/omada-controller/compose.yml >/dev/null
-    bash -n docker/c0/.host/networks/omada-mgmt/ensure.sh docker/c0/.host/networks/omada-mgmt/tests/ensure.sh
-    docker/c0/.host/networks/omada-mgmt/tests/ensure.sh
     rendered="$(mktemp)"
     trap 'rm -f "$rendered"' EXIT
     docker compose -f docker/c0/omada-controller/compose.yml config --format json >"$rendered"
@@ -288,7 +282,7 @@ validate-omada-controller:
         and .services["volume-init"].cap_drop == ["ALL"]
         and .services["volume-init"].cap_add == ["CHOWN"]
         and .services["volume-init"].security_opt == ["no-new-privileges:true"]
-        and (.services["volume-init"].restart // "") == ""
+        and .services["volume-init"].restart == "no"
         and ((.services["volume-init"].networks // {}) | length) == 0
         and (.services["volume-init"].volumes | length) == 2
         and ([.services["volume-init"].volumes[].source] | sort) == ["omada-controller-data", "omada-controller-logs"]
@@ -299,7 +293,7 @@ validate-omada-controller:
         and .services["omada-controller"].cap_drop == ["ALL"]
         and (.services["omada-controller"].cap_add // []) == []
         and .services["omada-controller"].security_opt == ["no-new-privileges:true"]
-        and .services["omada-controller"].restart == "unless-stopped"
+        and .services["omada-controller"].restart == "no"
         and .services["omada-controller"].stop_grace_period == "1m0s"
         and .services["omada-controller"].depends_on["volume-init"].condition == "service_completed_successfully"
         and .services["omada-controller"].environment == {

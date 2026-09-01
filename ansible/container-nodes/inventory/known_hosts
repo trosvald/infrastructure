@@ -1,0 +1,3 @@
+# Independently verified on 2026-08-30 before retrieval over the existing operator SSH path.
+c0,10.25.10.20 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEu29QjyE4rgyG1bdgQvbiDwI9CpQOaXhZxfbYVQAjsc
+c1,10.25.10.101 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN8A+RZMYUpSoZjRTstJ1eanrg33YDyGYmg+tKY5ZFb7

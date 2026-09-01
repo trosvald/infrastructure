@@ -1,0 +1,5 @@
+# Managed by Ansible. Preserves the reviewed Debian 13 global policy.
+weekly
+rotate {{ container_node_baseline_logrotate_rotate }}
+create
+include /etc/logrotate.d

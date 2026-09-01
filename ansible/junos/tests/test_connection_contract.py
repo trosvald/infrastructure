@@ -321,6 +321,7 @@ class NetconfContractTests(unittest.TestCase):
         self.assertIn("hostkey_verify=True", installer)
         self.assertIn("VECTOR-SRX-ROOT", installer)
         self.assertIn('"playbooks/syslog-verify.yml" ) ]]; then', runtime)
+        self.assertIn("credential_record=admin", runtime)
         self.assertIn("pki-bootstrap", dispatch)
 
     def test_operational_evidence_is_concrete(self):

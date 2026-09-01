@@ -1,0 +1,4 @@
+search {{ container_node_baseline_search_domains | join(' ') }}
+{% for resolver in container_node_baseline_resolvers %}
+nameserver {{ resolver }}
+{% endfor %}

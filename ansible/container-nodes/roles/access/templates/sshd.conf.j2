@@ -1,0 +1,9 @@
+# Managed by Ansible. Container-node access is key-only.
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PermitEmptyPasswords no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+AllowUsers {{ container_node_access_user }}

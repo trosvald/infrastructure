@@ -1,0 +1,43 @@
+---
+container_node_network_helpers:
+  c0:
+    - assert-c0-services-network
+    - assert-c0-services-shim
+    - ensure-c0-omada-network
+  c1:
+    - ensure-c1-services-shim
+    - ensure-c1-services-network
+    - ensure-c1-edge-networks
+container_node_network_units:
+  c0:
+    - name: c0-services-prerequisite.service
+      description: Assert exact active c0 SERVICES network and host shim
+      requires: [docker.service, network-online.target]
+      after: [docker.service, network-online.target]
+      before: [doco-cd-c0.service]
+      commands: [assert-c0-services-shim, assert-c0-services-network]
+    - name: c0-omada-network.service
+      description: Ensure exact c0 Omada management network
+      requires: [docker.service, network-online.target]
+      after: [docker.service, network-online.target]
+      before: [doco-cd-c0.service]
+      commands: [ensure-c0-omada-network]
+  c1:
+    - name: c1-services-shim.service
+      description: Ensure exact c1 SERVICES host shim
+      requires: [network-online.target, sys-subsystem-net-devices-bond0.2513.device]
+      after: [network-online.target, sys-subsystem-net-devices-bond0.2513.device]
+      before: [doco-cd-c1.service]
+      commands: [ensure-c1-services-shim]
+    - name: c1-services-network.service
+      description: Ensure exact c1 SERVICES Docker IPvlan network
+      requires: [docker.service, c1-services-shim.service]
+      after: [docker.service, c1-services-shim.service, network-online.target]
+      before: [doco-cd-c1.service]
+      commands: [ensure-c1-services-network]
+    - name: c1-edge-networks.service
+      description: Ensure exact c1 EDGE and Forgejo frontend networks
+      requires: [docker.service, network-online.target, sys-subsystem-net-devices-bond0.2515.device]
+      after: [docker.service, network-online.target, sys-subsystem-net-devices-bond0.2515.device]
+      before: [doco-cd-c1.service]
+      commands: [ensure-c1-edge-networks]

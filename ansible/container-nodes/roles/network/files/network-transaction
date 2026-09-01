@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+STATE_ROOT=/var/lib/monosense-ansible/network
+fail(){ printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+[[ $(id -u) == 0 ]] || fail 'network transaction requires root'
+mode="${1:-}"; generation="${2:-}"; shift 2 || true
+[[ "$generation" =~ ^[a-f0-9]{64}$ ]] || fail 'generation must be a SHA-256 digest'
+dir="$STATE_ROOT/$generation"; [[ -d "$dir" && ! -L "$dir" ]] || fail 'missing rollback generation'
+cycle(){ local i; local -a ordered=("$@"); for ((i=${#ordered[@]}-1; i>=0; i--)); do /sbin/ifdown --force "${ordered[$i]}"; done; for i in "${ordered[@]}"; do /sbin/ifup --force "$i"; done; }
+case "$mode" in
+  activate)
+    (( $# > 0 )) || fail 'no activation interfaces supplied'
+    cycle "$@"
+    ;;
+  rollback)
+    [[ -f "$dir/interfaces.before" && -f "$dir/interfaces.before.sha256" ]] || fail 'incomplete rollback generation'
+    (cd "$dir" && /usr/bin/sha256sum --check --strict interfaces.before.sha256)
+    /usr/bin/install -o root -g root -m 0644 "$dir/interfaces.before" /etc/network/interfaces
+    if [[ -f "$dir/c1-edge.before" ]]; then
+      [[ -f "$dir/c1-edge.before.sha256" ]] || fail 'missing c1 EDGE rollback checksum'
+      (cd "$dir" && /usr/bin/sha256sum --check --strict c1-edge.before.sha256)
+      /usr/bin/install -o root -g root -m 0644 "$dir/c1-edge.before" /etc/network/interfaces.d/c1-edge
+    elif [[ -f "$dir/c1-edge.absent" ]]; then
+      /usr/bin/rm -f /etc/network/interfaces.d/c1-edge
+    fi
+    mapfile -t interfaces <"$dir/interfaces.list"
+    (( ${#interfaces[@]} > 0 )) || fail 'empty rollback interface list'
+    cycle "${interfaces[@]}"
+    ;;
+  *) fail 'usage: network-transaction activate|rollback GENERATION INTERFACE...' ;;
+esac

@@ -1,0 +1,198 @@
+---
+- name: Validate audit schema contract
+  ansible.builtin.assert:
+    that:
+      - container_node_audit_schema_version_expected == 1
+      - inventory_hostname in ['c0', 'c1']
+    quiet: true
+
+- name: Collect minimum platform facts for the canonical audit
+  ansible.builtin.setup:
+    gather_subset:
+      - min
+  check_mode: false
+
+- name: Collect installed package facts
+  ansible.builtin.package_facts:
+    manager: apt
+  check_mode: false
+
+- name: Collect service facts
+  ansible.builtin.service_facts:
+  check_mode: false
+
+- name: Collect account database
+  ansible.builtin.getent:
+    database: passwd
+  check_mode: false
+
+- name: Check identity-bearing files without exposing their contents
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop:
+    - /etc/machine-id
+    - /etc/ssh/ssh_host_ed25519_key.pub
+    - /etc/ssh/ssh_host_ecdsa_key.pub
+    - /etc/ssh/ssh_host_rsa_key.pub
+  register: container_node_audit_identity_stats
+  no_log: true
+
+- name: Check managed files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    checksum_algorithm: sha256
+  loop: "{{ container_node_audit_files }}"
+  register: container_node_audit_managed_stats
+
+- name: Read active swap inventory
+  ansible.builtin.command:
+    argv: [/usr/bin/tail, -n, +2, /proc/swaps]
+  register: container_node_audit_swaps_raw
+  changed_when: false
+  check_mode: false
+  no_log: true
+
+- name: Read sanitized firmware fields
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - /sys/class/dmi/id/sys_vendor
+    - /sys/class/dmi/id/product_name
+    - /sys/class/dmi/id/bios_vendor
+    - /sys/class/dmi/id/bios_version
+    - /sys/class/dmi/id/bios_date
+    - /proc/sys/kernel/tainted
+  register: container_node_audit_firmware_raw
+  failed_when: false
+  check_mode: false
+
+- name: Read configured resolver
+  ansible.builtin.slurp:
+    src: /etc/resolv.conf
+  register: container_node_audit_resolver_raw
+  check_mode: false
+
+- name: Read approved login shells
+  ansible.builtin.slurp:
+    src: /etc/shells
+  register: container_node_audit_shells_raw
+  check_mode: false
+
+- name: Initialize deterministic audit maps
+  ansible.builtin.set_fact:
+    container_node_audit_package_versions: {}
+    container_node_audit_service_states: {}
+    container_node_audit_file_checksums: {}
+
+- name: Record reviewed package versions
+  ansible.builtin.set_fact:
+    container_node_audit_package_versions: >-
+      {{ container_node_audit_package_versions | combine({item:
+         ((ansible_facts.packages[item] | map(attribute='version') | list | sort)
+          if item in ansible_facts.packages else [])}) }}
+  loop: "{{ container_node_audit_packages | sort }}"
+
+- name: Record reviewed service states
+  ansible.builtin.set_fact:
+    container_node_audit_service_states: >-
+      {{ container_node_audit_service_states | combine({item:
+         ({'status': ansible_facts.services[item].status,
+           'state': ansible_facts.services[item].state}
+          if item in ansible_facts.services else {'status': 'absent', 'state': 'absent'})}) }}
+  loop: "{{ container_node_audit_services | sort }}"
+
+- name: Record managed file checksums
+  ansible.builtin.set_fact:
+    container_node_audit_file_checksums: >-
+      {{ container_node_audit_file_checksums | combine({item.item:
+         (item.stat.checksum | default('absent'))}) }}
+  loop: "{{ container_node_audit_managed_stats.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Assemble sanitized audit input
+  ansible.builtin.set_fact:
+    container_node_audit_artifact_input:
+      schema_version: 1
+      node: "{{ inventory_hostname }}"
+      platform:
+        distribution: "{{ ansible_facts.distribution }}"
+        release: "{{ ansible_facts.distribution_release }}"
+        version: "{{ ansible_facts.distribution_version }}"
+        architecture: "{{ ansible_facts.architecture }}"
+        kernel: "{{ ansible_facts.kernel }}"
+      identity:
+        machine_id: "{{ (container_node_audit_identity_stats.results[0].stat.checksum | default('absent')) }}"
+        host_public_key: >-
+          {{ container_node_audit_identity_stats.results
+             | map(attribute='stat') | map(attribute='checksum', default='absent')
+             | list | sort | join(':') | hash('sha256') }}
+      login_users: >-
+        {{ ansible_facts.getent_passwd | dict2items
+           | selectattr('value.5', 'in', (container_node_audit_shells_raw.content | b64decode).splitlines())
+           | map(attribute='key') | list | sort }}
+      packages: "{{ container_node_audit_package_versions }}"
+      services: "{{ container_node_audit_service_states }}"
+      managed_file_checksums: "{{ container_node_audit_file_checksums }}"
+      resolver_nameservers: >-
+        {{ (container_node_audit_resolver_raw.content | b64decode).splitlines()
+           | select('match', '^nameserver[ ]+') | map('regex_replace', '^nameserver[ ]+', '')
+           | list | sort }}
+      swap:
+        active_count: "{{ container_node_audit_swaps_raw.stdout_lines | length }}"
+        identity_sha256: >-
+          {{ container_node_audit_swaps_raw.stdout_lines
+             | map('regex_replace', '^(\\S+\\s+\\S+\\s+\\S+)\\s+\\S+(\\s+\\S+)$', '\\1\\2')
+             | list | sort | join('\n') | hash('sha256') }}
+      firmware:
+        system_vendor: "{{ (container_node_audit_firmware_raw.results[0].content | default('') | b64decode).strip() }}"
+        product_name: "{{ (container_node_audit_firmware_raw.results[1].content | default('') | b64decode).strip() }}"
+        bios_vendor: "{{ (container_node_audit_firmware_raw.results[2].content | default('') | b64decode).strip() }}"
+        bios_version: "{{ (container_node_audit_firmware_raw.results[3].content | default('') | b64decode).strip() }}"
+        bios_date: "{{ (container_node_audit_firmware_raw.results[4].content | default('') | b64decode).strip() }}"
+        health:
+          kernel_taint: "{{ (container_node_audit_firmware_raw.results[5].content | default('') | b64decode).strip() }}"
+          firmware_mutation: prohibited
+
+- name: Separate reportable observations from identity-critical adoption input
+  ansible.builtin.set_fact:
+    container_node_audit_live_facts: "{{ container_node_audit_artifact_input }}"
+    container_node_audit_artifact_input:
+      schema_version: 1
+      node: "{{ inventory_hostname }}"
+      platform:
+        distribution: "{{ ansible_facts.distribution }}"
+        release: "{{ ansible_facts.distribution_release }}"
+        major_version: "{{ ansible_facts.distribution_major_version }}"
+        architecture: "{{ ansible_facts.architecture }}"
+      identity: "{{ container_node_audit_artifact_input.identity }}"
+      login_users: "{{ container_node_audit_artifact_input.login_users }}"
+      swap:
+        active_count: "{{ container_node_audit_artifact_input.swap.active_count }}"
+        identity_sha256: "{{ container_node_audit_artifact_input.swap.identity_sha256 }}"
+      firmware:
+        system_vendor: "{{ container_node_audit_artifact_input.firmware.system_vendor }}"
+        product_name: "{{ container_node_audit_artifact_input.firmware.product_name }}"
+        bios_vendor: "{{ container_node_audit_artifact_input.firmware.bios_vendor }}"
+        bios_version: "{{ container_node_audit_artifact_input.firmware.bios_version }}"
+        bios_date: "{{ container_node_audit_artifact_input.firmware.bios_date }}"
+
+- name: Canonicalize sanitized audit input on controller
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ role_path }}/files/canonicalize_audit.py"
+    stdin: "{{ container_node_audit_artifact_input | to_json }}"
+    stdin_add_newline: true
+  delegate_to: localhost
+  become: false
+  register: container_node_audit_canonicalized
+  changed_when: false
+  check_mode: false
+
+- name: Publish canonical artifact and adoption digest
+  ansible.builtin.set_fact:
+    container_node_audit_canonical_json: "{{ container_node_audit_canonicalized.stdout ~ '\n' }}"
+    container_node_audit_sha256: "{{ (container_node_audit_canonicalized.stdout ~ '\n') | hash('sha256') }}"
+    container_node_audit_schema_version: 1

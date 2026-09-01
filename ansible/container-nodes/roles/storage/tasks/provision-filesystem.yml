@@ -1,0 +1,179 @@
+---
+- name: Bind partition path
+  ansible.builtin.set_fact:
+    provision_partition_path: >-
+      {{ [provision_storage_realpath.stdout,
+          ('p' if provision_storage_realpath.stdout is regex('[0-9]$') else ''),
+          provision_filesystem.number] | join }}
+
+- name: Require partition block device
+  ansible.builtin.stat:
+    path: "{{ provision_partition_path }}"
+    follow: true
+  register: provision_partition_stat
+  check_mode: false
+
+- name: Refuse missing partition
+  ansible.builtin.assert:
+    that:
+      - provision_partition_stat.stat.exists
+      - provision_partition_stat.stat.isblk
+    fail_msg: >-
+      Partition {{ provision_partition_path }} did not appear after the reviewed GPT transaction.
+
+- name: Inspect pre-format partition signatures
+  ansible.builtin.command:
+    argv:
+      - wipefs
+      - --no-act
+      - --json
+      - --
+      - "{{ provision_partition_path }}"
+  register: provision_partition_signatures
+  changed_when: false
+  check_mode: false
+
+- name: Refuse formatting non-pristine partition
+  ansible.builtin.assert:
+    that: >-
+      (provision_partition_signatures.stdout | from_json).signatures
+      | default([], true) | length == 0
+    fail_msg: >-
+      Partition {{ provision_partition_path }} gained a signature before formatting.
+
+- name: Refuse mounted or open partition
+  ansible.builtin.command:
+    argv:
+      - fuser
+      - -s
+      - "{{ provision_partition_path }}"
+  register: provision_partition_fuser
+  changed_when: false
+  failed_when: provision_partition_fuser.rc not in [0, 1]
+  check_mode: false
+
+- name: Require unused partition
+  ansible.builtin.assert:
+    that: provision_partition_fuser.rc == 1
+    fail_msg: Partition {{ provision_partition_path }} is in use.
+
+- name: Generate transaction-bound filesystem UUID
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - import uuid; print(uuid.uuid4())
+  register: provision_filesystem_uuid_command
+  changed_when: false
+  delegate_to: localhost
+  become: false
+
+- name: Persist pending filesystem identity before formatting
+  ansible.builtin.copy:
+    content: "{{ provision_filesystem_uuid_command.stdout }}\n"
+    dest: "{{ container_nodes_storage.state_dir }}/{{ provision_filesystem.state_label }}.pending"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Format reviewed XFS partition
+  ansible.builtin.command:
+    argv:
+      - mkfs.xfs
+      - -f
+      - -m
+      - >-
+        crc=1,reflink=1,uuid={{ provision_filesystem_uuid_command.stdout }}
+      - -n
+      - ftype=1
+      - -L
+      - "{{ provision_filesystem.fs_label }}"
+      - "{{ provision_partition_path }}"
+  changed_when: true
+
+- name: Verify new filesystem identity
+  ansible.builtin.command:
+    argv:
+      - blkid
+      - -o
+      - export
+      - "{{ provision_partition_path }}"
+  register: provision_filesystem_blkid
+  changed_when: false
+
+- name: Refuse post-format identity mismatch — filesystem type
+  ansible.builtin.assert:
+    that: provision_filesystem_blkid.stdout is regex('(?m)^TYPE=xfs$')
+    fail_msg: New filesystem identity differs from the pending transaction.
+
+- name: Refuse post-format identity mismatch — filesystem label
+  ansible.builtin.assert:
+    that: >-
+      provision_filesystem_blkid.stdout
+      is regex('(?m)^LABEL=' ~ provision_filesystem.fs_label ~ '$')
+    fail_msg: New filesystem identity differs from the pending transaction.
+
+- name: Refuse post-format identity mismatch — filesystem UUID
+  ansible.builtin.assert:
+    that: >-
+      provision_filesystem_blkid.stdout
+      is regex('(?m)^UUID=' ~ provision_filesystem_uuid_command.stdout ~ '$')
+    fail_msg: New filesystem identity differs from the pending transaction.
+
+- name: Create mountpoint
+  ansible.builtin.file:
+    path: "{{ provision_filesystem.mount }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Commit exact fstab entry and mount filesystem
+  ansible.posix.mount:
+    path: "{{ provision_filesystem.mount }}"
+    src: "UUID={{ provision_filesystem_uuid_command.stdout }}"
+    fstype: xfs
+    opts: "defaults,{{ provision_filesystem.options }}"
+    dump: '0'
+    passno: '2'
+    state: mounted
+
+- name: Fsync mounted filesystem root
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - >-
+        import os, sys;
+        fd = os.open(sys.argv[1], os.O_RDONLY | os.O_DIRECTORY);
+        os.fsync(fd); os.close(fd)
+      - "{{ provision_filesystem.mount }}"
+  changed_when: false
+
+- name: Commit root-only filesystem UUID sentinel
+  ansible.builtin.copy:
+    content: "{{ provision_filesystem_uuid_command.stdout }}\n"
+    dest: "{{ container_nodes_storage.state_dir }}/{{ provision_filesystem.state_label }}.uuid"
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Fsync committed filesystem identity
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - >-
+        import os, sys;
+        fd = os.open(sys.argv[1], os.O_RDONLY);
+        os.fsync(fd); os.close(fd);
+        fd = os.open(sys.argv[2], os.O_RDONLY | os.O_DIRECTORY);
+        os.fsync(fd); os.close(fd)
+      - "{{ container_nodes_storage.state_dir }}/{{ provision_filesystem.state_label }}.uuid"
+      - "{{ container_nodes_storage.state_dir }}"
+  changed_when: false
+
+- name: Remove pending filesystem sentinel
+  ansible.builtin.file:
+    path: "{{ container_nodes_storage.state_dir }}/{{ provision_filesystem.state_label }}.pending"
+    state: absent

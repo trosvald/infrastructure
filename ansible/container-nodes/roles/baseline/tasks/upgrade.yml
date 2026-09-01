@@ -1,0 +1,20 @@
+---
+- name: Require an exact reviewed upgrade set
+  ansible.builtin.assert:
+    that:
+      - container_node_baseline_reviewed_upgrade_packages is defined
+      - container_node_baseline_reviewed_upgrade_packages is mapping
+      - container_node_baseline_reviewed_upgrade_packages | length > 0
+      - (container_nodes_action | default('')) == 'upgrade'
+    fail_msg: Upgrade requires a nonempty reviewed package-to-version map and the fixed upgrade action.
+
+- name: Install only exact reviewed upgrade versions
+  ansible.builtin.apt:
+    name: "{{ item.key }}={{ item.value }}"
+    state: present
+    allow_downgrade: false
+    update_cache: true
+    cache_valid_time: 3600
+  loop: "{{ container_node_baseline_reviewed_upgrade_packages | dict2items | sort(attribute='key') }}"
+  loop_control:
+    label: "{{ item.key }}={{ item.value }}"

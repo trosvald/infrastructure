@@ -1,0 +1,36 @@
+---
+- name: Detect container-node drift without mutation
+  hosts: container_nodes
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: drift
+  tasks:
+    - name: Collect current sanitized audit
+      ansible.builtin.include_role:
+        name: audit
+    - name: Reject critical identity drift on adopted hosts
+      ansible.builtin.assert:
+        that:
+          - container_nodes_adoption[inventory_hostname].audit_sha256 == container_node_audit_sha256
+        fail_msg: Critical identity drift differs from the adopted sanitized audit digest
+      when: container_nodes_adoption[inventory_hostname].adopted | bool
+    - name: Compare baseline state
+      ansible.builtin.include_role: {name: baseline}
+    - name: Compare access state
+      ansible.builtin.include_role: {name: access}
+    - name: Compare network state
+      ansible.builtin.include_role: {name: network}
+    - name: Compare Docker host state
+      ansible.builtin.include_role: {name: docker_host}
+    - name: Compare storage state
+      ansible.builtin.include_role: {name: storage}
+    - name: Compare firewall state
+      ansible.builtin.include_role: {name: firewall}
+    - name: Compare Doco ownership
+      ansible.builtin.include_role: {name: doco_controller}
+    - name: Compare runtime assets
+      ansible.builtin.include_role: {name: runtime_assets}
