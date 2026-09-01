@@ -12,10 +12,10 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
     -subj /CN=git.monosense.io \
-    -addext 'subjectAltName=DNS:git.monosense.io,DNS:edge-test.monosense.io' \
+    -addext 'subjectAltName=DNS:git.monosense.io' \
     -keyout "$tmp/key.pem" -out "$tmp/cert.pem" >/dev/null 2>&1
 cat "$tmp/cert.pem" "$tmp/key.pem" >"$tmp/combined.pem"
-printf '%s\n' '/run/tls/combined.pem git.monosense.io edge-test.monosense.io' >"$tmp/crt-list.txt"
+printf '%s\n' '/run/tls/combined.pem git.monosense.io' >"$tmp/crt-list.txt"
 chmod 0644 "$tmp/combined.pem" "$tmp/crt-list.txt"
 docker run --rm --platform linux/amd64 --network none \
     --read-only --cap-drop ALL --security-opt no-new-privileges:true \

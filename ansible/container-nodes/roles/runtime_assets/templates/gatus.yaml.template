@@ -54,11 +54,6 @@ endpoints:
     url: tcp://10.25.15.10:80
     conditions: ["[CONNECTED] == true"]
     ui: *private
-  - name: Edge HTTPS
-    group: Edge
-    url: https://edge-test.monosense.io/
-    conditions: ["[STATUS] == 200", "[CERTIFICATE_EXPIRATION] > 168h"]
-    ui: *private
   - name: Edge SSH
     group: Edge
     url: tcp://10.25.15.10:22
@@ -66,7 +61,7 @@ endpoints:
     ui: *private
   - name: Edge security
     group: Edge
-    url: https://edge-test.monosense.io/.env
+    url: https://git.monosense.io/.env
     conditions: ["[STATUS] == 403"]
     ui: *private
   - name: Forgejo web

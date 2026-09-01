@@ -10,13 +10,12 @@ jq -e '
   and (.services | with_entries(.value = .value.image)) == {
     "certbot":"docker.io/certbot/dns-cloudflare:v5.7.0@sha256:ed5e95feb4d64690df77b4628876f3b72ae856d6e0acd51927a2fd45baf1ccd2",
     "crowdsec":"docker.io/crowdsecurity/crowdsec:v1.7.8@sha256:95a25d0f0fb92d96204e74fd48a5c4bd2c949b1b2a31769fa3487ad4769314e1",
-    "echo":"docker.io/mendhak/http-https-echo:39@sha256:96f9c17b35c4699d71567ec6037f2e3862f55c8b69492a7e2133774e4592dc9f",
     "geoipupdate":"docker.io/maxmindinc/geoipupdate:v7.1.1@sha256:45e15eb310528fd308c5c0abee9a8e6d580f1e2b1251e960dec2863dc7f0102f",
     "haproxy":"docker.io/library/haproxy:3.2.23-alpine@sha256:0666a2c2f41d341084ed2da85392b48cdcd766adfa28231f31305724ed5c6ea5",
     "spoa":"docker.io/crowdsecurity/spoa-bouncer:v0.3.1@sha256:94707833e96caf215160c10dacfb9f13bf71d59136feb574cf425e84010f33f3",
     "vector":"docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee"
   }
-  and (.services | keys | sort) == ["certbot","crowdsec","echo","geoipupdate","haproxy","spoa","vector"]
+  and (.services | keys | sort) == ["certbot","crowdsec","geoipupdate","haproxy","spoa","vector"]
   and all(.services[]; ((.ports // []) | length) == 0 and .privileged != true and .read_only == true and .cap_drop == ["ALL"] and .security_opt == ["no-new-privileges:true"])
   and all(.services[]; all((.volumes // [])[]; .source != "/var/run/docker.sock"))
   and .services.haproxy.networks.c1_edge.ipv4_address == "10.25.15.10"

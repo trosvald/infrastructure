@@ -12,7 +12,7 @@ if [[ "${1:-apply}" == apply ]]; then
  "$INSTALL_BIN" -d -m 0750 -o 1000 -g 1000 "$ROOT/crowdsec" "$ROOT/crowdsec-config" "$ROOT/geolite" "$ROOT/logs"
  "$INSTALL_BIN" -d -m 0750 -o 99 -g 99 "$ROOT/runtime"
  "$INSTALL_BIN" -d -m 0700 -o root -g root "$ROOT/letsencrypt"
- printf '%s\n' '/run/tls/current/combined.pem git.monosense.io edge-test.monosense.io' >"$ROOT/tls/.crt-list.tmp"
+ printf '%s\n' '/run/tls/current/combined.pem git.monosense.io' >"$ROOT/tls/.crt-list.tmp"
  chown root:root "$ROOT/tls/.crt-list.tmp"; chmod 0644 "$ROOT/tls/.crt-list.tmp"; mv -f "$ROOT/tls/.crt-list.tmp" "$ROOT/tls/crt-list.txt"
 fi
 for expected in "0:0:755:$ROOT" "1000:1000:750:$ROOT/crowdsec" "1000:1000:750:$ROOT/crowdsec-config" "1000:1000:750:$ROOT/geolite" "0:0:700:$ROOT/letsencrypt" "99:99:750:$ROOT/runtime" "1000:1000:750:$ROOT/logs" "0:0:755:$ROOT/tls" "0:0:755:$ROOT/tls/releases"; do
@@ -21,5 +21,5 @@ for expected in "0:0:755:$ROOT" "1000:1000:750:$ROOT/crowdsec" "1000:1000:750:$R
 done
 [[ -f "$ROOT/tls/crt-list.txt" && ! -L "$ROOT/tls/crt-list.txt" ]] || fail 'HAProxy certificate list is absent or unsafe'
 [[ "$($STAT_BIN -c '%u:%g:%a' "$ROOT/tls/crt-list.txt")" == 0:0:644 ]] || fail 'HAProxy certificate list ownership or mode drift'
-[[ "$(<"$ROOT/tls/crt-list.txt")" == '/run/tls/current/combined.pem git.monosense.io edge-test.monosense.io' ]] || fail 'HAProxy certificate list content drift'
+[[ "$(<"$ROOT/tls/crt-list.txt")" == '/run/tls/current/combined.pem git.monosense.io' ]] || fail 'HAProxy certificate list content drift'
 printf '%s\n' 'Edge state bind sources match the reviewed contract'

@@ -156,20 +156,11 @@ container_node_verification_application_containers:
   - {name: certbot-edge-c1, state: running}
   - {name: geoipupdate-c1, state: running}
   - {name: vector-c1, state: running, health: healthy}
-  - {name: edge-echo-c1, state: running}
   - {name: forgejo-c1, state: running, health: healthy}
   - {name: forgejo-postgres-c1, state: running, health: healthy}
   - {name: kopia-forgejo-c1, state: running}
 container_node_verification_application_health_checks:
   - {name: librefs, type: http, url: 'https://s3.monosense.io/minio/health/ready', status: 200, timeout: 10}
-  - name: edge
-    type: https-resolve
-    hostname: edge-test.monosense.io
-    address: 172.30.15.2
-    path: /
-    ca_file: /srv/applications/apps/edge/tls/current/fullchain.pem
-    status: 200
-    timeout: 10
   - name: forgejo
     type: https-resolve
     hostname: git.monosense.io
