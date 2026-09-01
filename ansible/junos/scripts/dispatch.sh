@@ -71,8 +71,8 @@ case "$action" in
     exec scripts/with-openbao-runtime.sh live scripts/confirm-pending.sh
     ;;
   myrep-preflight)
-    require_mise_tools python
-    exec scripts/with-openbao-runtime.sh live scripts/myrep_preflight.py
+    require_mise_tools ansible-playbook
+    exec scripts/with-openbao-runtime.sh live ansible-playbook playbooks/myrep-preflight.yml
     ;;
   operational-verify)
     require_mise_tools ansible-playbook
