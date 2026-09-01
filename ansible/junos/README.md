@@ -698,6 +698,13 @@ authentication path, apply-group, scoped policy order, direct-reservation confli
 operational evidence, then confirms through NETCONF. A mismatched digest or invariant leaves the
 transaction unconfirmed for automatic rollback.
 
+If a failed postcheck was caused only by non-canonical candidate text and a published correction
+now renders the exact running managed configuration under a different digest, use
+`just ansible junos confirm-recovered-pending`. Supply the failed pending digest and type the exact
+two-digest phrase. The normal confirmation playbook still binds the newest pending comment to the
+failed digest, binds the fresh artifact to the corrected digest, and rechecks every managed and
+operational invariant before confirmation. Never use this action to accept a behavioral difference.
+
 If verification failed and the pending timer has not restored the preceding configuration, run
 `just ansible junos rollback-pending`. Enter the failed candidate digest and the exact
 `rollback-pending <digest>` phrase. The action binds to the newest pending commit comment, restores

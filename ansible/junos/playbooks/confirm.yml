@@ -11,6 +11,7 @@
         that:
           - junos_expected_digest | default('') is match('^[0-9a-f]{64}$')
           - junos_commit_comment | default('') == 'Ansible candidate ' ~ junos_expected_digest
+          - junos_candidate_digest | default(junos_expected_digest) is match('^[0-9a-f]{64}$')
         fail_msg: "Confirmation requires the exact deployment comment and digest."
 
     - name: Read the exact reviewed candidate without following links
@@ -32,8 +33,8 @@
           - confirm_candidate_stat.stat.exists
           - confirm_candidate_stat.stat.isreg
           - not confirm_candidate_stat.stat.islnk
-          - confirm_candidate_stat.stat.checksum == junos_expected_digest
-          - confirm_candidate_text | hash('sha256') == junos_expected_digest
+          - confirm_candidate_stat.stat.checksum == (junos_candidate_digest | default(junos_expected_digest))
+          - confirm_candidate_text | hash('sha256') == (junos_candidate_digest | default(junos_expected_digest))
         fail_msg: "Reviewed candidate is absent, unsafe, or has a different digest."
       delegate_to: localhost
       no_log: true
