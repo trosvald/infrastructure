@@ -70,6 +70,10 @@ case "$action" in
     require_mise_tools ansible-playbook
     exec scripts/with-openbao-runtime.sh live scripts/confirm-pending.sh
     ;;
+  myrep-preflight)
+    require_mise_tools python
+    exec scripts/with-openbao-runtime.sh live scripts/myrep_preflight.py
+    ;;
   operational-verify)
     require_mise_tools ansible-playbook
     exec scripts/with-openbao-runtime.sh live ansible-playbook playbooks/operational-verify.yml
@@ -96,7 +100,7 @@ case "$action" in
     ;;
   *)
     echo "Unknown Junos action: ${action:-<missing>}" >&2
-    echo "Supported actions: bootstrap lint test render check diff pki-bootstrap deploy confirm-pending operational-verify syslog-verify bgp-preflight bgp-verify drift backup" >&2
+    echo "Supported actions: bootstrap lint test render check diff pki-bootstrap deploy confirm-pending operational-verify myrep-preflight syslog-verify bgp-preflight bgp-verify drift backup" >&2
     exit 2
     ;;
 esac
