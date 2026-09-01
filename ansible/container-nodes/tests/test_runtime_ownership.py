@@ -136,6 +136,8 @@ class SystemdOwnershipTests(unittest.TestCase):
         self.assertIn("doco-project-forgejo-c1.service", backup)
         self.assertIn("doco-project-librefs-c1.service", backup)
         self.assertNotIn("doco-project-forgejo.service", backup)
+        backup_script = (ROOT / "roles/runtime_assets/files/backup-c1-forgejo").read_text(encoding="utf-8")
+        self.assertIn('docker exec --env KOPIA_LOG_DIR=/logs "$KOPIA"', backup_script)
 
 
 class ProtectedRuntimeAssetTests(unittest.TestCase):
