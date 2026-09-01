@@ -1,0 +1,66 @@
+---
+- name: Prove the protected MYREP address and SRX attachment
+  hosts: junos
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Read device identity before MYREP verification
+      juniper.device.junos_facts:
+        gather_subset:
+          - default
+          - hardware
+      register: myrep_facts
+      no_log: true
+
+    - name: Enforce approved device identity and release train
+      ansible.builtin.assert:
+        that:
+          - myrep_facts.ansible_facts.ansible_net_model | upper == junos_expected_model
+          - myrep_facts.ansible_facts.ansible_net_hostname == junos_expected_hostname
+          - myrep_facts.ansible_facts.ansible_net_version is regex(junos_expected_release_pattern)
+      no_log: true
+
+    - name: Bind protected topology to stable direct egress observations
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/myrep_preflight.py"
+      register: myrep_observation
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+      no_log: true
+
+    - name: Require valid protected MYREP observations
+      ansible.builtin.assert:
+        that:
+          - myrep_observation.rc == 0
+          - (myrep_observation.stdout | from_json).address is string
+        fail_msg: "{{ myrep_observation.stderr }}"
+
+    - name: Select the verified MYREP address
+      ansible.builtin.set_fact:
+        myrep_address: "{{ (myrep_observation.stdout | from_json).address }}"
+      no_log: true
+
+    - name: Read the fixed MYREP interface evidence
+      juniper.device.junos_command:
+        commands:
+          - show interfaces terse ge-0/0/1.0 | no-more
+        formats: text
+      register: myrep_interface
+      no_log: true
+
+    - name: Require the protected address directly on the up MYREP interface
+      ansible.builtin.assert:
+        that:
+          - myrep_interface.stdout | length == 1
+          - myrep_interface.stdout[0] is search('(?m)^ge-0/0/1[.]0\\s+up\\s+up')
+          - myrep_interface.stdout[0] is search((myrep_address | regex_escape) + '/')
+        fail_msg: "The protected MYREP address is not active on ge-0/0/1.0."
+      no_log: true
+
+    - name: Report safe MYREP preflight result
+      ansible.builtin.debug:
+        msg: "myrep_preflight=ok address={{ myrep_address }}"

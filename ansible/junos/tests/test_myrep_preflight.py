@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.myrep_preflight import expected_address, interface_addresses
+from scripts.myrep_preflight import expected_address
 
 
 class MyrepPreflightTests(unittest.TestCase):
@@ -32,12 +32,6 @@ class MyrepPreflightTests(unittest.TestCase):
             ):
                 expected_address(self.topology(cidr))
 
-    def test_extracts_only_valid_interface_addresses(self):
-        output = "ge-0/0/1.0 up up inet 8.8.8.8/32\ninvalid 999.1.1.1/32\n"
-        self.assertEqual(
-            {str(value) for value in interface_addresses(output)},
-            {"8.8.8.8"},
-        )
 
 
 if __name__ == "__main__":

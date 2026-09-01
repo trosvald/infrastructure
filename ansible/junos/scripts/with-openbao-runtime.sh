@@ -33,7 +33,7 @@ case "$mode" in
         ;;
     live)
         case "${1:-}" in
-            scripts/deploy.sh|scripts/confirm-pending.sh|scripts/backup.sh|scripts/myrep_preflight.py)
+            scripts/deploy.sh|scripts/confirm-pending.sh|scripts/backup.sh)
                 [[ $# -eq 1 ]] || {
                     echo "live scripts do not accept trailing arguments" >&2
                     exit 2
@@ -52,6 +52,7 @@ case "$mode" in
                     :
                 elif [[ $# -eq 2 &&
                     ( "$2" == "playbooks/operational-verify.yml" ||
+                      "$2" == "playbooks/myrep-preflight.yml" ||
                       "$2" == "playbooks/syslog-verify.yml" ||
                       "$2" == "playbooks/bgp-preflight.yml" ||
                       "$2" == "playbooks/bgp-verify.yml" ) ]]; then
