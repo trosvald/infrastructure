@@ -18,12 +18,31 @@ import ipaddress
 import json
 import os
 import pathlib
+import ssl
 import sys
+import urllib.request
 
 source, target, version_path, changed_path = map(pathlib.Path, sys.argv[1:])
 response = json.loads(source.read_text(encoding="utf-8"))
 record = response["data"]["data"]
 version = response["data"]["metadata"]["version"]
+opener = urllib.request.build_opener(
+    urllib.request.ProxyHandler({}),
+    urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+)
+request = urllib.request.Request(
+    "https://1.1.1.1/cdn-cgi/trace",
+    headers={"User-Agent": "monosense-edge-topology/1"},
+)
+with opener.open(request, timeout=10) as observer:
+    fields = dict(
+        line.split("=", 1)
+        for line in observer.read(4096).decode("ascii").splitlines()
+        if "=" in line
+    )
+observed = ipaddress.ip_address(fields.get("ip", ""))
+if not isinstance(observed, ipaddress.IPv4Address) or not observed.is_global:
+    raise SystemExit("direct TLS observer did not return a globally routable IPv4 address")
 required = {
     "dns.internal": "10.25.13.35",
     "dns.internal_cidr": "10.25.13.35/32",
@@ -38,6 +57,7 @@ required = {
     "networks.edge.gateway_cidr": "10.25.15.1/24",
     "networks.edge.haproxy": "10.25.15.10",
     "networks.edge.haproxy_cidr": "10.25.15.10/32",
+    "wan.secondary_public_cidr": f"{observed}/32",
 }
 allowed_previous = {
     "dns.internal": {"10.25.10.100"},

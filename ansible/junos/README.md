@@ -616,8 +616,12 @@ removed when the command exits.
 ### Verify the protected MYREP address
 
 ```console
+just provision-junos-edge-topology
 just ansible junos myrep-preflight
 ```
+
+The provisioning step CAS-binds an absent protected field to the directly
+observed MYREP egress IPv4 and refuses any existing mismatch.
 
 The fixed preflight requires an exact globally routable non-CGNAT `/32`, observes
 the same egress address twice through a direct TLS endpoint, and requires that
