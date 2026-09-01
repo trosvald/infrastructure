@@ -313,14 +313,14 @@ class NetconfContractTests(unittest.TestCase):
         self.assertIn("syslog-verify", dispatch)
         self.assertIn("playbooks/syslog-verify.yml", runtime)
         self.assertIn('"syslog-verify": SYSLOG_VERIFY_COMMANDS', reader)
-        self.assertIn("show security log stream | no-more", reader)
+        self.assertNotIn("show security log stream", reader)
         self.assertIn("show security pki ca-certificate ca-profile VECTOR-SRX-ROOT", reader)
         self.assertIn("show system connections | match 6514", reader)
         installer = self.read("scripts/bootstrap_vector_ca.py")
         self.assertIn("no_log: true", playbook)
         self.assertIn("hostkey_verify=True", installer)
         self.assertIn("VECTOR-SRX-ROOT", installer)
-        self.assertIn("credential_record=admin", runtime)
+        self.assertIn('"playbooks/syslog-verify.yml" ) ]]; then', runtime)
         self.assertIn("pki-bootstrap", dispatch)
 
     def test_operational_evidence_is_concrete(self):

@@ -846,7 +846,11 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
     ]:
         raise IntentError("SRX system syslog CA profile must retain the reviewed identity")
     if intent["security"]["security"].get("direct_pki_ca_profiles") != [
-        {"name": "VECTOR-SRX-ROOT", "ca_identity": "VECTOR-SRX-ROOT"}
+        {
+            "name": "VECTOR-SRX-ROOT",
+            "ca_identity": "VECTOR-SRX-ROOT",
+            "revocation_check": "disable",
+        }
     ]:
         raise IntentError("SRX Vector CA profile must retain the exact direct trust exception")
     expected_stream_log = {

@@ -230,6 +230,7 @@
          | list | length }}
     junos_intent_preload_reviewed_vector_ca_profile:
       - set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT
+      - set security pki ca-profile VECTOR-SRX-ROOT revocation-check disable
     junos_intent_preload_running_vector_ca_profile: >-
       {{ (junos_intent_direct_reservations.stdout | from_json).direct_vector_ca_profile.splitlines()
          | map('trim') | reject('equalto', '') | list | sort }}
@@ -500,7 +501,10 @@
       - >-
         junos_intent_postcheck_result.stdout[12].splitlines()
         | map('trim') | reject('equalto', '') | list
-        == ['set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT']
+        == [
+          'set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT',
+          'set security pki ca-profile VECTOR-SRX-ROOT revocation-check disable'
+        ]
       - junos_intent_postcheck_result.stdout[7] is search('DEV-TO-MYREP')
       - >-
         (junos_intent_postcheck_result.stdout[9]

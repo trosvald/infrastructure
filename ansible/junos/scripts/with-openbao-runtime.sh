@@ -167,7 +167,9 @@ JUNOS_BACKUP_AGE_RECIPIENT="$(jq -er '.data.data.backup_age_recipient' "$topolog
 
 if [[ "$mode" == "live" ]]; then
     credential_record=netconf
-    if [[ "${1:-}" == "ansible-playbook" && "${2:-}" == "playbooks/pki-bootstrap.yml" ]]; then
+    if [[ "${1:-}" == "ansible-playbook" &&
+        ( "${2:-}" == "playbooks/pki-bootstrap.yml" ||
+          "${2:-}" == "playbooks/syslog-verify.yml" ) ]]; then
         credential_record=admin
     fi
     export JUNOS_RUNTIME_CREDENTIAL="$credential_record"

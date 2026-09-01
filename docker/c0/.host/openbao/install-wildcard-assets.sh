@@ -5,7 +5,7 @@ readonly SHARED="$HERE/../../../scripts"
 [[ "$(id -u)" == 0 ]] || { printf '%s\n' 'wildcard asset installation requires root' >&2; exit 1; }
 install -d -o root -g root -m 0755 /usr/local/libexec /usr/local/sbin /usr/local/share/monosense-monitoring /etc/systemd/system \
     /opt/monitoring/secrets /var/lib/monosense-monitoring/tls
-install -d -o root -g root -m 0700 /var/lib/monosense-monitoring/vector-tls
+install -d -o 65534 -g 65534 -m 0700 /var/lib/monosense-monitoring/vector-tls
 install -o root -g root -m 0755 "$SHARED/install_certificate.py" /usr/local/libexec/install-certificate.py
 install -o root -g root -m 0755 "$SHARED/fetch_wildcard_certificate.py" /usr/local/libexec/fetch-wildcard-certificate.py
 install -o root -g root -m 0755 "$HERE/update-wildcard-certificate.sh" /usr/local/sbin/update-c0-wildcard-certificate

@@ -186,7 +186,10 @@
           vector_ca_profile: >-
             {{ confirm_pending.stdout[12].splitlines()
                | map('trim') | reject('equalto', '') | list
-               == ['set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT'] }}
+               == [
+                 'set security pki ca-profile VECTOR-SRX-ROOT ca-identity VECTOR-SRX-ROOT',
+                 'set security pki ca-profile VECTOR-SRX-ROOT revocation-check disable'
+               ] }}
       no_log: true
 
     - name: Require the same newest pending commit and exact managed candidate
