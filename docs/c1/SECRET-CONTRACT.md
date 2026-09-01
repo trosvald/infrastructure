@@ -111,10 +111,12 @@ no metadata access, child-path access, write capability, or generic token creati
 `monosense-infra` operator policy owns the exact data and metadata records above, can create tokens
 only through the named `wildcard-publisher`, `wildcard-reader-c0`, and `wildcard-reader-c1` roles,
 and has `read, update` only on the exact Junos topology data path. That update capability is used
-only by `scripts/provision-junos-edge-topology.sh`, which accepts no arguments, preserves unrelated
-fields, binds an absent `wan.secondary_public_cidr` to the globally routable IPv4 observed through
-a fixed direct TLS endpoint, permits only the reviewed AdGuard-to-Blocky transition or
-absent-to-exact EDGE/monitoring fields, and writes with the current KV version as CAS.
+only by `scripts/provision-junos-edge-topology.sh`, which accepts no argument or the fixed
+`enable-public`/`disable-public` actions, preserves unrelated fields, binds an absent
+`wan.secondary_public_cidr` to the globally routable IPv4 observed through a fixed direct TLS
+endpoint, permits only the reviewed AdGuard-to-Blocky transition, absent-to-exact EDGE/monitoring
+fields, or the boolean public deployment-gate transition, and writes with the current KV version
+as CAS.
 
 Wildcard certificate publisher and reader policies are separate from Doco. The publisher can
 create/read/update/patch only the wildcard data record. Each host reader can read only that data

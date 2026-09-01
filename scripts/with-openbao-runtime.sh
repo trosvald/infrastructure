@@ -17,8 +17,8 @@ case "$1" in
         }
         ;;
     scripts/provision-junos-edge-topology.sh)
-        [[ $# == 1 ]] || {
-            echo "Junos EDGE topology provisioner accepts no arguments" >&2
+        [[ $# == 1 || ($# == 2 && ("$2" == enable-public || "$2" == disable-public)) ]] || {
+            echo "Junos EDGE topology provisioner accepts only enable-public or disable-public" >&2
             exit 2
         }
         ;;

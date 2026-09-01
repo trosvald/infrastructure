@@ -66,6 +66,18 @@ provision-junos-edge-topology:
     scripts/with-openbao-runtime.sh scripts/provision-junos-edge-topology.sh
 
 [group: 'OpenBao']
+[confirm('Enable public Junos EDGE policy and destination NAT? [y|N]')]
+[doc('Enable the protected Junos Candidate B deployment gate')]
+enable-junos-public-edge:
+    scripts/with-openbao-runtime.sh scripts/provision-junos-edge-topology.sh enable-public
+
+[group: 'OpenBao']
+[confirm('Disable public Junos EDGE policy and destination NAT? [y|N]')]
+[doc('Disable the protected Junos Candidate B deployment gate')]
+disable-junos-public-edge:
+    scripts/with-openbao-runtime.sh scripts/provision-junos-edge-topology.sh disable-public
+
+[group: 'OpenBao']
 [doc('Refresh the Doco token and published TLS libreFS prerequisite')]
 prepare-container-applications:
     scripts/with-openbao-runtime.sh scripts/run-container-nodes-openbao-action.sh prepare-applications
