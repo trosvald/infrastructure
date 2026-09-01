@@ -38,7 +38,7 @@ compose = Path("docker/c0/monitoring/compose.yml").read_text()
 gatus = Path("docker/c0/monitoring/config/gatus.yaml.template").read_text()
 vector = Path("docker/c0/monitoring/config/vector.yaml.template").read_text()
 combined = compose + gatus + vector
-for value in ("metrics: false", "hide-url: true", "hide-hostname: true", "hide-conditions: true", "hide-errors: true", "@@telegram_bot_token@@", "@@backup_heartbeat_token@@", "external-endpoints:", "heartbeat: { interval: 26h }", "0.0.0.0:8686", "strategy: custom", "@@vector_ingest_token@@", "0.0.0.0:6514", "-mtime +13", "authorization", "request_body"):
+for value in ("metrics: false", "hide-url: true", "hide-hostname: true", "hide-conditions: true", "hide-errors: true", "@@telegram_bot_token@@", "@@backup_heartbeat_token@@", "external-endpoints:", "heartbeat: { interval: 26h }", "0.0.0.0:8686", "strategy: custom", "@@vector_ingest_token@@", "0.0.0.0:6514", "-mtime +13", ".appname", ".msgid", "RT_FLOW", "authorization", "request_body"):
     assert value in combined, value
 for host_endpoint in ("tcp://10.25.13.16:22", "tcp://10.25.10.101:22"):
     assert host_endpoint in gatus, host_endpoint

@@ -50,6 +50,7 @@ case "$mode" in
                     :
                 elif [[ $# -eq 2 &&
                     ( "$2" == "playbooks/operational-verify.yml" ||
+                      "$2" == "playbooks/syslog-verify.yml" ||
                       "$2" == "playbooks/bgp-preflight.yml" ||
                       "$2" == "playbooks/bgp-verify.yml" ) ]]; then
                     :

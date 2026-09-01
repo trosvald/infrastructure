@@ -301,6 +301,13 @@ class IntentTests(unittest.TestCase):
         self.assertIn("system services web-management https system-generated-certificate", text)
         self.assertIn("system syslog file security-log any any", text)
         self.assertIn('system syslog file security-log match "RT_FLOW|RT_SCREEN"', text)
+        self.assertIn("system syslog file security-log structured-data", text)
+        self.assertIn(
+            "system syslog host logs-ingest.example.invalid structured-data",
+            text,
+        )
+        self.assertIn("security log mode event", text)
+        self.assertIn("security log cache", text)
         self.assertIn("security policies pre-id-default-policy then log session-close", text)
         for policy in (
             "PROD-INTERNET",

@@ -19,6 +19,7 @@ security:
         - [tcp, land]
   log:
     mode: event
+    cache: true
   flow:
     tcp_mss: { scope: all-tcp, value: 1456 }
   pki_ca_profiles:

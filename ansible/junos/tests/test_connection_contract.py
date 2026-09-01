@@ -170,7 +170,7 @@ class NetconfContractTests(unittest.TestCase):
             self.assertIn("Read managed-group exclusions with a bounded NETCONF XPath", text)
             self.assertIn('<filter type="xpath" select="', text)
             self.assertIn("local-name()='apply-groups-except'", text)
-            self.assertIn("stdout | length == 11", text)
+            self.assertIn("stdout | length == 12", text)
             self.assertIn("stdout is not search('apply-groups-except')", text)
         role = self.read("roles/junos_intent/tasks/main.yml")
         self.assertIn("scripts/read_operational.py", role)
@@ -303,6 +303,18 @@ class NetconfContractTests(unittest.TestCase):
         self.assertIsNone(re.search(pattern, display_set.replace("64513", "64514")))
 
 
+
+    def test_syslog_verification_is_fixed_and_secret_suppressed(self):
+        dispatch = self.read("scripts/dispatch.sh")
+        runtime = self.read("scripts/with-openbao-runtime.sh")
+        reader = self.read("scripts/read_operational.py")
+        playbook = self.read("playbooks/syslog-verify.yml")
+        self.assertIn("syslog-verify", dispatch)
+        self.assertIn("playbooks/syslog-verify.yml", runtime)
+        self.assertIn('"syslog-verify": SYSLOG_VERIFY_COMMANDS', reader)
+        self.assertIn("show security log | last 20", reader)
+        self.assertIn("show system connections | match 6514", reader)
+        self.assertIn("no_log: true", playbook)
 
     def test_operational_evidence_is_concrete(self):
         literal_reader = self.read("scripts/read_operational.py")

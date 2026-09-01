@@ -470,7 +470,7 @@
   ansible.builtin.assert:
     that:
       - junos_intent_postcheck_result.stdout is defined
-      - junos_intent_postcheck_result.stdout | length == 11
+      - junos_intent_postcheck_result.stdout | length == 12
       - junos_intent_reviewed_group_lines | length > 0
       - junos_intent_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500']
       - junos_intent_running_group_lines == junos_intent_reviewed_group_lines
@@ -497,6 +497,7 @@
       - junos_intent_postcheck_result.stdout[10] is search('10[.]25[.]20[.]0/24')
       - junos_intent_postcheck_result.stdout[10] is search('Discard')
       - junos_intent_postcheck_result.stdout[10] is search('[*>]')
+      - junos_intent_postcheck_result.stdout[11] is search('(?m)^ge-0/0/0[.]0\\s+up\\s+up')
       - junos_intent_apply_groups_exceptions.stdout is defined
       - junos_intent_apply_groups_exceptions.stdout is not search('apply-groups-except')
     fail_msg: "Managed configuration or operational evidence does not match the reviewed candidate."

@@ -565,6 +565,8 @@ def render_security(data: dict[str, Any]) -> list[str]:
         out += [cmd("security", "screen", "ids-option", screen["name"], *option) for option in screen["options"]]
     if security.get("log", {}).get("mode"):
         out.append(cmd("security", "log", "mode", security["log"]["mode"]))
+    if security.get("log", {}).get("cache"):
+        out.append(cmd("security", "log", "cache"))
     flow = security.get("flow", {})
     if flow.get("tcp_mss"):
         mss = flow["tcp_mss"]
