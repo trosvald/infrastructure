@@ -540,7 +540,7 @@ def render_nat(data: dict[str, Any]) -> list[str]:
         for pool in nat.get("destination_pools", []):
             base = ("security", "nat", "destination", "pool", pool["name"], "address")
             out.extend([
-                cmd(*base, ipaddress.ip_interface(pool["address"]).ip),
+                cmd(*base, pool["address"]),
                 cmd(*base, "port", pool["port"]),
             ])
     for ruleset in nat.get("destination_rules", []):
