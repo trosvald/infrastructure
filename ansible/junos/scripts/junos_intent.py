@@ -538,11 +538,12 @@ def render_nat(data: dict[str, Any]) -> list[str]:
             ])
     if any(ruleset.get("enabled", True) for ruleset in nat.get("destination_rules", [])):
         for pool in nat.get("destination_pools", []):
-            base = ("security", "nat", "destination", "pool", pool["name"])
-            out.extend([
-                cmd(*base, "address", pool["address"]),
-                cmd(*base, "port", pool["port"]),
-            ])
+            out.append(
+                cmd(
+                    "security", "nat", "destination", "pool", pool["name"],
+                    "address", ipaddress.ip_interface(pool["address"]).ip, "port", pool["port"],
+                )
+            )
     for ruleset in nat.get("destination_rules", []):
         if not ruleset.get("enabled", True):
             continue

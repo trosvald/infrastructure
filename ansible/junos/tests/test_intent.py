@@ -109,10 +109,9 @@ class IntentTests(unittest.TestCase):
             self.assertIn(f"security nat source rule-set {ruleset}", text)
         for port, name in ((22, "EDGE-SSH"), (80, "EDGE-HTTP"), (443, "EDGE-HTTPS")):
             self.assertIn(
-                f"security nat destination pool {name} address 198.18.1.10/32",
+                f"security nat destination pool {name} address 198.18.1.10 port {port}",
                 text,
             )
-            self.assertIn(f"security nat destination pool {name} port {port}", text)
             self.assertIn(
                 f"security nat destination rule-set WAN-MYREP-TO-EDGE rule {name} "
                 f"match destination-port {port}",
