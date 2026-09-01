@@ -21,6 +21,7 @@ docker run --rm --platform linux/amd64 --network none \
     --read-only --cap-drop ALL --security-opt no-new-privileges:true \
     --env SPOA_BYPASS=1 \
     --mount "type=bind,src=$ROOT/docker/c1/edge/config/haproxy.cfg,dst=/usr/local/etc/haproxy/haproxy.cfg,readonly" \
+    --mount "type=bind,src=$tmp/crt-list.txt,dst=/usr/local/etc/haproxy/crt-list.txt,readonly" \
     --mount "type=bind,src=$tmp,dst=/run/tls,readonly" \
     "$IMAGE" haproxy -c -f /usr/local/etc/haproxy/haproxy.cfg
 docker run --detach --name "$container" --platform linux/amd64 \
@@ -29,6 +30,7 @@ docker run --detach --name "$container" --platform linux/amd64 \
     --tmpfs /run/haproxy:rw,nosuid,nodev,noexec,size=16m,mode=0750,uid=99,gid=99 \
     --env SPOA_BYPASS=1 \
     --mount "type=bind,src=$ROOT/docker/c1/edge/config/haproxy.cfg,dst=/usr/local/etc/haproxy/haproxy.cfg,readonly" \
+    --mount "type=bind,src=$tmp/crt-list.txt,dst=/usr/local/etc/haproxy/crt-list.txt,readonly" \
     --mount "type=bind,src=$tmp,dst=/run/tls,readonly" \
     "$IMAGE" >/dev/null
 port="$(docker port "$container" 443/tcp | sed 's/.*://')"

@@ -16,6 +16,7 @@ services:
     security_opt: [no-new-privileges:true]
     configs:
       - { source: haproxy_config, target: /usr/local/etc/haproxy/haproxy.cfg, uid: "99", gid: "99", mode: 0440 }
+      - { source: haproxy_crt_list, target: /usr/local/etc/haproxy/crt-list.txt, uid: "99", gid: "99", mode: 0440 }
       - { source: crowdsec_agent, target: /usr/local/etc/haproxy/crowdsec.cfg, uid: "99", gid: "99", mode: 0440 }
     volumes:
       - type: bind
@@ -236,6 +237,7 @@ services:
 
 
 configs:
+  haproxy_crt_list: { file: ./config/crt-list.txt }
   haproxy_config: { file: ./config/haproxy.cfg }
   crowdsec_agent: { file: ./config/crowdsec.cfg }
   crowdsec_acquis: { file: ./config/acquis.yaml }
