@@ -15,8 +15,8 @@ sources:
     mode: tcp
     tls:
       enabled: true
-      crt_file: /run/tls/current/fullchain.pem
-      key_file: /run/tls/current/privkey.pem
+      crt_file: /run/vector-tls/fullchain.pem
+      key_file: /run/vector-tls/privkey.pem
 transforms:
   allow_redact:
     type: remap

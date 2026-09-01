@@ -9,7 +9,12 @@ namespace := source_directory()
 default:
     just --list ansible
 
-[arg('action', pattern='bootstrap|lint|test|render|check|diff|deploy|confirm-pending|operational-verify|syslog-verify|bgp-preflight|bgp-verify|drift|backup')]
+    [arg('action', pattern='bootstrap|lint|test|render|check|diff|pki-bootstrap|deploy|confirm-pending|operational-verify|syslog-verify|bgp-preflight|bgp-verify|drift|backup')]
 [doc('Run an action in the isolated Junos automation project')]
 junos action:
     exec "{{ namespace }}/junos/scripts/dispatch.sh" "$1"
+
+[arg('action', pattern='bootstrap|test|lint|audit|check|diff|deploy|verify|drift|provision-storage|provision-secrets|rotate-secrets|prepare-applications|rollout-applications|activate-network|upgrade|reboot')]
+[doc('Run a fixed action in the isolated c0/c1 container-node project')]
+container-nodes action:
+    exec "{{ namespace }}/container-nodes/scripts/dispatch.sh" "$1"

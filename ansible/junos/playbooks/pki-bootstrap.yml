@@ -1,0 +1,22 @@
+---
+- name: Bootstrap the dedicated Vector stream trust
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Install and verify the exact SRX CA profile and certificate
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/bootstrap_vector_ca.py"
+      register: pki_bootstrap_result
+      failed_when: false
+      changed_when: "'installed and verified' in pki_bootstrap_result.stdout"
+      no_log: true
+
+    - name: Report only the safe fixed bootstrap failure
+      ansible.builtin.assert:
+        that:
+          - pki_bootstrap_result.rc == 0
+        fail_msg: "{{ pki_bootstrap_result.stderr }}"
+      no_log: true

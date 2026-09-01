@@ -54,6 +54,12 @@ provision-openbao-infra:
     scripts/provision-openbao-infra.sh
 
 [group: 'OpenBao']
+[confirm('Rotate and publish the dedicated Vector-to-SRX TLS certificate? [y|N]')]
+[doc('Issue a strictly verified Vector certificate for SRX flow streaming')]
+rotate-vector-srx-certificate:
+    scripts/with-openbao-runtime.sh scripts/rotate-vector-srx-certificate.sh
+
+[group: 'OpenBao']
 [confirm('Create the reviewed BGP and Talos OpenBao records with CAS=0? [y|N]')]
 [doc('Create or validate protected BGP and Talos records without overwriting')]
 provision-talos-records:

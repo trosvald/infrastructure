@@ -18,12 +18,17 @@ security:
         - [tcp, syn-flood, timeout, 20]
         - [tcp, land]
   log:
-    mode: event
-    cache: true
+    mode: stream
+    format: sd-syslog
+    source_address: { topology: networks.dev.gateway }
+    streams:
+      - { name: VECTOR, host: { topology: monitoring.vector_address }, port: 6514, protocol: tls, tls_profile: VECTOR-SRX-TLS }
   flow:
     tcp_mss: { scope: all-tcp, value: 1456 }
   pki_ca_profiles:
     - { name: { topology: monitoring.syslog_ca_profile }, ca_identity: { topology: monitoring.syslog_ca_profile } }
+  direct_pki_ca_profiles:
+    - { name: VECTOR-SRX-ROOT, ca_identity: VECTOR-SRX-ROOT }
   zones:
     - { name: MGMT, interfaces: [irb.2510], services: [dhcp, ping, ssh, https, netconf] }
     - { name: PROD, interfaces: [irb.2511], services: [dhcp, ping], protocols: [bgp] }

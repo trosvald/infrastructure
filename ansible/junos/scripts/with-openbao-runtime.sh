@@ -46,6 +46,8 @@ case "$mode" in
                 elif [[ $# -eq 5 && "$2" == "--diff" && "$3" == "playbooks/live.yml" &&
                     "$4" == "-e" && "$5" == "operation=diff" ]]; then
                     :
+                elif [[ $# -eq 2 && "$2" == "playbooks/pki-bootstrap.yml" ]]; then
+                    :
                 elif [[ $# -eq 2 && "$2" == "playbooks/drift.yml" ]]; then
                     :
                 elif [[ $# -eq 2 &&
@@ -164,11 +166,16 @@ JUNOS_MANAGEMENT_ADDRESS="$(jq -er '.data.data.management_address' "$topology_ra
 JUNOS_BACKUP_AGE_RECIPIENT="$(jq -er '.data.data.backup_age_recipient' "$topology_raw")"
 
 if [[ "$mode" == "live" ]]; then
+    credential_record=netconf
+    if [[ "${1:-}" == "ansible-playbook" && "${2:-}" == "playbooks/pki-bootstrap.yml" ]]; then
+        credential_record=admin
+    fi
+    export JUNOS_RUNTIME_CREDENTIAL="$credential_record"
     netconf_raw="$runtime_dir/netconf-response.json"
     private_key="$runtime_dir/netconf-key"
     known_hosts="$runtime_dir/known_hosts"
     ssh_config="$runtime_dir/ssh_config"
-    bao kv get -mount=kv -format=json network/junos/srx1500/netconf > "$netconf_raw"
+    bao kv get -mount=kv -format=json "network/junos/srx1500/$credential_record" > "$netconf_raw"
     chmod 0600 "$netconf_raw"
     jq -e '
         .data.data as $n |
@@ -177,7 +184,7 @@ if [[ "$mode" == "live" ]]; then
         ($n.private_key |
             type == "string" and test("^-----BEGIN (OPENSSH |RSA |EC )?PRIVATE KEY-----"))
     ' "$netconf_raw" >/dev/null || {
-        echo "OpenBao NETCONF record is missing a valid username or SSH private key" >&2
+        echo "OpenBao SRX credential record is missing a valid username or SSH private key" >&2
         exit 1
     }
 

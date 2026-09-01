@@ -4,6 +4,8 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 provision = (root / "scripts/provision-openbao-infra.sh").read_text(encoding="utf-8")
 runtime = (root / "scripts/with-openbao-runtime.sh").read_text(encoding="utf-8")
+applications = (root / "scripts/provision-container-application-records.sh").read_text(encoding="utf-8")
+rotation = (root / "scripts/rotate-vector-srx-certificate.sh").read_text(encoding="utf-8")
 justfile = (root / ".justfile").read_text(encoding="utf-8")
 
 assert 'SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}"' in provision
@@ -39,4 +41,10 @@ assert "openbao-admin-login:" in justfile
 assert "provision-openbao-infra:" in justfile
 assert "bao login -method=userpass -no-print username=monosense-admin" in justfile
 assert "scripts/provision-openbao-infra.sh" in justfile
+assert "scripts/rotate-vector-srx-certificate.sh)" in runtime
+assert "rotate-vector-srx-certificate:" in justfile
+assert "scripts/rotate-vector-srx-certificate.sh" in applications
+assert "subjectAltName=IP:10.25.13.37" in rotation
+assert '"options": {"cas": int(sys.argv[2])}' in rotation
+assert "BAO_SKIP_VERIFY" not in rotation
 print("OpenBao provisioner keeps password material off argv and verifies exact capabilities")
