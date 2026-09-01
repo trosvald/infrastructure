@@ -900,10 +900,10 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
     addresses = intent["security"]["security"].get("address_books", [])
     unique(addresses, "name", "global address-book entry")
     address_names = {address["name"] for address in addresses}
-    dns_entries = [address for address in addresses if address["name"] == "MGMT-DNS"]
+    dns_entries = [address for address in addresses if address["name"] == "INTERNAL-DNS"]
     expected_dns_cidr = parse_network(f"{dns_internal}/32", "dns.internal")
-    if len(dns_entries) != 1 or parse_network(dns_entries[0]["value"], "MGMT-DNS") != expected_dns_cidr:
-        raise IntentError("global MGMT-DNS address must match dns.internal as an exact /32")
+    if len(dns_entries) != 1 or parse_network(dns_entries[0]["value"], "INTERNAL-DNS") != expected_dns_cidr:
+        raise IntentError("global INTERNAL-DNS address must match dns.internal as an exact /32")
     expected_addresses = {
         "EDGE-HAPROXY": "198.18.1.10/32" if synthetic_topology else "10.25.15.10/32",
         "C0-GATUS": "198.18.2.36/32" if synthetic_topology else "10.25.13.36/32",
@@ -961,6 +961,20 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
             or policy["action"] != "permit"
         ):
             raise IntentError(f"policy {policy['name']}: EDGE access must be HAProxy 22/80/443 only")
+    home_dns_policy = next((policy for policy in policies if policy["name"] == "HOME-TO-DNS"), None)
+    home_dev_block = next((policy for policy in policies if policy["name"] == "HOME-BLOCK-DEV"), None)
+    if (
+        home_dns_policy is None
+        or home_dev_block is None
+        or home_dns_policy["from"] != "HOME"
+        or home_dns_policy["to"] != "DEV"
+        or home_dns_policy["source"] != ["any"]
+        or home_dns_policy["destination"] != ["INTERNAL-DNS"]
+        or home_dns_policy["applications"] != ["junos-dns-udp", "junos-dns-tcp"]
+        or home_dns_policy["action"] != "permit"
+        or policies.index(home_dns_policy) > policies.index(home_dev_block)
+    ):
+        raise IntentError("HOME DNS access must precede the DEV deny and target only INTERNAL-DNS")
     if any(policy["from"] == "EDGE" and policy["action"] == "permit" for policy in policies):
         raise IntentError("EDGE must not have an internal permit policy")
     gatus_policy = next((policy for policy in policies if policy["name"] == "HOME-TO-GATUS"), None)

@@ -529,10 +529,10 @@ auto-load structured intent as host variables.
 
 The renderer resolves environment-specific `{ topology: ... }` references
 from OpenBao in memory. DNS nameservers use `dns.primary`/`dns.secondary`;
-client DHCP and the global `MGMT-DNS` address-book use the dedicated
-`dns.internal`/`dns.internal_cidr` fields. A `dns.blocky` substitution is
-rejected, so the production resolver cannot silently become the Docker DNS
-proxy. The renderer validates every VLAN, IRB, interface/unit, routing,
+client DHCP and the global `INTERNAL-DNS` address-book use the dedicated
+`dns.internal`/`dns.internal_cidr` fields. The production resolver is in DEV;
+the exact HOME-to-DEV DNS permit must precede the default HOME-to-DEV deny.
+The renderer validates every VLAN, IRB, interface/unit, routing,
 zone, NAT, DHCP, reservation, policy, and ordered-term relationship before
 emitting only the `ANSIBLE_SRX1500` apply-group.
 

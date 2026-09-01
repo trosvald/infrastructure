@@ -1,7 +1,7 @@
 ---
 security:
   address_books:
-    - { name: MGMT-DNS, value: { topology: dns.internal_cidr } }
+    - { name: INTERNAL-DNS, value: { topology: dns.internal_cidr } }
     - { name: EDGE-HAPROXY, value: { topology: networks.edge.haproxy_cidr } }
     - { name: C0-GATUS, value: { topology: monitoring.gatus_cidr } }
     - { name: C0-VECTOR, value: { topology: monitoring.vector_cidr } }
@@ -54,7 +54,7 @@ security:
     - { from: DEV, to: MGMT, name: DEV-INFRA-MGMT, source: [any], destination: [any], applications: [any], action: permit, log: [session-close] }
     - { from: PROD, to: DEV, name: PROD-INFRA-DEV, source: [any], destination: [any], applications: [any], action: permit, log: [session-init, session-close] }
     - { from: DEV, to: PROD, name: DEV-INFRA-PROD, source: [any], destination: [any], applications: [any], action: permit, log: [session-init, session-close] }
-    - { from: HOME, to: MGMT, name: HOME-TO-DNS, source: [any], destination: [MGMT-DNS], applications: [junos-dns-udp, junos-dns-tcp], action: permit, log: [session-close] }
+    - { from: HOME, to: DEV, name: HOME-TO-DNS, source: [any], destination: [INTERNAL-DNS], applications: [junos-dns-udp, junos-dns-tcp], action: permit, log: [session-close] }
     - { from: HOME, to: MGMT, name: HOME-BLOCK-MGMT, source: [any], destination: [any], applications: [any], action: deny, log: [session-init] }
     - { from: HOME, to: PROD, name: HOME-BLOCK-PROD, source: [any], destination: [any], applications: [any], action: deny, log: [session-init] }
     - { from: HOME, to: DEV, name: HOME-TO-GATUS, source: [any], destination: [C0-GATUS], applications: [junos-https], action: permit, log: [session-close] }

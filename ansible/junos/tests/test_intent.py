@@ -385,6 +385,16 @@ class IntentTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(module.IntentError, "production DNS"):
             self.build(intent_dir=bad_address)
+        bad_policy = self.with_intent(
+            "security",
+            lambda value: next(
+                policy
+                for policy in value["security"]["policies"]
+                if policy["name"] == "HOME-TO-DNS"
+            ).update(to="MGMT"),
+        )
+        with self.assertRaisesRegex(module.IntentError, "HOME DNS"):
+            self.build(intent_dir=bad_policy)
 
     def test_wan_routing_zone_and_nat_coupling_is_exact(self):
         bad_routing = self.with_intent(
