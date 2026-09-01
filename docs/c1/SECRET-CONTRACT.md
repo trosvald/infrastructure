@@ -112,8 +112,9 @@ no metadata access, child-path access, write capability, or generic token creati
 only through the named `wildcard-publisher`, `wildcard-reader-c0`, and `wildcard-reader-c1` roles,
 and has `read, update` only on the exact Junos topology data path. That update capability is used
 only by `scripts/provision-junos-edge-topology.sh`, which accepts no arguments, preserves unrelated
-fields, permits only the reviewed AdGuard-to-Blocky transition or absent-to-exact EDGE/monitoring
-fields, and writes with the current KV version as CAS.
+fields, binds an absent `wan.secondary_public_cidr` to the globally routable IPv4 observed through
+a fixed direct TLS endpoint, permits only the reviewed AdGuard-to-Blocky transition or
+absent-to-exact EDGE/monitoring fields, and writes with the current KV version as CAS.
 
 Wildcard certificate publisher and reader policies are separate from Doco. The publisher can
 create/read/update/patch only the wildcard data record. Each host reader can read only that data

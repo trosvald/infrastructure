@@ -60,6 +60,12 @@ provision-openbao-applications:
     scripts/with-openbao-runtime.sh scripts/provision-container-application-records.sh
 
 [group: 'OpenBao']
+[confirm('Bind protected Junos EDGE topology to the observed MYREP address? [y|N]')]
+[doc('Provision exact EDGE, monitoring, Blocky, and MYREP topology fields')]
+provision-junos-edge-topology:
+    scripts/with-openbao-runtime.sh scripts/provision-junos-edge-topology.sh
+
+[group: 'OpenBao']
 [doc('Refresh the Doco token and published TLS libreFS prerequisite')]
 prepare-container-applications:
     scripts/with-openbao-runtime.sh scripts/run-container-nodes-openbao-action.sh prepare-applications
