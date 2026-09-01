@@ -541,7 +541,7 @@ def render_nat(data: dict[str, Any]) -> list[str]:
             out.append(
                 cmd(
                     "security", "nat", "destination", "pool", pool["name"],
-                    "address", pool["address"], "port", pool["port"],
+                    "address", ipaddress.ip_interface(pool["address"]).ip, "port", pool["port"],
                 )
             )
     for ruleset in nat.get("destination_rules", []):
