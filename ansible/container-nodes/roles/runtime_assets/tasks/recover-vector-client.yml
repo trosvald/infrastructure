@@ -96,6 +96,42 @@
       no_log: true
       diff: false
 
-    - name: Materialize the issued c1 runtime records
-      ansible.builtin.include_tasks: materialize-c1.yml
-      no_log: true
+- name: Refresh the c1 edge credential record after certificate publication
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/kv/data/docker/c1/edge"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: runtime_vector_recovery_current
+  no_log: true
+  diff: false
+
+- name: Materialize the current c1 Vector client generation
+  ansible.builtin.include_tasks: materialize-consumers.yml
+  vars:
+    runtime_edge: "{{ runtime_vector_recovery_current.json.data.data }}"
+    container_nodes_runtime_assets_rotate: false
+    runtime_materials:
+      - path: /srv/applications/apps/edge/secrets/vector-client/certificate.pem
+        content: "{{ runtime_edge.vector_client_certificate }}"
+        owner: '1000'
+        group: '1000'
+        parent_owner: '1000'
+        parent_group: '1000'
+      - path: /srv/applications/apps/edge/secrets/vector-client/private-key.pem
+        content: "{{ runtime_edge.vector_client_private_key }}"
+        owner: '1000'
+        group: '1000'
+        parent_owner: '1000'
+        parent_group: '1000'
+      - path: /srv/applications/apps/edge/secrets/vector-client/ca.pem
+        content: "{{ runtime_edge.vector_client_ca }}"
+        owner: '1000'
+        group: '1000'
+        parent_owner: '1000'
+        parent_group: '1000'
+  no_log: true
