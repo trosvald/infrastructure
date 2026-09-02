@@ -7,8 +7,8 @@ metadata:
   namespace: networking
 spec:
   dependsOn:
-    - name: cert-manager-issuers
-      namespace: cert-manager
+    - name: openbao-config
+      namespace: external-secrets
     - name: envoy-gateway
       namespace: networking
   interval: 1h
