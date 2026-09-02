@@ -725,7 +725,7 @@ print((datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:
     [[ "$(kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 \
         -n flux-system get gitrepository flux-system \
         -o jsonpath='{.spec.url} {.spec.interval}')" == \
-        'https://git.monosense.io/trosvald/infrastructure.git 5m' ]]
+        'https://git.monosense.io/trosvald/infrastructure.git 5m0s' ]]
     [[ "$(kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 \
         -n flux-system get kustomization flux-system \
         -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" == True ]]
