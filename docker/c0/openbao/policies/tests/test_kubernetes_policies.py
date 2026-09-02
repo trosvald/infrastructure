@@ -49,6 +49,8 @@ for path, capabilities in blocks.items():
     parsed = set(re.findall(r'"([a-z]+)"', capabilities))
     if path.endswith(("cloudnative-pg-generated", "verification/eso-cas")):
         assert parsed == {"create", "read", "update", "patch"}
+    elif path == "auth/token/lookup-self":
+        assert parsed == {"read"}
     else:
         assert path.startswith("kv/data/platform/kubernetes/") or path == "kv/data/platform/tls/kubernetes-ca"
         assert parsed == {"read"}
