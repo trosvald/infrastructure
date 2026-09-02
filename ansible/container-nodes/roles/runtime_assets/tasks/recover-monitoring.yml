@@ -57,6 +57,19 @@
   changed_when: true
   no_log: true
 
+- name: Wait for authenticated Vector ingestion readiness
+  ansible.builtin.uri:
+    url: https://logs-ingest.monosense.io:8686/
+    method: POST
+    headers:
+      Authorization: "Bearer {{ monitoring_recovery_record.json.data.data.vector_ingest_token }}"
+    body: '{}'
+    status_code: 200
+  register: vector_recovery_health
+  retries: 12
+  delay: 5
+  until: vector_recovery_health.status == 200
+  no_log: true
 
 - name: Restart Gatus with the repaired configuration
   ansible.builtin.command:
