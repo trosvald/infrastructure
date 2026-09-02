@@ -6,6 +6,10 @@ provision = (root / "scripts/provision-openbao-infra.sh").read_text(encoding="ut
 runtime = (root / "scripts/with-openbao-runtime.sh").read_text(encoding="utf-8")
 applications = (root / "scripts/provision-container-application-records.sh").read_text(encoding="utf-8")
 rotation = (root / "scripts/rotate-vector-srx-certificate.sh").read_text(encoding="utf-8")
+backup = (root / "scripts/provision-kubernetes-backup.sh").read_text(encoding="utf-8")
+r2_backup = (root / "scripts/provision-kubernetes-r2-backup.sh").read_text(encoding="utf-8")
+database = (root / "scripts/provision-database-secrets.sh").read_text(encoding="utf-8")
+powerdns = (root / "scripts/provision-powerdns-dynamic-dns.sh").read_text(encoding="utf-8")
 justfile = (root / ".justfile").read_text(encoding="utf-8")
 
 assert 'SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/sops/age/keys.txt}"' in provision
@@ -50,6 +54,18 @@ assert "bao login -method=userpass -no-print username=monosense-admin" in justfi
 assert "scripts/provision-openbao-infra.sh" in justfile
 assert "provision-openbao-applications:" in justfile
 assert "scripts/with-openbao-runtime.sh scripts/provision-container-application-records.sh" in justfile
+assert "provision-kubernetes-backup:" in justfile
+assert "scripts/with-openbao-runtime.sh scripts/provision-kubernetes-backup.sh" in justfile
+assert "scripts/provision-kubernetes-backup.sh)" in runtime
+assert "provision-kubernetes-r2-backup:" in justfile
+assert "scripts/with-openbao-runtime.sh scripts/provision-kubernetes-r2-backup.sh" in justfile
+assert "scripts/provision-kubernetes-r2-backup.sh)" in runtime
+assert "provision-database-secrets:" in justfile
+assert "scripts/with-openbao-runtime.sh scripts/provision-database-secrets.sh" in justfile
+assert "scripts/provision-database-secrets.sh)" in runtime
+assert "provision-powerdns-dynamic-dns:" in justfile
+assert "scripts/with-openbao-runtime.sh scripts/provision-powerdns-dynamic-dns.sh" in justfile
+assert "scripts/provision-powerdns-dynamic-dns.sh)" in runtime
 assert "scripts/provision-container-application-records.sh)" in runtime
 assert "scripts/run-container-nodes-openbao-action.sh)" in runtime
 assert "provision-container-secrets:" in justfile
@@ -72,7 +88,26 @@ assert "mc --config-dir" in applications
 assert "admin user add local >/dev/null" in applications
 assert "minio/mc@" not in applications
 assert "ExitOnForwardFailure=yes" in applications
-assert "10.25.13.65:9000" in applications
+assert "10.25.13.65:443" in applications
+assert "https://s3.monosense.io:443" in backup
+assert "kubernetes-backups" in backup
+assert "platform/kubernetes/kopiur-system/kopiur" in backup
+assert "s3:prefix" in backup
+assert "kopia-primary-30d" in r2_backup
+assert "maxAgeSeconds:2592000" in r2_backup
+assert "lifecycle" in r2_backup
+assert "bao write \"kv/data/$record\" -" in r2_backup
+assert "Authorization: Bearer %s" in r2_backup
+assert 'Authorization: Bearer $api_token' not in r2_backup
+assert "platform/kubernetes/database/cloudnative-pg" in database
+assert "platform/kubernetes/database/dragonfly" in database
+assert "postgres-30d" in database and "maxAgeSeconds:2592000" in database
+assert "{cas:0}" in database
+assert "admin user add local >/dev/null" in database
+assert 'Authorization: Bearer $api_token' not in database
+assert "platform/kubernetes/networking/external-dns" in powerdns
+assert "docker/c0/powerdns" in powerdns
+assert "{data:{tsig_secret:$secret},options:{cas:0}}" in powerdns
 assert '"aqua:minio/mc"' in (root / ".mise.toml").read_text(encoding="utf-8")
 assert "librefs-created" in applications
 assert 'bao kv metadata delete -mount=kv "$record"' in applications

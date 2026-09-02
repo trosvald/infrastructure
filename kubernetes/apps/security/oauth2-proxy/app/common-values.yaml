@@ -1,0 +1,32 @@
+image:
+  repository: quay.io/oauth2-proxy/oauth2-proxy
+  tag: v7.15.3@sha256:10a1165743a192e1940b4708fb9647027185ce11a681a1c5519b442ff7f1f561
+  pullPolicy: IfNotPresent
+replicaCount: 2
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  maxUnavailable: null
+resources:
+  requests: { cpu: 20m, memory: 32Mi }
+  limits: { cpu: 200m, memory: 128Mi }
+serviceAccount:
+  enabled: true
+  automountServiceAccountToken: false
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+securityContext:
+  enabled: true
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: { drop: [ALL] }
+extraVolumes:
+  - name: oidc-ca
+    secret:
+      secretName: keycloak-server-tls
+      items: [{ key: ca.crt, path: ca.crt }]
+extraVolumeMounts:
+  - { name: oidc-ca, mountPath: /etc/ssl/certs/monosense-kubernetes-ca.crt, subPath: ca.crt, readOnly: true }

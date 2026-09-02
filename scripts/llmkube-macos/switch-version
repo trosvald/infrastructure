@@ -1,0 +1,31 @@
+#!/bin/sh
+set -eu
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+mode="${1:-}"; component="${2:-}"; version="${3:-}"
+case "$component" in metal-agent|llama|caddy|sync) ;; *) exit 2 ;; esac
+root=/usr/local/libexec/llmkube
+active="$root/$component"
+previous="$root/$component.previous"
+case "$mode" in
+    upgrade)
+        test -n "$version"
+        candidate="$root/$component-$version"
+        test -x "$candidate" && test ! -L "$candidate"
+        "$candidate" --version >/dev/null 2>&1 || test "$component" = sync
+        current="$(readlink "$active")"
+        ln -sfn "$current" "$previous.new"; mv -f "$previous.new" "$previous"
+        ln -sfn "$candidate" "$active.new"; mv -f "$active.new" "$active"
+        ;;
+    rollback)
+        test -L "$previous"
+        target="$(readlink "$previous")"
+        test -x "$target"
+        ln -sfn "$target" "$active.new"; mv -f "$active.new" "$active"
+        ;;
+    *) exit 2 ;;
+esac
+case "$component" in
+    metal-agent|llama) launchctl kickstart -k system/io.monosense.llmkube-metal-agent ;;
+    caddy) launchctl kickstart -k system/io.monosense.llmkube-caddy ;;
+    sync) launchctl kickstart -k system/io.monosense.llmkube-sync ;;
+esac

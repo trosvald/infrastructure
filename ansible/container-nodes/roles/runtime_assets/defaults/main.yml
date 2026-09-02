@@ -8,6 +8,7 @@ container_nodes_runtime_assets_secret_parents:
   c0:
     - /opt/monitoring/secrets
     - /var/lib/monosense-monitoring/secrets
+    - /var/lib/monosense-powerdns/secrets
   c1:
     - /opt/doco-cd/secrets
     - /opt/edge/secrets
@@ -60,29 +61,45 @@ container_nodes_runtime_assets_token_consumers:
         kv/data/docker/c1/librefs: [read]
         kv/data/docker/c1/edge: [read]
         kv/data/docker/c1/forgejo: [read]
+        kv/data/platform/kubernetes/database/dragonfly: [read]
         auth/token/lookup-self: [read]
         auth/token/renew-self: [update]
 container_nodes_runtime_assets_kv_contracts:
   c0_monitoring:
     path: kv/data/docker/c0/monitoring
-    keys: [telegram_bot_token, telegram_chat_id, vector_ingest_token, backup_heartbeat_token,
+    keys: [telegram_bot_token, telegram_chat_id, backup_heartbeat_token,
            vector_tls_certificate, vector_tls_fullchain, vector_tls_private_key,
-           vector_tls_serial, vector_tls_not_after]
+           vector_tls_serial, vector_tls_not_after, vector_client_certificate,
+           vector_client_private_key, vector_client_ca, vector_client_serial,
+           vector_client_expiration]
+  c0_powerdns:
+    path: kv/data/docker/c0/powerdns
+    keys: [tsig_secret]
   c1_edge:
     path: kv/data/docker/c1/edge
-    keys: [acme_email, cloudflare_dns_token, maxmind_account_id, maxmind_license_key, crowdsec_lapi_key, crowdsec_bouncer_key, vector_ingest_token]
+    keys: [acme_email, cloudflare_dns_token, maxmind_account_id, maxmind_license_key,
+           crowdsec_lapi_key, crowdsec_bouncer_key, vector_ingest_token,
+           vector_client_certificate, vector_client_private_key, vector_client_ca,
+           vector_client_serial, vector_client_expiration]
   c1_forgejo:
     path: kv/data/docker/c1/forgejo
     keys: [postgres_password, forgejo_secret_key, forgejo_internal_token,
            forgejo_jwt_secret, forgejo_lfs_jwt_secret, admin_password, admin_email,
            zoho_username, zoho_password, kopia_repository_password,
            librefs_access_key, librefs_secret_key]
+  c1_dragonfly:
+    path: kv/data/platform/kubernetes/database/dragonfly
+    keys: [forgejo_a_password, forgejo_b_password, keycloak_a_password,
+           keycloak_b_password, litellm_a_password, litellm_b_password]
   c1_librefs:
     path: kv/data/docker/c1/librefs
     keys: [root_user, root_password]
   wildcard:
     path: kv/data/platform/tls/monosense-wildcard
     keys: [certificate, fullchain, private_key, serial, not_after]
+  kubernetes_ca:
+    path: kv/data/platform/tls/kubernetes-ca
+    keys: [certificate]
 container_nodes_runtime_assets_secret_action: false
 container_nodes_runtime_assets_rotate: false
 container_nodes_runtime_assets_controller_token: ''

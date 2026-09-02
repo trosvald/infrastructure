@@ -1,0 +1,21 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: openbao-config
+  namespace: external-secrets
+spec:
+  interval: 1h
+  path: ./kubernetes/apps/external-secrets/openbao-config/app
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux
+    namespace: flux-system
+  dependsOn:
+    - name: external-secrets
+      namespace: external-secrets
+    - name: cert-manager
+      namespace: cert-manager
+  wait: true
+  timeout: 10m

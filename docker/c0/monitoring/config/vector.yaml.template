@@ -1,14 +1,5 @@
 data_dir: /var/lib/vector
 sources:
-  c1_https:
-    type: http_server
-    address: 0.0.0.0:8686
-    auth:
-      strategy: custom
-      source: |
-        .headers.authorization == "Bearer @@vector_ingest_token@@"
-    tls: { enabled: true, crt_file: /run/tls/current/fullchain.pem, key_file: /run/tls/current/privkey.pem }
-    decoding: { codec: json }
   srx_tls:
     type: syslog
     address: 0.0.0.0:6514
@@ -20,16 +11,14 @@ sources:
 transforms:
   allow_redact:
     type: remap
-    inputs: [c1_https, srx_tls]
+    inputs: [srx_tls]
     drop_on_abort: true
     drop_on_error: true
     source: |
       text = string!(.message)
       appname = to_string(.appname) ?? ""
       msgid = to_string(.msgid) ?? ""
-      allowed = contains(text, "haproxy") || contains(text, "forgejo") ||
-        contains(text, "crowdsec") || contains(text, "backup") ||
-        contains(text, "certificate") || starts_with(appname, "RT_FLOW") ||
+      allowed = starts_with(appname, "RT_FLOW") ||
         starts_with(appname, "RT_SCREEN") || starts_with(msgid, "RT_FLOW") ||
         starts_with(msgid, "RT_SCREEN") || contains(text, "RT_FLOW") ||
         contains(text, "RT_SCREEN") || contains(text, "BGP") ||
@@ -39,9 +28,10 @@ transforms:
       del(.headers)
       del(.cookies)
       del(.password)
+      del(.secret)
       del(.token)
       del(.request_body)
-      .message = redact(text, filters: [r'(?i)(authorization|cookie|password|token)=[^ ]+', r'https?://[^/@ ]+@'])
+      .message = redact(text, filters: [r'(?i)(authorization|cookie|password|token|secret)=[^ ]+', r'https?://[^/@ ]+@'])
 sinks:
   evidence:
     type: file
@@ -49,4 +39,24 @@ sinks:
     path: /var/lib/vector/evidence/%Y-%m-%d.jsonl
     encoding: { codec: json }
     compression: none
+  victoria_logs:
+    type: http
+    inputs: [allow_redact]
+    uri: https://vlogs-ingest.internal:8444/insert/jsonline?_stream_fields=host,source_type,appname,msgid&_msg_field=message
+    method: post
+    encoding: { codec: json }
+    framing: { method: newline_delimited }
+    compression: gzip
+    tls:
+      verify_certificate: true
+      verify_hostname: true
+      ca_file: /run/vector-client/ca.pem
+      crt_file: /run/vector-client/certificate.pem
+      key_file: /run/vector-client/private-key.pem
+    batch: { max_bytes: 1048576, timeout_secs: 2 }
+    request: { timeout_secs: 10, retry_attempts: 5 }
+    buffer:
+      type: disk
+      max_size: 268435488
+      when_full: block
     healthcheck: { enabled: true }

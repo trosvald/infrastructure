@@ -1,0 +1,105 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openbao-tokenrequest
+  namespace: external-secrets
+rules:
+  - apiGroups: [""]
+    resources: [serviceaccounts/token]
+    resourceNames: [openbao]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openbao-tokenrequest
+  namespace: external-secrets
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openbao-tokenrequest
+subjects:
+  - kind: ServiceAccount
+    name: external-secrets
+    namespace: external-secrets
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openbao-tokenrequest
+  namespace: networking
+rules:
+  - apiGroups: [""]
+    resources: [serviceaccounts/token]
+    resourceNames: [openbao-issuer]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openbao-tokenrequest
+  namespace: networking
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: openbao-tokenrequest }
+subjects:
+  - { kind: ServiceAccount, name: cert-manager, namespace: cert-manager }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openbao-tokenrequest
+  namespace: database
+rules:
+  - apiGroups: [""]
+    resources: [serviceaccounts/token]
+    resourceNames: [openbao-issuer]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openbao-tokenrequest
+  namespace: database
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: openbao-tokenrequest }
+subjects:
+  - { kind: ServiceAccount, name: cert-manager, namespace: cert-manager }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openbao-tokenrequest
+  namespace: security
+rules:
+  - apiGroups: [""]
+    resources: [serviceaccounts/token]
+    resourceNames: [openbao-issuer]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openbao-tokenrequest
+  namespace: security
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: openbao-tokenrequest }
+subjects:
+  - { kind: ServiceAccount, name: cert-manager, namespace: cert-manager }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openbao-tokenrequest
+  namespace: ai
+rules:
+  - apiGroups: [""]
+    resources: [serviceaccounts/token]
+    resourceNames: [openbao-issuer]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openbao-tokenrequest
+  namespace: ai
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: openbao-tokenrequest }
+subjects:
+  - { kind: ServiceAccount, name: cert-manager, namespace: cert-manager }

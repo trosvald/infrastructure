@@ -74,6 +74,19 @@ class IntentTests(unittest.TestCase):
                 f"interfaces {interface} unit 0 family ethernet-switching vlan members VLAN-PROD",
                 text,
             )
+        self.assertIn("vlans VLAN-STORAGE vlan-id 2514", text)
+        self.assertIn("vlans VLAN-STORAGE l3-interface irb.2514", text)
+        self.assertIn("interfaces irb unit 2514 family inet mtu 1496", text)
+        self.assertIn("interfaces irb unit 2514 family inet address 198.18.3.1/24", text)
+        self.assertIn(
+            "interfaces xe-0/0/18 unit 0 family ethernet-switching vlan members VLAN-STORAGE",
+            text,
+        )
+        self.assertIn(
+            "interfaces xe-0/0/19 unit 0 family ethernet-switching vlan members VLAN-STORAGE",
+            text,
+        )
+        self.assertIn("security-zone STORAGE interfaces irb.2514", text)
         self.assertIn("routing-instances VR-XLSATU access address-assignment pool HOME", text)
         self.assertIn(
             "routing-instances VR-XLSATU system services dhcp-local-server group HOME interface irb.2512",
@@ -139,7 +152,8 @@ class IntentTests(unittest.TestCase):
             "198.51.100.15",
         ):
             self.assertIn(f"protocols bgp group CILIUM neighbor {peer}", text)
-        self.assertEqual(text.count("protocols bgp group CILIUM authentication-key "), 1)
+        self.assertEqual(text.count("protocols bgp group CILIUM neighbor "), 5)
+        self.assertEqual(text.count("protocols bgp group CILIUM authentication-key "), 0)
         self.assertIn(
             "IMPORT-CILIUM-LB term CILIUM-LB-HOSTS from route-filter "
             "198.18.0.0/24 prefix-length-range /32-/32",
@@ -149,8 +163,21 @@ class IntentTests(unittest.TestCase):
         self.assertIn("routing-options static route 198.18.0.0/24 discard", text)
         self.assertIn("prefix-limit maximum 128 teardown 100 idle-timeout 5", text)
         self.assertIn("protocols bgp group CILIUM multipath", text)
+        self.assertIn(
+            "policy-options policy-statement LOAD-BALANCE-CILIUM term CILIUM "
+            "then load-balance per-packet",
+            text,
+        )
+        self.assertIn(
+            "routing-options forwarding-table export LOAD-BALANCE-CILIUM",
+            text,
+        )
         self.assertIn("routing-options autonomous-system 64512", text)
         self.assertIn("routing-options router-id 198.51.100.1", text)
+        self.assertIn(
+            "security address-book global address STORAGE-GATEWAY 198.18.3.1/32",
+            text,
+        )
         self.assertIn(
             "security-zone PROD interfaces irb.2511 "
             "host-inbound-traffic protocols bgp",
@@ -192,14 +219,14 @@ class IntentTests(unittest.TestCase):
         with self.assertRaisesRegex(module.IntentError, "device-local"):
             self.build(intent_dir=raw_auth)
         missing_auth = self.with_topology(
-            lambda topology: topology["bgp"].pop("authentication_key")
+            lambda topology: topology["bgp"].pop("authentication_keys")
         )
         with self.assertRaisesRegex(module.IntentError, "undefined topology key"):
             self.build(topology=missing_auth)
         malformed_auth = self.with_topology(
-            lambda topology: topology["bgp"].update(authentication_key="invalid")
+            lambda topology: topology["bgp"].update(authentication_keys=["invalid"] * 5)
         )
-        with self.assertRaisesRegex(module.IntentError, "43-character base64url"):
+        with self.assertRaisesRegex(module.IntentError, "five unique 43-character base64url"):
             self.build(topology=malformed_auth)
 
     def test_cilium_import_and_export_policy_failures_are_independent(self):
@@ -428,7 +455,9 @@ class IntentTests(unittest.TestCase):
             self.build(intent_dir=bad_home_import)
         bad_zone = self.with_intent(
             "security",
-            lambda value: value["security"]["zones"][5].update(interfaces=["ge-0/0/1.0"]),
+            lambda value: next(
+                zone for zone in value["security"]["zones"] if zone["name"] == "WAN-MYREP"
+            ).update(interfaces=["ge-0/0/0.0"]),
         )
         with self.assertRaisesRegex(module.IntentError, "WAN zones"):
             self.build(intent_dir=bad_zone)

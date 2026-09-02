@@ -1,0 +1,52 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: ceph-dashboard }
+spec:
+  parentRefs: [{ name: envoy-internal, namespace: networking, sectionName: https }]
+  hostnames: [ceph.monosense.io]
+  rules:
+    - filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [Authorization, X-Forwarded-User, X-Forwarded-Email, X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Groups]
+      backendRefs: [{ name: oauth2-proxy-ceph, port: 80 }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: alertmanager }
+spec:
+  parentRefs: [{ name: envoy-internal, namespace: networking, sectionName: https }]
+  hostnames: [alertmanager.monosense.io]
+  rules:
+    - filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [Authorization, X-Forwarded-User, X-Forwarded-Email, X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Groups]
+      backendRefs: [{ name: oauth2-proxy-alertmanager, port: 80 }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: victoria-logs-query }
+spec:
+  parentRefs: [{ name: envoy-internal, namespace: networking, sectionName: https }]
+  hostnames: [vlogs.monosense.io]
+  rules:
+    - filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [Authorization, X-Forwarded-User, X-Forwarded-Email, X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Groups]
+      backendRefs: [{ name: oauth2-proxy-vlogs, port: 80 }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: memini-ui }
+spec:
+  parentRefs: [{ name: envoy-internal, namespace: networking, sectionName: https }]
+  hostnames: [memini.monosense.io]
+  rules:
+    - filters:
+        - type: RequestHeaderModifier
+          requestHeaderModifier:
+            remove: [Authorization, X-Forwarded-User, X-Forwarded-Email, X-Auth-Request-User, X-Auth-Request-Email, X-Auth-Request-Groups]
+      backendRefs: [{ name: oauth2-proxy-memini, port: 80 }]

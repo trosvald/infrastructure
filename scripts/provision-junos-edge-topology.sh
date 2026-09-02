@@ -38,6 +38,9 @@ source, target, version_path, changed_path, mode = (
 response = json.loads(source.read_text(encoding="utf-8"))
 record = response["data"]["data"]
 version = response["data"]["metadata"]["version"]
+current_public_enabled = record.get("edge", {}).get("public_enabled")
+if mode == "provision" and not isinstance(current_public_enabled, bool):
+    raise SystemExit("protected topology conflict at edge.public_enabled")
 opener = urllib.request.build_opener(
     urllib.request.ProxyHandler({}),
     urllib.request.HTTPSHandler(context=ssl.create_default_context()),
@@ -58,12 +61,15 @@ if not isinstance(observed, ipaddress.IPv4Address) or not observed.is_global:
 required = {
     "dns.internal": "10.25.13.35",
     "dns.internal_cidr": "10.25.13.35/32",
-    "edge.public_enabled": mode == "enable-public",
+    "edge.public_enabled": current_public_enabled if mode == "provision" else mode == "enable-public",
     "monitoring.gatus_cidr": "10.25.13.36/32",
     "monitoring.vector_address": "10.25.13.37",
     "monitoring.vector_cidr": "10.25.13.37/32",
     "monitoring.vector_host": "logs-ingest.monosense.io",
     "monitoring.syslog_ca_profile": "LE-ISRG-ROOT-X1",
+    "networks.storage.subnet": "10.25.14.0/24",
+    "networks.storage.gateway": "10.25.14.1",
+    "networks.storage.gateway_cidr": "10.25.14.1/24",
     "networks.edge.subnet": "10.25.15.0/24",
     "networks.edge.gateway": "10.25.15.1",
     "networks.edge.gateway_cidr": "10.25.15.1/24",

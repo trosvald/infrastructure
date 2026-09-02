@@ -1,7 +1,7 @@
 [Unit]
 Description=Prerequisite-gated Doco project {{ item.name }}
-Requires={{ doco_controller_unit_name }}{% for unit in item.prerequisites %} {{ unit }}{% endfor %}
-After={{ doco_controller_unit_name }}{% for unit in item.prerequisites %} {{ unit }}{% endfor %}
+Requires={{ ([doco_controller_unit_name] + item.prerequisites) | join(' ') }}
+After={{ ([doco_controller_unit_name] + item.prerequisites) | join(' ') }}
 
 [Service]
 Type=oneshot

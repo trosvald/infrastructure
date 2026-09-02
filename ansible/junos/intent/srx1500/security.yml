@@ -5,6 +5,8 @@ security:
     - { name: EDGE-HAPROXY, value: { topology: networks.edge.haproxy_cidr } }
     - { name: C0-GATUS, value: { topology: monitoring.gatus_cidr } }
     - { name: C0-VECTOR, value: { topology: monitoring.vector_cidr } }
+    - { name: STORAGE-SUBNET, value: { topology: networks.storage.subnet } }
+    - { name: STORAGE-GATEWAY, value: { topology: networks.storage.gateway } }
   screens:
     - name: WAN-SCREEN
       options:
@@ -34,6 +36,7 @@ security:
     - { name: PROD, interfaces: [irb.2511], services: [dhcp, ping], protocols: [bgp] }
     - { name: HOME, interfaces: [irb.2512], services: [dhcp, ping] }
     - { name: DEV, interfaces: [irb.2513], services: [dhcp, ping] }
+    - { name: STORAGE, interfaces: [irb.2514], services: [ping] }
     - { name: EDGE, interfaces: [irb.2515] }
     - { name: WAN-XLSATU, interfaces: [ge-0/0/0.0], screen: WAN-SCREEN, services: [dhcp] }
     - { name: WAN-MYREP, interfaces: [ge-0/0/1.0], screen: WAN-SCREEN, services: [dhcp] }

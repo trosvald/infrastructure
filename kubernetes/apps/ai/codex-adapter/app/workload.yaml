@@ -1,0 +1,80 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: codex-checkpoint }
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: codex-adapter }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: codex-adapter } }
+  template:
+    metadata: { labels: { app.kubernetes.io/name: codex-adapter } }
+    spec:
+      serviceAccountName: codex-checkpoint
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      hostAliases:
+        - ip: 10.25.13.34
+          hostnames: [vault.monosense.io]
+      nodeSelector: { kubernetes.io/arch: amd64 }
+      initContainers:
+        - name: install
+          image: docker.io/curlimages/curl:8.18.0@sha256:d94d07ba9e7d6de898b6d96c1a072f6f8266c687af78a74f380087a0addf5d17
+          command: [/bin/sh, -ec]
+          args:
+            - >-
+              curl --fail --location --output /tmp/proxy.tgz
+              https://github.com/dvcrn/codex-oauth-proxy/releases/download/1.1.0/codex-oauth-proxy_1.1.0_linux_amd64.tar.gz;
+              echo '3137c88a3a67e36418050f1c9e7a07972844cd2e27505cc9289b94d34ed69a54  /tmp/proxy.tgz' | sha256sum -c -;
+              tar -xzf /tmp/proxy.tgz -C /opt/bin;
+              test -x /opt/bin/codex-oauth-proxy;
+              chmod 0555 /opt/bin/codex-oauth-proxy;
+              install -m 0600 /source/auth.json /state/auth.json
+          securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: binary, mountPath: /opt/bin }, { name: oauth-source, mountPath: /source, readOnly: true }, { name: oauth-state, mountPath: /state }]
+      containers:
+        - name: adapter
+          image: docker.io/curlimages/curl:8.18.0@sha256:d94d07ba9e7d6de898b6d96c1a072f6f8266c687af78a74f380087a0addf5d17
+          command: [/opt/bin/codex-oauth-proxy]
+          args: [--creds-store=xdg, --creds-path=/state/auth.json]
+          env:
+            - { name: PORT, value: "8080" }
+            - { name: ENV, value: production }
+            - { name: DISABLE_HEALTH_LOGS, value: "true" }
+          ports: [{ name: http, containerPort: 8080 }]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 512Mi }
+          readinessProbe: { httpGet: { path: /health, port: http }, periodSeconds: 10 }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: binary, mountPath: /opt/bin, readOnly: true }, { name: oauth-state, mountPath: /state }]
+        - name: checkpoint
+          image: docker.io/library/python:3.13.7-alpine3.22@sha256:9ba6d8cbebf0fb6546ae71f2a1c14f6ffd2fdab83af7fa5669734ef30ad48844
+          command: [python, /opt/checkpoint/checkpoint.py]
+          resources: { requests: { cpu: 10m, memory: 32Mi }, limits: { cpu: 100m, memory: 64Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts: [{ name: checkpoint, mountPath: /opt/checkpoint, readOnly: true }, { name: oauth-state, mountPath: /state }, { name: token, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true }]
+      volumes:
+        - { name: binary, emptyDir: {} }
+        - { name: oauth-state, emptyDir: { medium: Memory, sizeLimit: 1Mi } }
+        - { name: oauth-source, secret: { secretName: codex-oauth, defaultMode: 256 } }
+        - { name: checkpoint, configMap: { name: codex-checkpoint, defaultMode: 365 } }
+        - name: token
+          projected:
+            defaultMode: 256
+            sources:
+              - serviceAccountToken: { path: token, audience: openbao, expirationSeconds: 600 }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: codex-adapter }
+spec:
+  selector: { app.kubernetes.io/name: codex-adapter }
+  ports: [{ name: http, port: 8080, targetPort: http }]

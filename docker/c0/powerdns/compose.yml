@@ -52,10 +52,12 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+    secrets: [external_dns_tsig]
     volumes:
       - *data-volume
       - ./zones:/zones:ro
       - ./scripts/reconcile.sh:/usr/local/bin/reconcile.sh:ro
+      - ./scripts/merge_dynamic.py:/usr/local/bin/merge_dynamic.py:ro
 
   powerdns:
     <<: *powerdns-image
@@ -64,9 +66,11 @@ services:
         condition: service_completed_successfully
     command:
       - --api=no
+      - --dnsupdate=yes
       - --disable-axfr=yes
       - --gsqlite3-database=/var/lib/powerdns/pdns.sqlite3
       - --launch=gsqlite3
+      - --lua-dnsupdate-policy-script=/var/lib/powerdns/dnsupdate-policy.lua
       - --local-address=0.0.0.0
       - --version-string=anonymous
       - --webserver=no
@@ -74,20 +78,24 @@ services:
     cap_add: [NET_BIND_SERVICE]
     security_opt:
       - no-new-privileges:true
+    secrets: [external_dns_tsig]
     mem_swappiness: 0
     restart: "no"
     stop_grace_period: 30s
     volumes:
       - *data-volume
-      - ./zones:/deployment/zones:ro
-      - ./scripts/reconcile.sh:/deployment/reconcile.sh:ro
+      - ./scripts/merge_dynamic.py:/usr/local/bin/merge_dynamic.py:ro
+      - ./zones:/zones:ro
+      - ./scripts/reconcile.sh:/usr/local/bin/reconcile.sh:ro
     networks:
       c0_services:
         ipv4_address: 10.25.13.33
     healthcheck:
       test:
         - CMD-SHELL
-        - test "$$(pdns_control rping)" = PONG
+        - >-
+          kill -0 1 &&
+          test "$$(sqlite3 /var/lib/powerdns/pdns.sqlite3 'PRAGMA quick_check;')" = ok
       start_period: 15s
       start_interval: 2s
       interval: 30s
@@ -98,6 +106,10 @@ services:
       options:
         max-size: 10m
         max-file: "3"
+
+secrets:
+  external_dns_tsig:
+    file: /var/lib/monosense-powerdns/secrets/external_dns_tsig
 
 volumes:
   powerdns-data:

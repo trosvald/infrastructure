@@ -1,0 +1,5 @@
+# fixed-id<TAB>apiVersion<TAB>kind<TAB>namespace<TAB>name<TAB>reason
+cilium	helm.toolkit.fluxcd.io/v2	HelmRelease	kube-system	cilium	Bootstrap-adopted cluster networking ownership boundary.
+coredns	helm.toolkit.fluxcd.io/v2	HelmRelease	kube-system	coredns	Bootstrap-adopted cluster DNS ownership boundary.
+flux-operator	helm.toolkit.fluxcd.io/v2	HelmRelease	flux-system	flux-operator	Bootstrap-adopted Flux Operator release boundary.
+flux-instance	fluxcd.controlplane.io/v1	FluxInstance	flux-system	flux	Bootstrap-adopted Git reconciliation control plane.

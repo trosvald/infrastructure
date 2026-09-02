@@ -68,6 +68,20 @@
   register: container_node_verification_openbao_results
   no_log: true
 
+- name: Report mismatched OpenBao record contracts without values
+  ansible.builtin.debug:
+    msg: >-
+      {{ container_node_verification_openbao_records[item].name }};
+      actual keys={{ container_node_verification_openbao_results.results[item].json.data.data | dict2items | map(attribute='key') | list | sort }}
+  loop: "{{ range(0, container_node_verification_openbao_records | length) | list }}"
+  when: >-
+    (container_node_verification_openbao_results.results[item].json.data.data
+     | dict2items | map(attribute='key') | list | sort)
+    != (container_node_verification_openbao_records[item]['keys'] | sort)
+    or
+    (container_node_verification_openbao_results.results[item].json.data.metadata.version | int)
+    < (container_node_verification_openbao_records[item].minimum_version | default(1) | int)
+
 - name: Verify exact OpenBao record schemas and versions
   ansible.builtin.assert:
     that:

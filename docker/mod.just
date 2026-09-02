@@ -13,7 +13,7 @@ validate-c0: validate-openbao validate-powerdns validate-blocky validate-omada-c
     cd "{{ source_directory() }}/.."
     yamllint .sops.yaml docker/c0/.doco-cd.yaml docker/c0/.doco-cd/docker-compose.app.yaml docker/c0/.doco-cd/poll-config.yml
     yq -e '.working_dir == "./docker/c0" and .auto_discovery.enabled == true and .auto_discovery.depth == 1 and .auto_discovery.delete == false and .force_recreate == false and .reconciliation.enabled == false' docker/c0/.doco-cd.yaml >/dev/null
-    yq -e 'length == 1 and .[0].url == "https://github.com/trosvald/infrastructure.git" and .[0].reference == "refs/heads/main" and .[0].interval == "180s" and .[0].watch == false and (.[0] | has("target") | not)' docker/c0/.doco-cd/poll-config.yml >/dev/null
+    yq -e 'length == 1 and .[0].url == "https://git.monosense.io/trosvald/infrastructure.git" and .[0].reference == "refs/heads/main" and .[0].interval == "180s" and .[0].watch == false and (.[0] | has("target") | not)' docker/c0/.doco-cd/poll-config.yml >/dev/null
     yq -e '.services.doco-cd.image == "ghcr.io/kimdre/doco-cd:0.111.0@sha256:8c31f63f6bde1b67f0802619bad0599bf5e41503f5532be9cc58d0f063b1eeea" and .services.doco-cd.environment.DEPLOY_CONFIG_BASE_DIR == "./docker/c0/" and .services.doco-cd.environment.POLL_CONFIG_FILE == "/etc/doco-cd/poll-config.yml"' docker/c0/.doco-cd/docker-compose.app.yaml >/dev/null
     DOCO_CD_API_SECRET_FILE=/dev/null DOCO_CD_SOPS_AGE_KEY_FILE=/dev/null docker compose -f docker/c0/.doco-cd/docker-compose.app.yaml config --quiet
     python3 - <<'PY'
@@ -38,7 +38,11 @@ validate-openbao:
     test "$(sops filestatus docker/c0/openbao/encrypted/cloudflare.ini | jq -r '.encrypted')" = true
     test "$(sops filestatus encrypted/monosense-infra.env | jq -r '.encrypted')" = true
     python3 docker/c0/openbao/policies/tests/test_monosense_infra_policy.py
+    python3 docker/c0/openbao/policies/tests/test_kubernetes_policies.py
     bash -n scripts/with-openbao-runtime.sh scripts/provision-openbao-infra.sh \
+        scripts/provision-openbao-kubernetes-envelope.sh \
+        scripts/configure-openbao-kubernetes.sh scripts/verify-openbao-kubernetes.sh \
+        scripts/provision-kubernetes-backup.sh scripts/provision-kubernetes-r2-backup.sh scripts/provision-powerdns-dynamic-dns.sh \
         scripts/provision-junos-edge-topology.sh scripts/provision-talos-records.sh \
         scripts/unseal-openbao.sh scripts/tests/test_unseal_openbao.sh \
         talos/scripts/validate_inventory.sh
@@ -97,8 +101,8 @@ validate-powerdns:
         and .services["zone-reconcile"].network_mode == "none"
         and any(.services["zone-reconcile"].volumes[]; .target == "/zones" and .type == "bind" and .read_only == true)
         and any(.services["zone-reconcile"].volumes[]; .target == "/usr/local/bin/reconcile.sh" and .type == "bind" and .read_only == true)
-        and any(.services.powerdns.volumes[]; .target == "/deployment/zones" and .type == "bind" and .read_only == true)
-        and any(.services.powerdns.volumes[]; .target == "/deployment/reconcile.sh" and .type == "bind" and .read_only == true)
+        and any(.services.powerdns.volumes[]; .target == "/zones" and .type == "bind" and .read_only == true)
+        and any(.services.powerdns.volumes[]; .target == "/usr/local/bin/reconcile.sh" and .type == "bind" and .read_only == true)
         and all(.services[]; all((.volumes // [])[]; (.type != "volume") or .volume.nocopy == true))
         and .volumes["powerdns-data"].name == "powerdns-data"
         and .services.powerdns.cap_drop == ["ALL"]
@@ -106,8 +110,9 @@ validate-powerdns:
         and .services.powerdns.user == null
         and (.services.powerdns.command | index("--api=no")) != null
         and (.services.powerdns.command | index("--webserver=no")) != null
-        and all(.services[]; (.environment // {}) == {})
-        and all(.services[]; (.secrets // []) == [])
+        and (.services["data-init"].secrets // []) == []
+        and .services["zone-reconcile"].secrets == [{"source":"external_dns_tsig","target":"/run/secrets/external_dns_tsig"}]
+        and .services.powerdns.secrets == [{"source":"external_dns_tsig","target":"/run/secrets/external_dns_tsig"}]
         and all(.services[]; all((.volumes // [])[]; .source != "/var/run/docker.sock"))
         and all(.services[]; all((.volumes // [])[]; (.source | contains("openbao")) | not))
     ' "$rendered" >/dev/null
@@ -133,9 +138,10 @@ validate-blocky:
     bash -n docker/c0/blocky/tests/validate.sh
     yq -e '.name == "blocky-c0" and has("force_recreate") == false' docker/c0/blocky/.doco-cd.yaml >/dev/null
     yq -e '
-        length == 11
+        length == 12
         and has("blocking")
         and has("caching")
+        and has("customDNS")
         and has("conditional")
         and has("connectIPVersion")
         and has("dnssec")
@@ -145,6 +151,10 @@ validate-blocky:
         and has("queryLog")
         and has("statistics")
         and has("upstreams")
+        and (.customDNS.mapping | length) == 3
+        and .customDNS.mapping."dragonfly.internal" == "10.25.20.41"
+        and .customDNS.mapping."auth.internal" == "10.25.20.40"
+        and .customDNS.mapping."auth-admin.internal" == "10.25.20.40"
         and .upstreams.init.strategy == "blocking"
         and (.upstreams.groups.default | length) == 2
         and .upstreams.groups.default[0] == "https://1.1.1.1/dns-query#cloudflare-dns.com"

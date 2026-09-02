@@ -1,0 +1,72 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: keycloak-default-deny
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+      app.kubernetes.io/instance: keycloak
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: keycloak
+spec:
+  endpointSelector:
+    matchLabels:
+      app: keycloak
+      app.kubernetes.io/instance: keycloak
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: networking
+            k8s:io.kubernetes.serviceaccount.name: envoy-internal
+      toPorts:
+        - ports: [{ port: "8443", protocol: TCP }]
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: security
+            k8s:io.kubernetes.serviceaccount.name: keycloak-operator
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: security
+            k8s:io.kubernetes.serviceaccount.name: keycloak-tofu-runner
+      toPorts:
+        - ports:
+            - { port: "8443", protocol: TCP }
+            - { port: "9000", protocol: TCP }
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: security
+            k8s:app: keycloak
+            k8s:app.kubernetes.io/instance: keycloak
+      toPorts:
+        - ports: [{ port: "7800", protocol: TCP }]
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: database
+            k8s:cnpg.io/cluster: postgres
+      toPorts:
+        - ports: [{ port: "5432", protocol: TCP }]
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: security
+            k8s:app: keycloak
+            k8s:app.kubernetes.io/instance: keycloak
+      toPorts:
+        - ports: [{ port: "7800", protocol: TCP }]
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: TCP }
+            - { port: "53", protocol: UDP }
+    - toFQDNs:
+        - matchName: smtp.zoho.com
+      toPorts:
+        - ports: [{ port: "587", protocol: TCP }]

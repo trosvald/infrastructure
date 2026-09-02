@@ -121,20 +121,20 @@
         drift_expected_lines: >-
           {{ drift_candidate.stdout_lines
              | select('match', '^set groups ANSIBLE_SRX1500 ')
-             | reject('search', ' protocols bgp group CILIUM authentication-key ')
+             | reject('search', ' protocols bgp group CILIUM (?:neighbor [^ ]+ )?authentication-key ')
              | list | sort }}
         drift_actual_lines: >-
           {{ drift_managed_configuration.group.splitlines()
              | select('match', '^set groups ANSIBLE_SRX1500 ')
-             | reject('search', ' protocols bgp group CILIUM authentication-key ')
+             | reject('search', ' protocols bgp group CILIUM (?:neighbor [^ ]+ )?authentication-key ')
              | list | sort }}
         drift_expected_authentication_lines: >-
           {{ drift_candidate.stdout_lines
-             | select('search', ' protocols bgp group CILIUM authentication-key ')
+             | select('search', ' protocols bgp group CILIUM (?:neighbor [^ ]+ )?authentication-key ')
              | list }}
         drift_actual_authentication_lines: >-
           {{ drift_managed_configuration.group.splitlines()
-             | select('search', ' protocols bgp group CILIUM authentication-key ')
+             | select('search', ' protocols bgp group CILIUM (?:neighbor [^ ]+ )?authentication-key ')
              | list }}
         drift_apply_groups: "{{ drift_managed_configuration.apply_groups.splitlines() | select('search', 'ANSIBLE_SRX1500') | list }}"
         drift_expected_ordered_lines: >-
@@ -158,8 +158,8 @@
         that:
           - drift_actual_lines | length > 0
           - drift_apply_groups | length > 0
-          - drift_expected_authentication_lines | length == 1
-          - drift_actual_authentication_lines | length == 1
+          - drift_expected_authentication_lines | length == 5
+          - drift_actual_authentication_lines | length == 5
         fail_msg: >-
           Managed group evidence is absent. Stop and complete the direct-configuration cleanup and
           apply-groups adoption migration before attempting drift comparison.

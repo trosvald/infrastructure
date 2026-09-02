@@ -1,0 +1,27 @@
+---
+- name: Restore c0 monitoring configuration and notifications
+  hosts: c0
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: recover-monitoring
+    container_nodes_runtime_assets_controller_token: >-
+      {{ lookup(
+           'ansible.builtin.file',
+           lookup('ansible.builtin.env', 'CONTAINER_NODES_OPENBAO_TOKEN_FILE')
+         ) }}
+  tasks:
+    - name: Re-audit identity-critical state
+      ansible.builtin.include_role: {name: audit}
+
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+
+    - name: Restore Gatus configuration through the protected runtime boundary
+      ansible.builtin.include_role:
+        name: runtime_assets
+        tasks_from: recover-monitoring.yml
+      no_log: true

@@ -116,27 +116,73 @@ fetch_record() {
 
 bgp_exists=false
 topology_exists=false
+topology_needs_update=false
 secrets_exists=false
 if fetch_record "${paths[0]}" "$bgp"; then bgp_exists=true; fi
 existing_topology="$runtime_dir/existing-topology.json"
 if fetch_record "${paths[1]}" "$existing_topology"; then topology_exists=true; fi
 if fetch_record "${paths[2]}" "$secrets"; then secrets_exists=true; fi
 
-if [[ "$topology_exists" == true ]]; then
-    jq -e --slurpfile expected "$topology" '. == $expected[0]' "$existing_topology" >/dev/null || {
-        echo "existing Talos topology differs; overwrite requires a separate reviewed change" >&2
+if [[ "$topology_exists" == true ]] &&
+    ! jq -e --slurpfile expected "$topology" '. == $expected[0]' "$existing_topology" >/dev/null; then
+    jq -e --slurpfile expected "$topology" '
+        (. | del(.storage_network, .versions) |
+            .nodes |= map(del(.storage_address))) ==
+            ($expected[0] | del(.storage_network, .versions) |
+                .nodes |= map(del(.storage_address))) and
+        ((has("storage_network") | not) or .storage_network == $expected[0].storage_network) and
+        ([range(0; (.nodes | length)) as $index |
+            ((.nodes[$index] | has("storage_address") | not) or
+                .nodes[$index].storage_address ==
+                    $expected[0].nodes[$index].storage_address)] | all) and
+        (.versions | type == "object") and
+        (.versions | keys == ["kubernetes", "schematic", "talos"]) and
+        .versions.schematic == $expected[0].versions.schematic and
+        (.versions.talos == "v1.13.9" or .versions.talos == $expected[0].versions.talos) and
+        (.versions.kubernetes == "v1.36.2" or
+            .versions.kubernetes == $expected[0].versions.kubernetes)
+    ' "$existing_topology" >/dev/null || {
+        echo "existing Talos topology differs outside the reviewed current-state migration" >&2
         exit 1
     }
+    topology_needs_update=true
 fi
 if [[ "$bgp_exists" == true ]]; then
-    jq -e 'type == "object" and keys == ["password"] and (.password | type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$"))' "$bgp" >/dev/null || {
+    if jq -e 'type == "object" and keys == ["password"] and (.password | type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$"))' "$bgp" >/dev/null; then
+        password_01="$(jq -er '.password' "$bgp")"
+        password_02="$(openssl rand 32 | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
+        password_03="$(openssl rand 32 | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
+        password_04="$(openssl rand 32 | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
+        password_05="$(openssl rand 32 | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
+        jq -n \
+            --arg password_01 "$password_01" \
+            --arg password_02 "$password_02" \
+            --arg password_03 "$password_03" \
+            --arg password_04 "$password_04" \
+            --arg password_05 "$password_05" \
+            '{$password_01, $password_02, $password_03, $password_04, $password_05}' > "$bgp"
+        current_version="$(bao kv metadata get -mount=kv -format=json "${paths[0]}" | jq -er '.data.current_version')"
+        bao kv put -mount=kv -cas="$current_version" "${paths[0]}" "@$bgp" >/dev/null
+    fi
+    jq -e '
+        type == "object" and
+        keys == ["password_01", "password_02", "password_03", "password_04", "password_05"] and
+        ([.[] | type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$")] | all) and
+        ([.[]] | unique | length) == 5
+    ' "$bgp" >/dev/null || {
         echo "existing Cilium BGP record has an invalid schema" >&2
         exit 1
     }
 else
-    openssl rand 32 | openssl base64 -A | tr '+/' '-_' | tr -d '=' | jq -Rn '{password: input}' > "$bgp"
+    printf '{}\n' > "${bgp}.tmp"
+    for index in 01 02 03 04 05; do
+        password="$(openssl rand 32 | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
+        jq --arg key "password_$index" --arg value "$password" '. + {($key): $value}' \
+            "${bgp}.tmp" > "$bgp"
+        cp "$bgp" "${bgp}.tmp"
+    done
+    rm -f "${bgp}.tmp"
     chmod 0600 "$bgp"
-    jq -e '.password | length == 43 and test("^[A-Za-z0-9_-]{43}$")' "$bgp" >/dev/null
 fi
 
 if [[ "$secrets_exists" == false ]]; then
@@ -162,13 +208,21 @@ if [[ "$bgp_exists" == false ]]; then
 fi
 if [[ "$topology_exists" == false ]]; then
     bao kv put -mount=kv -cas=0 "${paths[1]}" "@$topology" >/dev/null
+elif [[ "$topology_needs_update" == true ]]; then
+    current_version="$(bao kv metadata get -mount=kv -format=json "${paths[1]}" | jq -er '.data.current_version')"
+    bao kv put -mount=kv -cas="$current_version" "${paths[1]}" "@$topology" >/dev/null
 fi
 
 fetch_record "${paths[0]}" "$bgp"
 fetch_record "${paths[1]}" "$existing_topology"
 fetch_record "${paths[2]}" "$secrets"
 jq -e --slurpfile expected "$topology" '. == $expected[0]' "$existing_topology" >/dev/null
-jq -e 'type == "object" and keys == ["password"] and (.password | length == 43 and test("^[A-Za-z0-9_-]{43}$"))' "$bgp" >/dev/null
+jq -e '
+    type == "object" and
+    keys == ["password_01", "password_02", "password_03", "password_04", "password_05"] and
+    ([.[] | length == 43 and test("^[A-Za-z0-9_-]{43}$")] | all) and
+    ([.[]] | unique | length) == 5
+' "$bgp" >/dev/null
 python talos/scripts/build_topology.py \
     --inventory-dir "$inventory_dir" \
     --decisions "$decisions" \

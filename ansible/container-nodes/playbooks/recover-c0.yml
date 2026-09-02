@@ -1,0 +1,127 @@
+---
+- name: Recover c0 Doco applications after host power loss
+  hosts: c0
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: recover-c0
+    container_nodes_recovery_projects:
+      - doco-project-powerdns-c0.service
+      - doco-project-blocky-c0.service
+      - doco-project-openbao-c0.service
+      - doco-project-monitoring-c0.service
+      - doco-project-omada-controller-c0.service
+    container_nodes_recovery_containers:
+      - powerdns-c0-powerdns-1
+      - blocky-c0-blocky-1
+      - openbao-c0-openbao-1
+      - gatus-c0
+      - vector-c0
+      - omada-controller-c0-omada-controller-1
+  tasks:
+    - name: Re-audit identity-critical state
+      ansible.builtin.include_role: {name: audit}
+
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+
+    - name: Install outage-safe network prerequisite logic
+      ansible.builtin.include_role: {name: network}
+
+    - name: Install outage-safe Doco lifecycle units
+      ansible.builtin.include_role: {name: doco_controller}
+
+    - name: Reset failed c0 lifecycle units
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - reset-failed
+          - c0-services-prerequisite.service
+          - doco-cd-c0.service
+          - doco-project-powerdns-c0.service
+          - doco-project-blocky-c0.service
+          - doco-project-openbao-c0.service
+          - doco-project-monitoring-c0.service
+          - doco-project-omada-controller-c0.service
+      changed_when: true
+
+    - name: Start c0 SERVICES prerequisite
+      ansible.builtin.systemd_service:
+        name: c0-services-prerequisite.service
+        state: started
+
+    - name: Start c0 Doco controller
+      ansible.builtin.systemd_service:
+        name: doco-cd-c0.service
+        state: started
+
+    - name: Start c0 projects in dependency order
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ container_nodes_recovery_projects }}"
+      register: container_nodes_recovery_projects_started
+      failed_when: false
+    - name: Read failed c0 project lifecycle diagnostics
+      ansible.builtin.command:
+        argv:
+          - journalctl
+          - --unit
+          - "{{ item.item }}"
+          - --lines=10
+          - --no-pager
+          - --output=cat
+      register: container_nodes_recovery_journals
+      changed_when: false
+      loop: "{{ container_nodes_recovery_projects_started.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: "'failed' in (item.msg | default(''))"
+
+    - name: Report failed c0 project lifecycle diagnostics
+      ansible.builtin.debug:
+        var: item.stdout_lines
+      loop: "{{ container_nodes_recovery_journals.results }}"
+      loop_control:
+        label: "{{ item.item.item | default('project') }}"
+      when: not (item.skipped | default(false))
+
+
+    - name: Inspect c0 application container state
+      ansible.builtin.command:
+        argv:
+          - docker
+          - container
+          - inspect
+          - --format
+          - "{{ '{{.State.Status}}' }}"
+          - "{{ item }}"
+      register: container_nodes_recovery_status
+      changed_when: false
+      failed_when: false
+      loop: "{{ container_nodes_recovery_containers }}"
+
+    - name: Require c0 application containers to run
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - item.stdout == 'running'
+        fail_msg: "Required c0 container is not running: {{ item.item }}"
+      loop: "{{ container_nodes_recovery_status.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Clear failed unit state only after container recovery proof
+      ansible.builtin.command:
+        argv:
+          - systemctl
+          - reset-failed
+          - "{{ item.item }}"
+      changed_when: true
+      loop: "{{ container_nodes_recovery_projects_started.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: "'failed' in (item.msg | default(''))"

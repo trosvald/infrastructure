@@ -44,11 +44,11 @@
         confirm_reviewed_group_lines: >-
           {{ confirm_candidate_text.splitlines() | map('trim')
              | select('match', '^set groups ANSIBLE_SRX1500 ')
-             | reject('search', ' protocols bgp group CILIUM authentication-key ')
+             | reject('search', ' protocols bgp group CILIUM (?:neighbor [^ ]+ )?authentication-key ')
              | list | sort }}
         confirm_reviewed_authentication_count: >-
           {{ confirm_candidate_text.splitlines()
-             | select('search', ' protocols bgp group CILIUM authentication-key ')
+             | select('search', ' protocols bgp group CILIUM (?:neighbor [^ ]+ )?authentication-key ')
              | list | length }}
         confirm_reviewed_apply_lines: >-
           {{ confirm_candidate_text.splitlines() | map('trim')
@@ -124,11 +124,11 @@
         confirm_running_group_lines: >-
           {{ confirm_pending.stdout[1].splitlines() | map('trim')
              | reject('equalto', '')
-             | reject('search', ' protocols bgp group CILIUM authentication-key ')
+             | reject('search', ' protocols bgp group CILIUM (?:neighbor [^ ]+ )?authentication-key ')
              | list | sort }}
         confirm_running_authentication_count: >-
           {{ confirm_pending.stdout[1].splitlines()
-             | select('search', ' protocols bgp group CILIUM authentication-key ')
+             | select('search', ' protocols bgp group CILIUM (?:neighbor [^ ]+ )?authentication-key ')
              | list | length }}
         confirm_running_apply_lines: >-
           {{ confirm_pending.stdout[2].splitlines() | map('trim')
@@ -178,8 +178,8 @@
           reviewed_apply_group: >-
             {{ confirm_reviewed_apply_lines == ['set apply-groups ANSIBLE_SRX1500'] }}
           managed_group_match: "{{ confirm_running_group_lines == confirm_reviewed_group_lines }}"
-          reviewed_authentication_path: "{{ confirm_reviewed_authentication_count | int == 1 }}"
-          running_authentication_path: "{{ confirm_running_authentication_count | int == 1 }}"
+          reviewed_authentication_path: "{{ confirm_reviewed_authentication_count | int == 5 }}"
+          running_authentication_path: "{{ confirm_running_authentication_count | int == 5 }}"
           apply_group_match: "{{ confirm_running_apply_lines == confirm_reviewed_apply_lines }}"
           ordered_configuration_match: >-
             {{ (confirm_running_order.stdout | from_json)

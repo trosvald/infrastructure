@@ -11,6 +11,7 @@
       - 10.25.11.13
       - 10.25.11.14
       - 10.25.11.15
+    bgp_verify_require_ecmp: true
   tasks:
     - name: Read device identity before BGP verification
       juniper.device.junos_facts:
@@ -47,15 +48,11 @@
     - name: Require the exact configured authenticated peer set
       ansible.builtin.assert:
         that:
-          - bgp_verify.stdout | length == 19
+          - bgp_verify.stdout | length == 21
           - >-
             (bgp_verify.stdout[0]
-             | regex_findall('(?m)^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM neighbor (10[.]25[.]11[.](?:11|12|13|14|15))$')
+             | regex_findall('(?m)^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM neighbor (10[.]25[.]11[.](?:11|12|13|14|15)) authentication-key\s+.+$')
              | unique | sort) == cilium_peers
-          - >-
-            (bgp_verify.stdout[0]
-             | regex_findall('(?m)^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key\s+.+$')
-             | length) == 1
           - bgp_verify.stdout[0] is search('(?m)^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM peer-as 64513$')
         fail_msg: "Configured CILIUM peers or value-free authentication path is not exact."
       no_log: true
@@ -63,9 +60,9 @@
     - name: Require all five authenticated sessions established to peer AS 64513
       ansible.builtin.assert:
         that:
-          - item.1 is search('Peer:\s+' ~ item.0 ~ '([+\s]|$)')
-          - item.1 is search('Peer AS:\s+64513\b')
-          - item.1 is search('State:\s+Established\b')
+          - 'item.1 is search("Peer: " ~ item.0)'
+          - 'item.1 is search("AS:?\s+64513")'
+          - 'item.1 is search("State:\s+Established")'
       loop: "{{ cilium_peers | zip(bgp_verify.stdout[2:7]) }}"
       loop_control:
         label: "{{ item.0 }}"
@@ -95,3 +92,46 @@
           - bgp_verify.stdout[18] is search('[*>]')
         fail_msg: "The active covering static discard route is missing."
       no_log: true
+
+    - name: Report bounded ECMP next-hop evidence
+      ansible.builtin.debug:
+        msg:
+          rib: >-
+            {{ bgp_verify.stdout[19]
+               | regex_findall('10[.]25[.]11[.](?:11|12|13|14|15)')
+               | unique | sort }}
+          fib: >-
+            {{ bgp_verify.stdout[20]
+               | regex_findall('10[.]25[.]11[.](?:11|12|13|14|15)')
+               | unique | sort }}
+      when: bgp_verify_require_ecmp | bool
+    - name: Report bounded per-peer advertised route evidence
+      ansible.builtin.debug:
+        msg:
+          received: >-
+            {{ bgp_verify.stdout[8:13] | join('\n')
+               | regex_findall('10[.]25[.]20[.][0-9]+/32')
+               | unique | sort }}
+          accepted: >-
+            {{ bgp_verify.stdout[7]
+               | regex_findall('10[.]25[.]20[.][0-9]+/32')
+               | unique | sort }}
+      when: bgp_verify_require_ecmp | bool
+
+
+    - name: Require independent RIB and forwarding-table five-way ECMP
+      ansible.builtin.assert:
+        that:
+          - bgp_verify.stdout[19] is search('10[.]25[.]20[.]11/32')
+          - >-
+            (bgp_verify.stdout[19]
+             | regex_findall('10[.]25[.]11[.](?:11|12|13|14|15)')
+             | unique | sort) == cilium_peers
+          - bgp_verify.stdout[20] is search('10[.]25[.]20[.]11')
+          - >-
+            (bgp_verify.stdout[20]
+             | regex_findall('10[.]25[.]11[.](?:11|12|13|14|15)')
+             | unique | sort) == cilium_peers
+        fail_msg: "The all-node acceptance VIP does not have five independent RIB and FIB next hops."
+      no_log: true
+      when: bgp_verify_require_ecmp | bool

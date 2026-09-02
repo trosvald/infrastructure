@@ -4,12 +4,19 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   name: smartctl-exporter
+  namespace: observability
+  annotations:
+    infrastructure.monosense.io/blocked-by: reviewed-smart-device-inventory
 spec:
   interval: 1h
   path: ./kubernetes/apps/observability/smartctl-exporter/app
+  suspend: true
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
   targetNamespace: observability
+  dependsOn:
+    - name: prometheus-operator-crds
+      namespace: observability

@@ -1,0 +1,182 @@
+---
+- name: Recover c1 Doco applications after host power loss
+  hosts: c1
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: recover-c1
+    container_nodes_runtime_assets_secret_action: true
+    container_nodes_runtime_assets_rotate: true
+    container_nodes_runtime_assets_controller_token: >-
+      {{ lookup(
+           'ansible.builtin.file',
+           lookup('ansible.builtin.env', 'CONTAINER_NODES_OPENBAO_TOKEN_FILE')
+         ) }}
+    container_nodes_recovery_prerequisites:
+      - c1-librefs-storage.service
+      - c1-applications-storage.service
+      - c1-services-shim.service
+      - c1-services-network.service
+      - c1-edge-networks.service
+      - c1-forgejo-egress.service
+      - doco-c1-openbao-token.service
+      - c1-wildcard-certificate.service
+    container_nodes_recovery_projects:
+      - doco-project-librefs-c1.service
+      - doco-project-edge-c1.service
+      - doco-project-forgejo-c1.service
+  tasks:
+    - name: Re-audit identity-critical state
+      ansible.builtin.include_role: {name: audit}
+
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+
+    - name: Install outage-safe network prerequisite logic
+      ansible.builtin.include_role: {name: network}
+
+    - name: Install outage-safe Doco lifecycle units
+      ansible.builtin.include_role: {name: doco_controller}
+
+    - name: Reset failed c1 lifecycle units
+      ansible.builtin.command:
+        argv: [systemctl, reset-failed, "{{ item }}"]
+      changed_when: true
+      loop: "{{ container_nodes_recovery_prerequisites + [doco_controller_unit_name] + container_nodes_recovery_projects }}"
+
+    - name: Start c1 application prerequisites in dependency order
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+      loop: "{{ container_nodes_recovery_prerequisites }}"
+      register: container_nodes_recovery_prerequisites_started
+      failed_when: false
+
+    - name: Read failed c1 prerequisite diagnostics
+      ansible.builtin.command:
+        argv: [journalctl, --unit, "{{ item.item }}", --lines=20, --no-pager, --output=cat]
+      register: container_nodes_recovery_prerequisite_journals
+      changed_when: false
+      loop: "{{ container_nodes_recovery_prerequisites_started.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: "'Unable to start service' in (item.msg | default(''))"
+    - name: Report failed c1 prerequisite diagnostics
+      ansible.builtin.debug:
+        var: item.stdout_lines
+      loop: "{{ container_nodes_recovery_prerequisite_journals.results }}"
+      loop_control:
+        label: "{{ item.item.item | default('prerequisite') }}"
+      when: not (item.skipped | default(false))
+
+    - name: Detect an authorization-stale wildcard reader
+      ansible.builtin.set_fact:
+        container_nodes_recovery_wildcard_forbidden: >-
+          {{ container_nodes_recovery_prerequisite_journals.results
+             | selectattr('stdout', 'defined')
+             | map(attribute='stdout')
+             | join('\n')
+             is search('HTTP Error 403: Forbidden') }}
+
+    - name: Rotate the c1 wildcard reader after authorization failure
+      ansible.builtin.include_role:
+        name: runtime_assets
+        tasks_from: rotate-wildcard-reader.yml
+      when: container_nodes_recovery_wildcard_forbidden | bool
+      no_log: true
+
+    - name: Retry c1 wildcard certificate after scoped token rotation
+      ansible.builtin.systemd_service:
+        name: c1-wildcard-certificate.service
+        state: started
+      when: container_nodes_recovery_wildcard_forbidden | bool
+
+    - name: Require non-wildcard c1 prerequisites to start
+      ansible.builtin.assert:
+        that:
+          - "'Unable to start service' not in (item.msg | default(''))"
+        fail_msg: "Required c1 prerequisite failed: {{ item.item }}"
+      loop: "{{ container_nodes_recovery_prerequisites_started.results[:-1] }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Recover a missing c1 Vector client credential generation
+      ansible.builtin.include_role:
+        name: runtime_assets
+        tasks_from: recover-vector-client.yml
+      no_log: true
+
+    - name: Start c1 Doco controller
+      ansible.builtin.systemd_service:
+        name: "{{ doco_controller_unit_name }}"
+        state: restarted
+
+    - name: Start c1 projects in dependency order
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: restarted
+      loop: "{{ container_nodes_recovery_projects }}"
+      register: container_nodes_recovery_projects_started
+      failed_when: false
+
+    - name: Read failed c1 project lifecycle diagnostics
+      ansible.builtin.command:
+        argv: [journalctl, --unit, "{{ item.item }}", --lines=10, --no-pager, --output=cat]
+      register: container_nodes_recovery_journals
+      changed_when: false
+      loop: "{{ container_nodes_recovery_projects_started.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: "'failed' in (item.msg | default(''))"
+
+    - name: Report failed c1 project lifecycle diagnostics
+      ansible.builtin.debug:
+        var: item.stdout_lines
+      loop: "{{ container_nodes_recovery_journals.results }}"
+      loop_control:
+        label: "{{ item.item.item | default('project') }}"
+      when: not (item.skipped | default(false))
+
+    - name: Recover the managed Forgejo administrator credential
+      ansible.builtin.include_role:
+        name: runtime_assets
+        tasks_from: recover-forgejo-admin.yml
+      no_log: true
+
+    - name: Inspect c1 application container state
+      ansible.builtin.command:
+        argv:
+          - docker
+          - container
+          - inspect
+          - --format
+          - "{{ '{{.State.Status}}' }}"
+          - "{{ item.name }}"
+      register: container_nodes_recovery_status
+      changed_when: false
+      failed_when: false
+      loop: "{{ container_node_verification_application_containers }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Require c1 application containers to run
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - item.stdout == 'running'
+        fail_msg: "Required c1 container is not running: {{ item.item.name }}"
+      loop: "{{ container_nodes_recovery_status.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+
+    - name: Clear failed project unit state only after container recovery proof
+      ansible.builtin.command:
+        argv: [systemctl, reset-failed, "{{ item.item }}"]
+      changed_when: true
+      loop: "{{ container_nodes_recovery_projects_started.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: "'failed' in (item.msg | default(''))"

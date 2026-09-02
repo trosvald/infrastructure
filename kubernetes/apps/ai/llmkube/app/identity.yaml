@@ -1,0 +1,57 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: llmkube-metal-agent
+  annotations:
+    monosense.io/external-identity-only: "true"
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: llmkube-metal-agent
+rules:
+  - apiGroups: [inference.llmkube.dev]
+    resources: [models, inferenceservices]
+    verbs: [get, list, watch]
+  - apiGroups: [inference.llmkube.dev]
+    resources: [inferenceservices/status]
+    verbs: [get, patch, update]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch, create, patch, update, delete]
+  - apiGroups: [""]
+    resources: [services]
+    resourceNames: [qwen3-embedding, qwen3-embedding-tls]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [llmkube-mac-tls, llmkube-embedding-api-key, mac-embedding-client-tls]
+    verbs: [get]
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata: { name: llmkube-mac-runtime }
+spec:
+  refreshInterval: 15m
+  refreshPolicy: Periodic
+  secretStoreRef: { kind: ClusterSecretStore, name: openbao }
+  target:
+    name: llmkube-embedding-api-key
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  data:
+    - { secretKey: api-key, remoteRef: { key: platform/kubernetes/ai/llmkube, property: embedding_api_key } }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: llmkube-mac-server }
+spec:
+  secretName: llmkube-mac-tls
+  duration: 8760h
+  renewBefore: 720h
+  dnsNames: [embedding.internal, qwen3-embedding-tls.ai.svc.cluster.local, mac-metrics.internal]
+  usages: [server auth]
+  issuerRef: { kind: Issuer, name: openbao-mac-embedding }
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }

@@ -3,38 +3,43 @@
 apiVersion: kopiur.home-operations.com/v1alpha1
 kind: ClusterRepository
 metadata:
-  name: nas
+  name: librefs
 spec:
   allowedNamespaces:
-    all: true
+    selector:
+      matchLabels:
+        kopiur.home-operations.com/backup: "true"
   backend:
-    filesystem:
-      path: /repo
-      volume:
-        nfs:
-          server: tank.internal
-          path: /mnt/sank/kopiur
+    s3:
+      auth:
+        secretRef:
+          name: kopiur-librefs-secret
+          namespace: kopiur-system
+      bucket: kubernetes-backups
+      endpoint: s3.monosense.io:443
+      prefix: primary
+      region: us-east-1
   credentialProjection:
     allowed: true
   encryption:
     passwordSecretRef:
-      name: kopiur-nas-secret
+      name: kopiur-librefs-secret
       namespace: kopiur-system
       key: KOPIA_PASSWORD
   moverDefaults:
     cache:
-      capacity: 1Mi # Ignored
+      capacity: 1Gi
       mode: Ephemeral
-      storageClassName: openebs-hostpath
+      storageClassName: local-hostpath-delete
     podSecurityContext:
       fsGroup: 1000
       fsGroupChangePolicy: OnRootMismatch
     scratch:
-      capacity: 1Mi # Ignored
-      storageClassName: openebs-hostpath
+      capacity: 1Gi
+      storageClassName: local-hostpath-delete
     securityContext:
       runAsUser: 1000
       runAsGroup: 1000
     ttlSecondsAfterFinished: 300
   scheduleDefaults:
-    timezone: America/Chicago
+    timezone: Asia/Jakarta

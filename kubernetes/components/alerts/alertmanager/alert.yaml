@@ -24,3 +24,5 @@ spec:
     - dial.*tcp.*timeout
     - waiting.*socket
     - dial.*tcp.*unreachable
+    - (?i).*(secret|credential|password|token).*(path|revision).*
+    - (?i).*(path|revision).*(secret|credential|password|token).*

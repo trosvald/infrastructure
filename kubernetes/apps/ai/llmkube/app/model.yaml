@@ -1,0 +1,54 @@
+---
+apiVersion: inference.llmkube.dev/v1alpha1
+kind: Model
+metadata:
+  name: qwen3-embedding
+  annotations:
+    models.monosense.io/revision: f4602530db1d980e16da9d7d3a70294cf5c190be
+    models.monosense.io/size-bytes: "4279660224"
+    models.monosense.io/sha256: b60ae5ce2dd6a0b77f82cadf21def1f310a3e10cde380ad0081b07a9d416949d
+spec:
+  source: https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF/resolve/f4602530db1d980e16da9d7d3a70294cf5c190be/Qwen3-Embedding-4B-Q8_0.gguf
+  format: gguf
+  sha256: b60ae5ce2dd6a0b77f82cadf21def1f310a3e10cde380ad0081b07a9d416949d
+  hardware:
+    accelerator: metal
+    gpu: { enabled: true, count: 1 }
+---
+apiVersion: inference.llmkube.dev/v1alpha1
+kind: InferenceService
+metadata:
+  name: qwen3-embedding
+spec:
+  modelRef: qwen3-embedding
+  replicas: 1
+  runtime: llamacpp
+  mode: embedding
+  contextSize: 8192
+  parallelSlots: 2
+  endpoint: { port: 8081, path: /v1/embeddings }
+  extraArgs:
+    - --alias
+    - qwen3-embedding
+    - --host
+    - 127.0.0.1
+    - --api-key-file
+    - /var/lib/llmkube/current/secrets/embedding-api-key
+---
+apiVersion: v1
+kind: Service
+metadata: { name: qwen3-embedding-tls }
+spec:
+  ports: [{ name: https, port: 8443, targetPort: 8443 }]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: qwen3-embedding-tls-mac
+  labels: { kubernetes.io/service-name: qwen3-embedding-tls }
+addressType: IPv4
+endpoints:
+  - addresses: [10.25.13.95]
+    conditions: { ready: true }
+    hostname: llmkube-mac
+ports: [{ name: https, protocol: TCP, port: 8443 }]

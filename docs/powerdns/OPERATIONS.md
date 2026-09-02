@@ -37,7 +37,9 @@ The PowerDNS API and web server are disabled. TCP `8081` must refuse connections
 
 ## Record changes
 
-Git is the only persistent zone-content writer. Use this workflow:
+Git owns every canonical zone name. ExternalDNS is the only dynamic writer and may own only
+TXT-marked `A`, `AAAA`, and `CNAME` RRsets below `monosense.io`. Use this workflow for canonical
+changes:
 
 1. Edit the applicable canonical files under `docker/c0/powerdns/zones/`.
 2. Update every changed SOA serial. If the execution UTC date is later than the serial's
@@ -50,10 +52,14 @@ Git is the only persistent zone-content writer. Use this workflow:
 6. Verify direct UDP and TCP A/PTR answers at `10.25.13.33`.
 7. Create and verify a post-change encrypted online backup.
 
-Do not add public Cloudflare records, DNSKEY/DS records, ACME challenges, or Kubernetes-owned
-records to these standalone zones. Manual `pdnsutil` or SQL changes are emergency-only and
-temporary: represent them in Git immediately or the next deployment will remove them. The disabled
-API and web server are not mutation paths.
+Do not add public Cloudflare records, DNSKEY/DS records, ACME challenges, or ExternalDNS-owned
+records to the canonical files. Provision the shared RFC2136 credential once with
+`just provision-powerdns-dynamic-dns`; it writes only the exact c0 PowerDNS and Kubernetes
+ExternalDNS OpenBao records. Reconciliation validates and preserves only RRsets carrying the exact
+`external-dns-internal` TXT owner marker. It rejects any dynamic name that collides with a
+canonical Git name, then atomically replaces both the SQLite database and Lua update policy.
+Unowned manual `pdnsutil` or SQL changes are emergency-only and disappear at the next deployment.
+The PowerDNS API and web server remain disabled and are not mutation paths.
 
 ## Doco-CD deployment and rollback
 
@@ -67,7 +73,7 @@ If reconciliation fails before the atomic rename:
 1. Stop `doco-cd` to prevent polling recreation.
 2. Run `docker compose down` for the `powerdns-c0` project without `-v`.
 3. Preserve `powerdns-data`; never delete it to solve a reconciliation failure.
-4. Diagnose the retained `pdns.sqlite3.tmp` and remove only that failed candidate.
+4. Confirm no `pdns.sqlite3.tmp` or `dnsupdate-policy.lua.tmp` candidate remains.
 5. Correct, validate, commit, and push the repository change.
 6. Restart the existing `doco-cd` container and verify its next poll succeeds.
 

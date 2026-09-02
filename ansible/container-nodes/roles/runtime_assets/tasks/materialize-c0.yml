@@ -3,20 +3,25 @@
   ansible.builtin.include_tasks: materialize-consumers.yml
   vars:
     runtime_monitoring: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c0_monitoring') | first).json.data.data }}"
+    runtime_powerdns: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c0_powerdns') | first).json.data.data }}"
     runtime_materials:
+      - path: /var/lib/monosense-powerdns/secrets/external_dns_tsig
+        content: "{{ runtime_powerdns.tsig_secret }}"
+        owner: '953'
+        group: '953'
+        parent_owner: '953'
+        parent_group: '953'
       - path: /var/lib/monosense-monitoring/secrets/gatus.yaml
         content: >-
           {{ lookup('ansible.builtin.file', role_path + '/templates/gatus.yaml.template')
              | replace('@@telegram_bot_token@@', runtime_monitoring.telegram_bot_token)
              | replace('@@telegram_chat_id@@', runtime_monitoring.telegram_chat_id)
-             | replace('@@vector_ingest_token@@', runtime_monitoring.vector_ingest_token)
-             | replace('@@backup_heartbeat_token@@', runtime_monitoring.backup_heartbeat_token) }}
+             | replace('@@backup_heartbeat_token@@', runtime_monitoring.backup_heartbeat_token)
+             | replace('@@vector_ingest_token@@', runtime_monitoring.vector_ingest_token) }}
         owner: '65534'
         group: '65534'
       - path: /var/lib/monosense-monitoring/secrets/vector.yaml
-        content: "{{
-          lookup('ansible.builtin.file', role_path + '/templates/vector.yaml.template')
-          | replace('@@vector_ingest_token@@', runtime_monitoring.vector_ingest_token) }}"
+        content: "{{ lookup('ansible.builtin.file', role_path + '/templates/vector.yaml.template') }}"
         owner: '65534'
         group: '65534'
       - path: /var/lib/monosense-monitoring/vector-tls/fullchain.pem
@@ -27,6 +32,24 @@
         parent_group: '65534'
       - path: /var/lib/monosense-monitoring/vector-tls/privkey.pem
         content: "{{ runtime_monitoring.vector_tls_private_key }}"
+        owner: '65534'
+        group: '65534'
+        parent_owner: '65534'
+        parent_group: '65534'
+      - path: /var/lib/monosense-monitoring/vector-client/certificate.pem
+        content: "{{ runtime_monitoring.vector_client_certificate }}"
+        owner: '65534'
+        group: '65534'
+        parent_owner: '65534'
+        parent_group: '65534'
+      - path: /var/lib/monosense-monitoring/vector-client/private-key.pem
+        content: "{{ runtime_monitoring.vector_client_private_key }}"
+        owner: '65534'
+        group: '65534'
+        parent_owner: '65534'
+        parent_group: '65534'
+      - path: /var/lib/monosense-monitoring/vector-client/ca.pem
+        content: "{{ runtime_monitoring.vector_client_ca }}"
         owner: '65534'
         group: '65534'
         parent_owner: '65534'

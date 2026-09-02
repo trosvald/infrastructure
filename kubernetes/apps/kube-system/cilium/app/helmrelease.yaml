@@ -4,10 +4,14 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: cilium
+  namespace: kube-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   chartRef:
     kind: OCIRepository
     name: cilium
+    namespace: flux-system
   interval: 1h
   values:
     autoDirectNodeRoutes: true
@@ -16,8 +20,9 @@ spec:
       bbr: true
     bpf:
       datapathMode: netkit
+      mapDynamicSizeRatio: 0.0025
       masquerade: true
-      preallocateMaps: true
+      preallocateMaps: false
     bpfClockProbe: true
     bgpControlPlane:
       enabled: true
@@ -29,32 +34,41 @@ spec:
       id: 1
       name: main
     cni:
-      exclusive: false
+      exclusive: true
     dashboards:
-      enabled: true
+      enabled: false
     devices: bond0
-    enableIPv4BIGTCP: true
+    enableIPv4BIGTCP: false
     endpointRoutes:
       enabled: true
+    encryption:
+      enabled: true
+      nodeEncryption: false
+      type: wireguard
     envoy:
       enabled: false
     hubble:
       enabled: true
       metrics:
         enabled:
-          - dns
+          - dns:query;ignoreAAAA
           - drop
           - flow
-          - httpV2
           - icmp
-          - port-distribution
           - tcp
       relay:
         enabled: true
         service:
           type: ClusterIP
+        tls:
+          server:
+            enabled: true
       ui:
         enabled: false
+      tls:
+        auto:
+          enabled: true
+          method: cronJob
     ipam:
       mode: kubernetes
     ipv4NativeRoutingCIDR: 10.244.0.0/16
@@ -69,24 +83,27 @@ spec:
     loadBalancerIPAM:
       enabled: true
     localRedirectPolicies:
-      enabled: true
+      enabled: false
     operator:
       dashboards:
-        enabled: true
+        enabled: false
       prometheus:
         enabled: true
         serviceMonitor:
-          enabled: true
+          enabled: false
       replicas: 2
       rollOutPods: true
     mtu: 1496
     pmtuDiscovery:
       enabled: true
+    policyAuditMode: true
     prometheus:
       enabled: true
       serviceMonitor:
-        enabled: true
-        trustCRDsExist: true
+        enabled: false
+        trustCRDsExist: false
+    hostFirewall:
+      enabled: true
     rollOutCiliumPods: true
     routingMode: native
     securityContext:

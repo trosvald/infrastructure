@@ -1,0 +1,51 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tuppr
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tuppr
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: tuppr
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEntities: [kube-apiserver]
+      toPorts:
+        - ports: [{ port: "9443", protocol: TCP }]
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+      toPorts:
+        - ports: [{ port: "8081", protocol: TCP }]
+  egress:
+    - toEntities: [kube-apiserver]
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+    - toCIDR:
+        - 10.25.11.11/32
+        - 10.25.11.12/32
+        - 10.25.11.13/32
+        - 10.25.11.14/32
+        - 10.25.11.15/32
+      toPorts:
+        - ports: [{ port: "50000", protocol: TCP }]
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            k8s:app.kubernetes.io/name: vmalertmanager
+            k8s:app.kubernetes.io/instance: victoria-metrics
+      toPorts:
+        - ports: [{ port: "9093", protocol: TCP }]

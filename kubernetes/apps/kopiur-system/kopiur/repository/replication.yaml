@@ -1,0 +1,27 @@
+---
+apiVersion: kopiur.home-operations.com/v1alpha1
+kind: RepositoryReplication
+metadata:
+  name: librefs-to-r2
+  namespace: kopiur-system
+spec:
+  sourceRef:
+    kind: ClusterRepository
+    name: librefs
+  destination:
+    s3:
+      auth:
+        secretRef:
+          name: kopiur-r2-secret
+          namespace: kopiur-system
+      bucket: ${R2_BUCKET}
+      endpoint: ${R2_ENDPOINT}
+      prefix: primary
+      region: auto
+  schedule:
+    cron: H 3 * * *
+    timezone: Asia/Jakarta
+  sync:
+    deleteExtra: false
+    parallel: 4
+  suspend: true

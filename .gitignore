@@ -1,13 +1,19 @@
 .claude/
 .codex/
 .omp/
+_bmad/
+.agents/
 .private/
 .DS_Store
 Thumbs.db
 kubeconfig
 talosconfig
+.build/
 __pycache__/
 *.py[cod]
+
+# OpenTofu provider cache; the reviewed lockfile remains tracked
+**/.terraform/
 
 # Ansible/Junos local state and sensitive output
 ansible/junos/.ansible/

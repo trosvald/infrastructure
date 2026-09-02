@@ -1,0 +1,21 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+components:
+  - ../../components/flux/helmrelease-defaults
+resources:
+  - ../../apps/networking/external-dns/ks.yaml
+  - ../../apps/security/keycloak/config/ks.yaml
+  - ../../apps/security/keycloak-tofu/ks.yaml
+  - ../../apps/security/oauth2-proxy/ks.yaml
+  - ../../apps/observability/blackbox-exporter/ks.yaml
+  - ../../apps/observability/fluent-bit/ks.yaml
+  - ../../apps/observability/victoria-metrics-k8s-stack/ks.yaml
+  - ../../apps/observability/victoria-logs/ks.yaml
+  - ../../apps/observability/smartctl-exporter/ks.yaml
+  - ../../apps/observability/snmp-exporter/ks.yaml
+  - ../../apps/observability/grafana-operator/config/ks.yaml
+  - ../../apps/ai/codex-adapter/ks.yaml
+  - ../../apps/ai/llmkube/ks.yaml
+  - ../../apps/ai/litellm/ks.yaml
+  - ../../apps/ai/memini/ks.yaml

@@ -8,6 +8,7 @@ spec:
   chartRef:
     kind: OCIRepository
     name: victoria-logs
+    namespace: flux-system
   interval: 1h
   values:
     global:
@@ -23,14 +24,12 @@ spec:
         enabled: true
         storageClassName: ceph-block
         size: 50Gi
-      retentionPeriod: 90d
+      retentionPeriod: 30d
       route:
-        enabled: true
-        hostnames:
-          - vlogs.monosense.io
-        parentRefs:
-          - name: envoy-internal
-            namespace: networking
+        enabled: false
+      resources:
+        requests: { cpu: 100m, memory: 512Mi }
+        limits: { cpu: "2", memory: 4Gi }
       serviceMonitor:
         enabled: true
     vector:

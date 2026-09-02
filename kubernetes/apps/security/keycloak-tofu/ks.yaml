@@ -1,0 +1,31 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: &app keycloak-tofu
+  namespace: security
+spec:
+  suspend: true
+  prune: false
+  interval: 1h
+  retryInterval: 2m
+  timeout: 10m
+  sourceRef:
+    kind: OCIRepository
+    name: infrastructure
+    namespace: flux-system
+  path: ./kubernetes/apps/security/keycloak-tofu/app
+  targetNamespace: security
+  dependsOn:
+    - { name: keycloak, namespace: security }
+    - { name: external-secrets-config, namespace: external-secrets }
+  commonMetadata:
+    labels:
+      app.kubernetes.io/name: *app
+  postBuild:
+    substitute: {}
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: keycloak-tofu-runner
+      namespace: security

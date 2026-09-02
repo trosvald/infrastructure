@@ -8,6 +8,7 @@ spec:
   chartRef:
     kind: OCIRepository
     name: openebs
+    namespace: flux-system
   interval: 1h
   values:
     preUpgradeHook:
@@ -18,12 +19,9 @@ spec:
       localpv:
         image:
           registry: quay.io/
-        basePath: &basePath /var/mnt/local-hostpath
+        basePath: /var/mnt/local-hostpath
       hostpathClass:
-        enabled: true
-        name: openebs-hostpath
-        isDefaultClass: false
-        basePath: *basePath
+        enabled: false
       helperPod:
         image:
           registry: quay.io/
@@ -35,6 +33,8 @@ spec:
     zfs-localpv:
       enabled: false
     lvm-localpv:
+      enabled: false
+    rawfile-localpv:
       enabled: false
     mayastor:
       enabled: false

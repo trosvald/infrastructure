@@ -84,9 +84,12 @@ provision = (root / "scripts/provision-talos-records.sh").read_text(encoding="ut
 justfile = (root / ".justfile").read_text(encoding="utf-8")
 assert "-cas=0" in provision
 assert "talosctl gen secrets --talos-version v1.14.0-rc.2" in provision
-assert "openssl rand 32" in provision
+assert "openssl rand 32" in provision and "password_01" in provision
+assert provision.count('bao kv put -mount=kv -cas="$current_version"') == 2
 assert '"@$secrets"' in provision and '"@$bgp"' in provision and '"@$topology"' in provision
-assert "existing Talos topology differs; overwrite requires a separate reviewed change" in provision
+assert "existing Talos topology differs outside the reviewed current-state migration" in provision
+assert '(.versions.talos == "v1.13.9"' in provision
+assert '.versions.kubernetes == "v1.36.2"' in provision
 assert "password=" not in provision
 assert "rm -rf \"$runtime_dir\"" in provision
 assert "provision-talos-records:" in justfile

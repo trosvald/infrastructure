@@ -160,7 +160,7 @@ container_node_verification_application_containers:
   - {name: forgejo-postgres-c1, state: running, health: healthy}
   - {name: kopia-forgejo-c1, state: running}
 container_node_verification_application_health_checks:
-  - {name: librefs, type: http, url: 'https://s3.monosense.io/minio/health/ready', status: 200, timeout: 10}
+  - {name: librefs, type: http, url: 'https://s3.monosense.io/minio/health/ready', address: 10.25.13.65, status: 200, timeout: 10}
   - name: forgejo
     type: https-resolve
     hostname: git.monosense.io
@@ -179,7 +179,10 @@ container_node_verification_openbao_records:
     minimum_version: 1
   - name: edge
     path: docker/c1/edge
-    keys: [acme_email, cloudflare_dns_token, maxmind_account_id, maxmind_license_key, crowdsec_lapi_key, crowdsec_bouncer_key, vector_ingest_token]
+    keys: [acme_email, cloudflare_dns_token, maxmind_account_id, maxmind_license_key,
+           crowdsec_lapi_key, crowdsec_bouncer_key, vector_ingest_token,
+           vector_client_certificate, vector_client_private_key, vector_client_ca,
+           vector_client_serial, vector_client_expiration]
     minimum_version: 1
   - name: forgejo
     path: docker/c1/forgejo

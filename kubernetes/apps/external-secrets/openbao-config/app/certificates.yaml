@@ -1,0 +1,110 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: envoy-edge-backend, namespace: networking }
+spec:
+  secretName: envoy-edge-backend-tls
+  issuerRef: { kind: Issuer, name: openbao-envoy-edge }
+  dnsNames: [envoy-edge.networking.svc.cluster.local]
+  usages: [server auth]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: envoy-internal, namespace: networking }
+spec:
+  secretName: envoy-internal-tls
+  issuerRef: { kind: Issuer, name: openbao-envoy-internal }
+  dnsNames: ["*.monosense.io"]
+  usages: [server auth]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: cnpg-server, namespace: database }
+spec:
+  secretName: cnpg-server-tls
+  issuerRef: { kind: Issuer, name: openbao-cnpg }
+  dnsNames: [postgres-rw.database.svc.cluster.local]
+  usages: [server auth]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: cnpg-replication-client, namespace: database }
+spec:
+  secretName: cnpg-replication-client-tls
+  issuerRef: { kind: Issuer, name: openbao-cnpg }
+  commonName: streaming-replica
+  usages: [client auth]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: dragonfly-server, namespace: database }
+spec:
+  secretName: dragonfly-server-tls
+  issuerRef: { kind: Issuer, name: openbao-dragonfly }
+  dnsNames: [dragonfly.database.svc.cluster.local, dragonfly.internal]
+  usages: [server auth]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: keycloak-server, namespace: security }
+spec:
+  secretName: keycloak-server-tls
+  issuerRef: { kind: Issuer, name: openbao-keycloak }
+  dnsNames: [keycloak.security.svc.cluster.local, auth.internal, auth-admin.internal]
+  usages: [server auth]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: cnpg-keycloak-client, namespace: security }
+spec:
+  secretName: cnpg-keycloak-client-tls
+  issuerRef: { kind: Issuer, name: openbao-cnpg-client }
+  commonName: keycloak-db
+  usages: [client auth]
+  privateKey: { algorithm: ECDSA, size: 256, encoding: PKCS8, rotationPolicy: Always }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: cnpg-litellm-client, namespace: ai }
+spec:
+  secretName: cnpg-litellm-client-tls
+  issuerRef: { kind: Issuer, name: openbao-cnpg-client }
+  commonName: litellm-db
+  usages: [client auth]
+  privateKey: { algorithm: ECDSA, size: 256, encoding: PKCS8, rotationPolicy: Always }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: mac-caddy, namespace: networking }
+spec:
+  secretName: mac-caddy-tls
+  issuerRef: { kind: Issuer, name: openbao-mac-caddy }
+  dnsNames: [embedding.internal, mac-metrics.internal]
+  usages: [server auth]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: vector-srx, namespace: networking }
+spec:
+  secretName: vector-srx-tls
+  issuerRef: { kind: Issuer, name: openbao-vector-srx }
+  dnsNames: [logs-ingest.monosense.io]
+  usages: [server auth, client auth]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata: { name: mac-embedding-client, namespace: ai }
+spec:
+  secretName: mac-embedding-client-tls
+  issuerRef: { kind: Issuer, name: openbao-mac-embedding }
+  commonName: embedding.internal
+  usages: [client auth]
+  privateKey: { algorithm: ECDSA, size: 256, rotationPolicy: Always }

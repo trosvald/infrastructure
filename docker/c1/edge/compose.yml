@@ -206,6 +206,26 @@ services:
     pids_limit: 64
     logging: *bounded_logs
 
+  vector-init:
+    image: docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee
+    platform: linux/amd64
+    user: "0:0"
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: [no-new-privileges:true]
+    entrypoint: [/bin/sh, -ceu]
+    command: ["install -d -o 1000 -g 1000 -m 0700 /var/lib/vector/buffer"]
+    volumes: [vector-buffer:/var/lib/vector]
+    tmpfs: ["/tmp:rw,nosuid,nodev,noexec,size=16m,mode=1777"]
+    network_mode: none
+    cpus: 0.1
+    mem_limit: 32m
+    memswap_limit: 32m
+    pids_limit: 32
+    logging: *bounded_logs
+
   vector:
     image: docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee
     platform: linux/amd64
@@ -215,16 +235,18 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    depends_on:
+      vector-init: { condition: service_completed_successfully }
     configs:
       - { source: vector_config, target: /etc/vector/vector.yaml, uid: "1000", gid: "1000", mode: 0440 }
     volumes:
-      - { type: bind, source: /srv/applications/apps/edge/secrets/vector_token, target: /run/secrets/vector_token, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/edge/logs, target: /var/log/edge, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/forgejo/logs, target: /var/log/forgejo-stack, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /srv/applications/apps/edge/tls/current, target: /run/tls, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /srv/applications/apps/edge/secrets/vector-client, target: /run/vector-client, read_only: true, bind: { create_host_path: false } }
+      - vector-buffer:/var/lib/vector
     tmpfs:
       - /tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777
-      - /var/lib/vector:rw,nosuid,nodev,noexec,size=32m,mode=0700,uid=1000,gid=1000
     networks:
       outbound: {}
       telemetry: { ipv4_address: 172.30.15.34 }
@@ -260,3 +282,6 @@ networks:
     name: edge-c1-telemetry
     ipam: { config: [{ subnet: 172.30.15.32/28 }] }
   outbound: { name: edge-c1-outbound }
+
+volumes:
+  vector-buffer: { name: edge-c1-vector-buffer }

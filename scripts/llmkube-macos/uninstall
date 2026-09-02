@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+for label in io.monosense.llmkube-sync io.monosense.llmkube-metal-agent io.monosense.llmkube-caddy; do
+    launchctl bootout "system/$label" >/dev/null 2>&1 || true
+done
+rm -f /Library/LaunchDaemons/io.monosense.llmkube-*.plist
+rm -rf /var/lib/llmkube/kubeconfig /var/lib/llmkube/current /var/lib/llmkube/generations
+rm -f /usr/local/libexec/llmkube/metal-agent /usr/local/libexec/llmkube/llama /usr/local/libexec/llmkube/caddy /usr/local/libexec/llmkube/sync

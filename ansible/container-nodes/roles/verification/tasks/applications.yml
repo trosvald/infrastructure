@@ -48,12 +48,84 @@
     status_code: "{{ item.status | default(200) }}"
     timeout: "{{ item.timeout | default(10) }}"
     validate_certs: true
+  register: container_node_verification_http_results
+  failed_when: false
   changed_when: false
   check_mode: false
   loop: "{{ container_node_verification_application_health_checks }}"
   loop_control:
     label: "{{ item.name | default(item.url | default('invalid-http-check')) }}"
   when: item.type == 'http'
+- name: Read failed application health routes
+  ansible.builtin.command:
+    argv:
+      - ip
+      - -j
+      - route
+      - get
+      - "{{ item.item.address }}"
+  register: container_node_verification_http_routes
+  changed_when: false
+  check_mode: false
+  loop: "{{ container_node_verification_http_results.results }}"
+  loop_control:
+    label: "{{ item.item.name | default('invalid-http-check') }}"
+  when:
+    - not (item.skipped | default(false))
+    - item.status | default(-1) != item.item.status | default(200)
+
+- name: Report failed application health routes
+  ansible.builtin.debug:
+    var: item.stdout_lines
+  loop: "{{ container_node_verification_http_routes.results }}"
+  loop_control:
+    label: "{{ item.item.item.name | default('invalid-http-check') }}"
+  when: not (item.skipped | default(false))
+
+- name: Read failed librefs listening sockets
+  ansible.builtin.command:
+    argv: [docker, exec, librefs-c1, cat, /proc/net/tcp, /proc/net/tcp6]
+  register: container_node_verification_librefs_sockets
+  changed_when: false
+  check_mode: false
+  when: >-
+    container_node_verification_http_results.results
+    | selectattr('item.name', 'equalto', 'librefs')
+    | rejectattr('status', 'equalto', 200)
+    | list
+    | length > 0
+
+- name: Report failed librefs listening sockets
+  ansible.builtin.debug:
+    var: container_node_verification_librefs_sockets.stdout_lines
+  when: not (container_node_verification_librefs_sockets.skipped | default(false))
+
+- name: Read failed librefs startup diagnostics
+  ansible.builtin.command:
+    argv: [docker, logs, --tail, '30', librefs-c1]
+  register: container_node_verification_librefs_logs
+  changed_when: false
+  check_mode: false
+  when: not (container_node_verification_librefs_sockets.skipped | default(false))
+
+- name: Report failed librefs startup diagnostics
+  ansible.builtin.debug:
+    var: container_node_verification_librefs_logs.stderr_lines
+  when: not (container_node_verification_librefs_logs.skipped | default(false))
+
+- name: Verify application HTTP health contracts
+  ansible.builtin.assert:
+    that:
+      - item.status == item.item.status | default(200)
+    fail_msg: >-
+      Application HTTP health contract
+      {{ item.item.name | default('invalid-http-check') }} failed:
+      {{ item.msg | default('unexpected response') }}
+  loop: "{{ container_node_verification_http_results.results }}"
+  loop_control:
+    label: "{{ item.item.name | default('invalid-http-check') }}"
+  when: not (item.skipped | default(false))
+
 
 - name: Probe host-isolated HTTPS health contracts
   ansible.builtin.command:

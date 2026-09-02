@@ -15,8 +15,11 @@ python3 -m py_compile docker/scripts/install_certificate.py \
 python3 docker/c0/openbao/policies/tests/test_doco_c1_policy.py
 docker/c1/librefs/tests/validate.sh
 docker/c1/edge/tests/validate.sh
+printf 'c1 edge Compose contract passed\n'
 docker/c1/edge/tests/haproxy-config.sh
+printf 'c1 HAProxy runtime contract passed\n'
 docker/c1/forgejo/tests/validate.sh
+printf 'c1 Forgejo Compose contract passed\n'
 DOCO_CD_API_SECRET_FILE=/dev/null DOCO_CD_OPENBAO_TOKEN_FILE=/dev/null docker compose -f docker/c1/.doco-cd/docker-compose.app.yaml config --quiet
 python3 - <<'PY'
 from pathlib import Path
@@ -28,7 +31,7 @@ def yaml(path):
 mapping=yaml(root/".doco-cd.yaml")
 assert mapping == {"working_dir":"./docker/c1","auto_discovery":{"enabled":True,"depth":1,"delete":False},"force_recreate":False,"reconciliation":{"enabled":False}}
 poll=yaml(root/".doco-cd/poll-config.yml")
-assert poll == [{"url":"https://github.com/trosvald/infrastructure.git","reference":"refs/heads/main","interval":"180s","watch":False}]
+assert poll == [{"url":"https://git.monosense.io/trosvald/infrastructure.git","reference":"refs/heads/main","interval":"180s","watch":False}]
 c=yaml(root/".doco-cd/docker-compose.app.yaml"); s=c["services"]["doco-cd"]
 assert c["name"]=="doco-cd-c1" and s["container_name"]=="doco-cd-c1" and s["restart"]=="no"
 assert s["image"]=="ghcr.io/kimdre/doco-cd:0.111.0@sha256:8c31f63f6bde1b67f0802619bad0599bf5e41503f5532be9cc58d0f063b1eeea"

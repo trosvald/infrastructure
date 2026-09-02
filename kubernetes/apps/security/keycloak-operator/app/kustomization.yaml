@@ -1,0 +1,10 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: security
+resources:
+  - crds/keycloakoidcclients.k8s.keycloak.org-v1.yml
+  - crds/keycloakrealmimports.k8s.keycloak.org-v1.yml
+  - crds/keycloaks.k8s.keycloak.org-v1.yml
+  - crds/keycloaksamlclients.k8s.keycloak.org-v1.yml
+  - operator.yaml

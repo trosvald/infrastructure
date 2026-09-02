@@ -1,0 +1,44 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+components:
+  - ../../components/flux/helmrelease-defaults
+resources:
+  - ../../apps/flux-system/namespace.yaml
+  - ../../apps/kube-system/namespace.yaml
+  - ../../apps/cert-manager/namespace.yaml
+  - ../../apps/external-secrets/namespace.yaml
+  - ../../apps/networking/namespace.yaml
+  - ../../apps/openebs-system/namespace.yaml
+  - ../../apps/rook-ceph/namespace.yaml
+  - ../../apps/kopiur-system/namespace.yaml
+  - ../../apps/observability/namespace.yaml
+  - ../../apps/system-upgrade/namespace.yaml
+  - ../../apps/database/namespace.yaml
+  - ../../apps/security/namespace.yaml
+  - ../../apps/ai/namespace.yaml
+  - ../../apps/external-secrets/openbao-auth
+  - ../../apps/flux-system/flux-operator/ks.yaml
+  - ../../apps/flux-system/flux-instance/ks.yaml
+  - ../../apps/kube-system/cilium/ks.yaml
+  - ../../apps/kube-system/coredns/ks.yaml
+  - ../../apps/kube-system/spegel/ks.yaml
+  - ../../apps/kube-system/metrics-server/ks.yaml
+  - ../../apps/kube-system/snapshot-controller/ks.yaml
+  - ../../apps/kube-system/reloader/ks.yaml
+  - ../../apps/cert-manager/cert-manager/ks.yaml
+  - ../../apps/external-secrets/external-secrets/ks.yaml
+  - ../../apps/networking/envoy-gateway/ks.yaml
+  - ../../apps/openebs-system/openebs/ks.yaml
+  - ../../apps/rook-ceph/rook-ceph/ks.yaml
+  - ../../apps/rook-ceph/ceph-csi-drivers/ks.yaml
+  - ../../apps/kopiur-system/kopiur/ks.yaml
+  - ../../apps/kopiur-system/kopia/ks.yaml
+  - ../../apps/database/cloudnative-pg/ks.yaml
+  - ../../apps/database/barman-cloud/ks.yaml
+  - ../../apps/database/dragonfly-operator/ks.yaml
+  - ../../apps/security/keycloak-operator/ks.yaml
+  - ../../apps/observability/prometheus-operator-crds/ks.yaml
+  - ../../apps/observability/grafana-operator/ks.yaml
+  - ../../apps/observability/silence-operator/ks.yaml
+  - ../../apps/system-upgrade/tuppr/ks.yaml

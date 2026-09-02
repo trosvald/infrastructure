@@ -215,8 +215,8 @@ render, check, drift, and deployment commands do not fetch it.
 
 There is no `intent_secret`, local vars file, or lookup plugin. The committed
 intent contains `{ topology: ... }` references. At runtime the wrapper reads the
-`topology` record, resolves those references in memory, and injects the BGP
-record's password into the rendered topology without persisting it in intent.
+topology record, resolves those references in memory, and injects the five
+per-adjacency BGP passwords without persisting them in intent.
 The `netconf` record is used only to open the authenticated NETCONF session; it
 is never rendered into Junos configuration. SOPS protects the service login
 bootstrap, not device intent or credentials.
@@ -238,11 +238,11 @@ The `admin` record has exactly the same two-field shape, with `username` set to
 key. It is not the routine NETCONF automation key and must never be written to
 Git or emitted in command output.
 
-The `network/bgp/cilium-srx1500` record has exactly one field:
+The `network/bgp/cilium-srx1500` record has exactly five fields:
 
-| Field | Required value |
+| Fields | Required value |
 |---|---|
-| `password` | Exactly 43 base64url characters matching `[A-Za-z0-9_-]{43}` |
+| `password_01` through `password_05` | Five unique values, each exactly 43 base64url characters matching `[A-Za-z0-9_-]{43}`; suffixes map to `bsd-k8s-01` through `bsd-k8s-05` |
 
 The `topology` record has this complete shape. The values below are reserved
 documentation values that show types and nesting; replace every value with the
@@ -299,6 +299,11 @@ real environment value before writing OpenBao.
       "gateway_cidr": "192.0.2.33/27",
       "dhcp_low": "192.0.2.40",
       "dhcp_high": "192.0.2.50"
+    },
+    "storage": {
+      "subnet": "198.18.3.0/24",
+      "gateway": "198.18.3.1",
+      "gateway_cidr": "198.18.3.1/24"
     }
   },
   "bgp": {
@@ -384,16 +389,18 @@ chmod 0600 "$topology_file"
 bao kv put -mount=kv -cas=0 network/junos/srx1500/topology @"$topology_file"
 ```
 
-Create the Cilium BGP password as a protected JSON object outside the checkout,
-validate its exact shape, and perform the initial compare-and-set write:
+Create the five Cilium BGP passwords as a protected JSON object outside the
+checkout, validate its exact shape and uniqueness, and perform the initial
+compare-and-set write:
 
 ```bash
 bgp_file=/secure/path/outside-the-repository/cilium-srx1500.json
 chmod 0600 "$bgp_file"
 jq -e '
   (type == "object") and
-  (keys == ["password"]) and
-  (.password | type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$"))
+  (keys == ["password_01", "password_02", "password_03", "password_04", "password_05"]) and
+  ([.[] | type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$")] | all) and
+  ([.[]] | unique | length) == 5
 ' "$bgp_file" >/dev/null
 bao kv put -mount=kv -cas=0 network/bgp/cilium-srx1500 @"$bgp_file"
 ```
@@ -411,8 +418,9 @@ bao kv put -mount=kv -cas="$current_version" \
 unset current_version
 ```
 
-Use the same compare-and-set procedure for the NETCONF record. For a BGP
-password rotation, read only its metadata version and bind the update to it:
+Use the same compare-and-set procedure for the NETCONF record. Rotate only one
+`password_NN` field and its matching SRX/Cilium adjacency at a time; prove that
+adjacency re-establishes before rotating the next field:
 
 ```bash
 current_version="$({ bao kv metadata get -mount=kv -format=json network/bgp/cilium-srx1500; } \
@@ -459,9 +467,11 @@ bao kv get -mount=kv -format=json network/junos/srx1500/topology \
 bao kv get -mount=kv -format=json network/bgp/cilium-srx1500 \
   | jq -e '
       (.data.data | type == "object")
-      and (.data.data | keys) == ["password"]
-      and (.data.data.password
-           | type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$"))
+      and (.data.data | keys) ==
+        ["password_01", "password_02", "password_03", "password_04", "password_05"]
+      and ([.data.data[] |
+        type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$")] | all)
+      and ([.data.data[]] | unique | length) == 5
     ' >/dev/null
 ```
 

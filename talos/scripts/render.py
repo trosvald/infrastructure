@@ -34,6 +34,7 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
         "cluster",
         "network",
         "management_network",
+        "storage_network",
         "versions",
         "approved_admin_sources",
         "nodes",
@@ -52,6 +53,7 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
     cluster = topology["cluster"]
     network = topology["network"]
     management_network = topology["management_network"]
+    storage_network = topology["storage_network"]
     versions = topology["versions"]
     require_exact_keys(
         cluster,
@@ -60,12 +62,13 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
     )
     require_exact_keys(network, {"subnet", "gateway"}, "network")
     require_exact_keys(management_network, {"subnet", "gateway"}, "management_network")
+    require_exact_keys(storage_network, {"subnet", "vlan_id", "mtu"}, "storage_network")
     require_exact_keys(versions, {"schematic", "talos", "kubernetes"}, "versions")
     if (
         versions["schematic"]
         != "bd0e9976660939539a20d0c88516154f1cd97d95c2bed48b26314e830023f1b3"
     ):
-        raise RenderError("schematic must be the reviewed Talos 1.14 factory ID")
+        raise RenderError("schematic must be the reviewed Talos factory ID")
     if versions["talos"] != "v1.14.0-rc.2":
         raise RenderError("Talos version must be exactly v1.14.0-rc.2")
     if versions["kubernetes"] != "v1.36.2":
@@ -102,6 +105,8 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
             raise RenderError("live Talos network must be VLAN 2511 at 10.25.11.0/24")
         if management_network != {"subnet": "10.25.10.0/24", "gateway": "10.25.10.1"}:
             raise RenderError("live Talos management network must be VLAN 2510 at 10.25.10.0/24")
+        if storage_network != {"subnet": "10.25.14.0/24", "vlan_id": 2514, "mtu": 1496}:
+            raise RenderError("live storage network must be tagged VLAN 2514 at 10.25.14.0/24 and MTU 1496")
         if topology["private_dns"] != ["10.25.13.35", "10.25.10.100"]:
             raise RenderError("live private DNS must be Blocky then AdGuard")
         if topology["ntp_servers"] != [
@@ -118,6 +123,13 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
     management_gateway = ipaddress.ip_address(str(management_network["gateway"]))
     if management_gateway not in management_subnet:
         raise RenderError("management gateway is outside the MGMT subnet")
+    storage_subnet = ipaddress.ip_network(str(storage_network["subnet"]), strict=True)
+    if (
+        storage_network["vlan_id"] != 2514
+        or storage_network["mtu"] != 1496
+        or storage_subnet.version != 4
+    ):
+        raise RenderError("storage network must be IPv4 VLAN 2514 at MTU 1496")
 
     nodes = topology["nodes"]
     if not isinstance(nodes, list) or not nodes:
@@ -132,6 +144,7 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
     seen_macs: set[str] = set()
     seen_addresses: set[ipaddress._BaseAddress] = set()
     seen_bootstrap_addresses: set[ipaddress._BaseAddress] = set()
+    seen_storage_addresses: set[ipaddress._BaseAddress] = set()
     seen_disk_ids: set[str] = set()
     controlplane_addresses: list[str] = []
     for index, node in enumerate(nodes):
@@ -142,6 +155,7 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
                 "role",
                 "address",
                 "bootstrap_address",
+                "storage_address",
                 "bootstrap_link",
                 "links",
                 "install_disk",
@@ -176,6 +190,16 @@ def validate_context(context: dict[str, Any], allow_synthetic: bool) -> dict[str
         ):
             raise RenderError(f"{node['hostname']}: bootstrap path is invalid or duplicated")
         seen_bootstrap_addresses.add(bootstrap_address)
+        storage_address = ipaddress.ip_address(str(node["storage_address"]))
+        if (
+            storage_address not in storage_subnet
+            or storage_address in {storage_subnet.network_address, storage_subnet.broadcast_address}
+            or storage_address in seen_storage_addresses
+        ):
+            raise RenderError(f"{node['hostname']}: storage VLAN address is invalid or duplicated")
+        if not synthetic and str(storage_address) != f"10.25.14.{11 + index}":
+            raise RenderError(f"{node['hostname']}: live storage address is not the reviewed per-node address")
+        seen_storage_addresses.add(storage_address)
         require_exact_keys(node["links"], {"tor1", "tor2"}, f"{node['hostname']} links")
         for link_name in ("tor1", "tor2"):
             link = node["links"][link_name]

@@ -1,0 +1,64 @@
+---
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/helm.toolkit.fluxcd.io/helmrelease_v2.json
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: dragonfly-operator
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: dragonfly-operator
+    namespace: flux-system
+  interval: 1h
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { group: rbac.authorization.k8s.io, version: v1, kind: ClusterRole, name: dragonfly-operator-manager-role }
+            patch: |-
+              $patch: delete
+              apiVersion: rbac.authorization.k8s.io/v1
+              kind: ClusterRole
+              metadata:
+                name: dragonfly-operator-manager-role
+          - target: { group: rbac.authorization.k8s.io, version: v1, kind: ClusterRoleBinding, name: dragonfly-operator-manager-clusterrolebinding }
+            patch: |-
+              $patch: delete
+              apiVersion: rbac.authorization.k8s.io/v1
+              kind: ClusterRoleBinding
+              metadata:
+                name: dragonfly-operator-manager-clusterrolebinding
+          - target: { group: rbac.authorization.k8s.io, version: v1, kind: ClusterRole, name: dragonfly-operator-(metrics-reader|proxy-role) }
+            patch: |-
+              $patch: delete
+              apiVersion: rbac.authorization.k8s.io/v1
+              kind: ClusterRole
+              metadata:
+                name: ignored
+          - target: { group: rbac.authorization.k8s.io, version: v1, kind: ClusterRoleBinding, name: dragonfly-operator-(proxy|metrics-reader)-clusterrolebinding }
+            patch: |-
+              $patch: delete
+              apiVersion: rbac.authorization.k8s.io/v1
+              kind: ClusterRoleBinding
+              metadata:
+                name: ignored
+  values:
+    fullnameOverride: dragonfly-operator
+    replicaCount: 2
+    createAggregateRoles: false
+    rbacProxy:
+      enabled: false
+    manager:
+      extraArgs: [--watch-current-namespace]
+      resources:
+        requests: { cpu: 50m, memory: 64Mi }
+        limits: { cpu: 500m, memory: 256Mi }
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: dragonfly-operator
+              app.kubernetes.io/instance: dragonfly-operator
+    serviceMonitor:
+      enabled: false

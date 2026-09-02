@@ -11,6 +11,12 @@ upstreams:
 
 connectIPVersion: v4
 
+customDNS:
+  mapping:
+    dragonfly.internal: 10.25.20.41
+    auth.internal: 10.25.20.40
+    auth-admin.internal: 10.25.20.40
+
 conditional:
   fallbackUpstream: false
   mapping:

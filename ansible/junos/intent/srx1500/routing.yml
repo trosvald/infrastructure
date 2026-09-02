@@ -32,16 +32,21 @@ routing:
     - name: EXPORT-CILIUM-NONE
       terms:
         - { name: REJECT-ALL, action: reject }
+    - name: LOAD-BALANCE-CILIUM
+      terms:
+        - { name: CILIUM, from_protocol: bgp, load_balance: per-packet }
+        - { name: ACCEPT-REST, action: accept }
   instance_imports:
     - { routing_instance: master, policy: IMPORT-HOME-INTO-MASTER }
     - { routing_instance: VR-XLSATU, policy: IMPORT-MASTER-INTERNAL-INTO-HOME }
+  forwarding_table_export: LOAD-BALANCE-CILIUM
   bgp:
     name: CILIUM
     type: external
     local_address: { topology: bgp.local_address }
     local_as: { topology: bgp.local_as }
     peer_as: { topology: bgp.peer_as }
-    authentication_key: { topology: bgp.authentication_key }
+    authentication_keys: { topology: bgp.authentication_keys }
     hold_time: 9
     multipath: true
     import_policy: IMPORT-CILIUM-LB

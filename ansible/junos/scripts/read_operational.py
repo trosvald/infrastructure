@@ -55,6 +55,8 @@ BGP_VERIFY_COMMANDS = (
     *(f"show route receive-protocol bgp {peer} | no-more" for peer in CILIUM_PEERS),
     *(f"show route advertising-protocol bgp {peer} | no-more" for peer in CILIUM_PEERS),
     "show route 10.25.20.0/24 exact | no-more",
+    "show route 10.25.20.11/32 exact extensive | no-more",
+    "show route forwarding-table destination 10.25.20.11/32 extensive | no-more",
 )
 
 MODES = {

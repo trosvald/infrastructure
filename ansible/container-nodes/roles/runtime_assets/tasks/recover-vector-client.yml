@@ -1,0 +1,101 @@
+---
+- name: Validate protected Vector client recovery boundary
+  ansible.builtin.assert:
+    that:
+      - container_nodes_runtime_assets_secret_action | bool
+      - container_nodes_runtime_assets_controller_token | length > 20
+      - inventory_hostname == 'c1'
+      - not ansible_check_mode
+    fail_msg: Vector client recovery requires protected controller authentication on c1
+  no_log: true
+
+- name: Read the c1 edge credential record
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/kv/data/docker/c1/edge"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: runtime_vector_recovery_record
+  no_log: true
+  diff: false
+
+- name: Detect a missing Vector client credential generation
+  ansible.builtin.set_fact:
+    runtime_vector_recovery_missing: >-
+      {{ ['vector_client_certificate', 'vector_client_private_key', 'vector_client_ca',
+          'vector_client_serial', 'vector_client_expiration']
+         | difference(runtime_vector_recovery_record.json.data.data.keys() | list)
+         | length > 0 }}
+  no_log: true
+
+- name: Issue and publish a missing Vector client credential generation
+  when: runtime_vector_recovery_missing | bool
+  block:
+    - name: Issue a scoped Vector client certificate
+      ansible.builtin.uri:
+        url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/pki-kubernetes/issue/vector-client"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
+        body_format: json
+        body:
+          common_name: vector-c1
+          ttl: 720h
+        return_content: true
+        status_code: 200
+      delegate_to: localhost
+      become: false
+      register: runtime_vector_recovery_issued
+      no_log: true
+      diff: false
+
+    - name: Validate the issued Vector client credential contract
+      ansible.builtin.assert:
+        that:
+          - runtime_vector_recovery_issued.json.data.certificate | length > 0
+          - runtime_vector_recovery_issued.json.data.private_key | length > 0
+          - runtime_vector_recovery_issued.json.data.issuing_ca | length > 0
+          - runtime_vector_recovery_issued.json.data.serial_number | length > 0
+          - runtime_vector_recovery_issued.json.data.expiration | int > 0
+      no_log: true
+
+    - name: Require at least fourteen days of client certificate validity
+      ansible.builtin.command:
+        argv: [openssl, x509, -in, /dev/stdin, -noout, -checkend, '1209600']
+        stdin: "{{ runtime_vector_recovery_issued.json.data.certificate }}"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      no_log: true
+
+    - name: Merge the issued Vector client generation with the exact edge record
+      ansible.builtin.uri:
+        url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/kv/data/docker/c1/edge"
+        method: POST
+        headers:
+          X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
+        body_format: json
+        body:
+          data: >-
+            {{ runtime_vector_recovery_record.json.data.data | combine({
+                 'vector_client_certificate': runtime_vector_recovery_issued.json.data.certificate,
+                 'vector_client_private_key': runtime_vector_recovery_issued.json.data.private_key,
+                 'vector_client_ca': runtime_vector_recovery_issued.json.data.issuing_ca,
+                 'vector_client_serial': runtime_vector_recovery_issued.json.data.serial_number,
+                 'vector_client_expiration': runtime_vector_recovery_issued.json.data.expiration
+               }) }}
+          options:
+            cas: "{{ runtime_vector_recovery_record.json.data.metadata.version | int }}"
+        status_code: 200
+      delegate_to: localhost
+      become: false
+      no_log: true
+      diff: false
+
+    - name: Materialize the issued c1 runtime records
+      ansible.builtin.include_tasks: materialize-c1.yml
+      no_log: true

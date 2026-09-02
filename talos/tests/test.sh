@@ -52,6 +52,7 @@ python "$talos_dir/tests/test_render.py" \
     --second "$runtime_dir/second" \
     --fixture "$talos_dir/tests/topology.yml" \
     --talos-dir "$talos_dir"
+python -m unittest "$talos_dir/tests/test_inventory_storage.py"
 
 python "$talos_dir/scripts/render.py" \
     --context "$runtime_dir/context.json" \

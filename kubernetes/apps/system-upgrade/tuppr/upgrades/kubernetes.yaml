@@ -4,7 +4,39 @@ apiVersion: tuppr.home-operations.com/v1alpha1
 kind: KubernetesUpgrade
 metadata:
   name: kubernetes
+  annotations:
+    tuppr.home-operations.com/suspend: separate-attended-window-required
+    upgrades.monosense.io/reviewed-at: "2026-09-01"
+    upgrades.monosense.io/compatibility: talos-1.14-supports-kubernetes-1.36
 spec:
   kubernetes:
     # renovate: datasource=docker depName=ghcr.io/siderolabs/kubelet
-    version: v1.36.2
+    version: v1.36.4
+  maintenance:
+    windows:
+      - start: "0 1 * * 0"
+        duration: 6h
+        timezone: Asia/Jakarta
+  healthChecks:
+    - apiVersion: v1
+      kind: Node
+      expr: status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')
+      description: Every node is Ready
+    - apiVersion: ceph.rook.io/v1
+      kind: CephCluster
+      name: rook-ceph
+      namespace: rook-ceph
+      expr: status.ceph.health == 'HEALTH_OK'
+      description: Ceph is HEALTH_OK
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      name: postgres
+      namespace: database
+      expr: status.readyInstances == 3 && status.instances == 3
+      description: All CNPG instances are Ready
+    - apiVersion: kustomize.toolkit.fluxcd.io/v1
+      kind: Kustomization
+      name: cluster-apps
+      namespace: flux-system
+      expr: status.conditions.exists(c, c.type == 'Ready' && c.status == 'True')
+      description: Cluster applications root is Ready

@@ -1,0 +1,24 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: rook-ceph-mgr-dashboard
+spec:
+  endpointSelector:
+    matchLabels:
+      app: rook-ceph-mgr
+      rook_cluster: rook-ceph
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: security
+            k8s:io.kubernetes.serviceaccount.name: oauth2-proxy-ceph
+      toPorts:
+        - ports: [{ port: "7000", protocol: TCP }]
+    - fromEntities: [cluster]
+      toPorts:
+        - ports:
+            - { port: "6800", endPort: 6999, protocol: TCP }
+            - { port: "7001", endPort: 7300, protocol: TCP }
+            - { port: "8443", protocol: TCP }
+            - { port: "9283", protocol: TCP }

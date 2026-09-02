@@ -1,0 +1,15 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: { name: litellm, namespace: ai }
+spec:
+  dependsOn:
+    - { name: postgres, namespace: database }
+    - { name: dragonfly, namespace: database }
+    - { name: codex-adapter, namespace: ai }
+  interval: 1h
+  path: ./kubernetes/apps/ai/litellm/app
+  prune: true
+  sourceRef: { kind: GitRepository, name: flux-system, namespace: flux-system }
+  targetNamespace: ai
+  wait: true

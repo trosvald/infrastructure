@@ -72,8 +72,8 @@ def reject_unsafe_keys(value: Any, path: str = "intent") -> None:
         for key, child in value.items():
             bgp_auth_ref = (
                 path == "intent.routing.routing.bgp"
-                and key == "authentication_key"
-                and child == {"topology": "bgp.authentication_key"}
+                and key == "authentication_keys"
+                and child == {"topology": "bgp.authentication_keys"}
             )
             if _FORBIDDEN_KEY_RE.search(str(key)) and not bgp_auth_ref:
                 raise IntentError(f"{path}: authentication and credential ownership is device-local")
@@ -462,7 +462,10 @@ def render_routing(data: dict[str, Any]) -> list[str]:
                 )
             elif route_filter:
                 out.append(cmd(*base, "from", "route-filter", route_filter, "exact"))
-            out.append(cmd(*base, "then", term["action"]))
+            if term.get("load_balance"):
+                out.append(cmd(*base, "then", "load-balance", term["load_balance"]))
+            else:
+                out.append(cmd(*base, "then", term["action"]))
     for binding in routing.get("instance_imports", []):
         instance = (
             binding.get("routing_instance", "master")
@@ -476,6 +479,15 @@ def render_routing(data: dict[str, Any]) -> list[str]:
             else ("routing-instances", instance, "routing-options")
         )
         out.append(cmd(*base, "instance-import", policy))
+    if routing.get("forwarding_table_export"):
+        out.append(
+            cmd(
+                "routing-options",
+                "forwarding-table",
+                "export",
+                routing["forwarding_table_export"],
+            )
+        )
     bgp = routing["bgp"]
     bgp_base = ("protocols", "bgp", "group", bgp["name"])
     out.extend(
@@ -483,7 +495,6 @@ def render_routing(data: dict[str, Any]) -> list[str]:
             cmd(*bgp_base, "type", bgp["type"]),
             cmd(*bgp_base, "local-address", bgp["local_address"]),
             cmd(*bgp_base, "peer-as", bgp["peer_as"]),
-            cmd(*bgp_base, "authentication-key", bgp["authentication_key"]),
             cmd(*bgp_base, "hold-time", bgp["hold_time"]),
             cmd(*bgp_base, "multipath"),
             cmd(*bgp_base, "import", bgp["import_policy"]),
@@ -506,7 +517,12 @@ def render_routing(data: dict[str, Any]) -> list[str]:
             prefix_limit["idle_timeout"],
         )
     )
-    out += [cmd(*bgp_base, "neighbor", peer) for peer in bgp["neighbors"]]
+    out += [
+        cmd(*bgp_base, "neighbor", peer, "authentication-key", authentication_key)
+        for peer, authentication_key in zip(
+            bgp["neighbors"], bgp["authentication_keys"], strict=True
+        )
+    ]
     rstp = routing.get("rstp", {})
     if rstp.get("bridge_priority") is not None:
         out.append(cmd("protocols", "rstp", "bridge-priority", rstp["bridge_priority"]))
@@ -563,7 +579,14 @@ def render_security(data: dict[str, Any]) -> list[str]:
     security = data["security"]
     out: list[str] = []
     for address in sorted(security.get("address_books", []), key=lambda x: x["name"]):
-        out.append(cmd("security", "address-book", "global", "address", address["name"], address["value"]))
+        value = address["value"]
+        try:
+            host = ipaddress.ip_address(value)
+        except ValueError:
+            pass
+        else:
+            value = f"{host}/{host.max_prefixlen}"
+        out.append(cmd("security", "address-book", "global", "address", address["name"], value))
     for screen in security.get("screens", []):
         out += [cmd("security", "screen", "ids-option", screen["name"], *option) for option in screen["options"]]
     log = security.get("log", {})
@@ -709,18 +732,33 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
         "description": "Edge DMZ VLAN",
     }:
         raise IntentError("VLAN-EDGE must retain ID and IRB unit 2515")
+    storage_vlan = next((vlan for vlan in vlans if vlan["name"] == "VLAN-STORAGE"), None)
+    if storage_vlan != {
+        "name": "VLAN-STORAGE",
+        "id": 2514,
+        "irb_unit": 2514,
+        "description": "Kubernetes Ceph storage VLAN",
+    }:
+        raise IntentError("VLAN-STORAGE must retain ID and IRB unit 2514")
     for tor_name in ("xe-0/0/18", "xe-0/0/19"):
         tor = next((item for item in interfaces if item["name"] == tor_name), None)
         if not tor or tor.get("native_vlan") != 2510:
             raise IntentError(f"{tor_name}: TOR trunk and native VLAN 2510 are required")
         tor_units = tor.get("units", [])
-        expected_tor_vlans = {"VLAN-MGMT", "VLAN-PROD", "VLAN-HOME", "VLAN-DEV", "VLAN-EDGE"}
+        expected_tor_vlans = {
+            "VLAN-MGMT",
+            "VLAN-PROD",
+            "VLAN-HOME",
+            "VLAN-DEV",
+            "VLAN-STORAGE",
+            "VLAN-EDGE",
+        }
         if (
             len(tor_units) != 1
             or tor_units[0].get("mode") != "trunk"
             or set(tor_units[0].get("vlans", [])) != expected_tor_vlans
         ):
-            raise IntentError(f"{tor_name}: must carry the four internal VLANs and VLAN-EDGE")
+            raise IntentError(f"{tor_name}: must carry the four internal VLANs, VLAN-STORAGE, and VLAN-EDGE")
     edge_irb = next(
         (
             unit
@@ -756,6 +794,35 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
         or edge_haproxy not in edge_network
     ):
         raise IntentError("EDGE topology must retain the reviewed subnet, gateway, and HAProxy")
+    storage_irb = next(
+        (
+            unit
+            for interface in interfaces
+            if interface["name"] == "irb"
+            for unit in interface["units"]
+            if unit["unit"] == 2514
+        ),
+        None,
+    )
+    expected_storage_gateway = "198.18.3.1/24" if synthetic_topology else "10.25.14.1/24"
+    if (
+        storage_irb is None
+        or storage_irb.get("family") != "inet"
+        or storage_irb.get("mtu") != 1496
+        or storage_irb.get("address") != expected_storage_gateway
+    ):
+        raise IntentError("irb.2514 must be the reviewed STORAGE gateway with MTU 1496")
+    expected_storage_network = parse_network(
+        "198.18.3.0/24" if synthetic_topology else "10.25.14.0/24",
+        "approved STORAGE subnet",
+    )
+    storage_network = parse_network(dotted(topology, "networks.storage.subnet"), "STORAGE subnet")
+    storage_gateway = parse_address(dotted(topology, "networks.storage.gateway"), "STORAGE gateway")
+    if (
+        storage_network != expected_storage_network
+        or storage_gateway != parse_address(expected_storage_gateway, "approved STORAGE gateway")
+    ):
+        raise IntentError("STORAGE topology must retain the reviewed subnet and gateway")
 
     pools = intent["dhcp"]["dhcp"]["pools"]
     unique(pools, "name", "DHCP pool")
@@ -1011,9 +1078,14 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
         for index, term in enumerate(policy["terms"]):
             if term.get("from_instance") and term["from_instance"] not in instances | {"master"}:
                 raise IntentError(f"policy {policy['name']}: undefined instance")
-            if term.get("action") not in {"accept", "reject"}:
-                raise IntentError(f"policy {policy['name']} term {term['name']}: terminal action required")
-            if term["action"] == "reject" and index != len(policy["terms"]) - 1:
+            if term.get("action") not in {"accept", "reject"} and term.get(
+                "load_balance"
+            ) != "per-packet":
+                raise IntentError(
+                    f"policy {policy['name']} term {term['name']}: "
+                    "terminal action or approved load balance required"
+                )
+            if term.get("action") == "reject" and index != len(policy["terms"]) - 1:
                 raise IntentError(f"policy {policy['name']}: reject term must remain last")
     routing = intent["routing"]["routing"]
     policy_by_name = {policy["name"]: policy for policy in routing_policies}
@@ -1024,7 +1096,7 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
         "local_address",
         "local_as",
         "peer_as",
-        "authentication_key",
+        "authentication_keys",
         "hold_time",
         "multipath",
         "import_policy",
@@ -1080,8 +1152,19 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
         or bgp["local_as"] == bgp["peer_as"]
     ):
         raise IntentError("CILIUM BGP ASNs must be unique and exactly 64512/64513")
-    if not re.fullmatch(r"[A-Za-z0-9_-]{43}", str(bgp["authentication_key"])):
-        raise IntentError("CILIUM BGP authentication key must be 43-character base64url")
+    authentication_keys = bgp["authentication_keys"]
+    if (
+        not isinstance(authentication_keys, list)
+        or len(authentication_keys) != 5
+        or len(set(authentication_keys)) != 5
+        or any(
+            not re.fullmatch(r"[A-Za-z0-9_-]{43}", str(authentication_key))
+            for authentication_key in authentication_keys
+        )
+    ):
+        raise IntentError(
+            "CILIUM BGP authentication keys must be five unique 43-character base64url values"
+        )
     if routing.get("static_routes") != [
         {"route": str(expected_pool), "action": "discard"}
     ]:
@@ -1124,6 +1207,18 @@ def validate(intent: dict[str, Any], topology: dict[str, Any], used: set[str], r
         {"name": "REJECT-ALL", "action": "reject"}
     ]:
         raise IntentError("CILIUM export policy must contain only terminal reject")
+    expected_load_balance_terms = [
+        {"name": "CILIUM", "from_protocol": "bgp", "load_balance": "per-packet"},
+        {"name": "ACCEPT-REST", "action": "accept"},
+    ]
+    if (
+        policy_by_name.get("LOAD-BALANCE-CILIUM", {}).get("terms")
+        != expected_load_balance_terms
+        or routing.get("forwarding_table_export") != "LOAD-BALANCE-CILIUM"
+    ):
+        raise IntentError(
+            "CILIUM ECMP requires the exact forwarding-table load-balance policy"
+        )
     if (
         bgp["name"] != "CILIUM"
         or bgp["type"] != "external"

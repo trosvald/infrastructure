@@ -35,7 +35,7 @@ assert s["command"] == ["server","/data","--address",":443","--console-address",
 assert s.get("read_only",False) is False and s["restart"] == "no"
 assert s["environment"] == {"HOME":"/tmp","MINIO_ROOT_PASSWORD_FILE":"/run/secrets/librefs_root_password","MINIO_ROOT_USER_FILE":"/run/secrets/librefs_root_user"}
 assert s["cap_drop"] == ["ALL"] and s["security_opt"] == ["no-new-privileges:true"]
-assert s["sysctls"] == {"net.ipv4.ip_unprivileged_port_start":"443"}
+assert "sysctls" not in s
 assert s["tmpfs"] == ["/tmp:rw,nosuid,nodev,noexec,mode=1777"]
 volumes={volume["target"]:volume for volume in s["volumes"]}
 data=volumes["/data"]
@@ -136,7 +136,7 @@ LIBREFS_TEST_IP="$test_ip" \
 LIBREFS_TEST_NETWORK="$test_network" \
 LIBREFS_TEST_VOLUME="$test_volume" \
 LIBREFS_TEST_CERTS="$work/certs" \
-    docker compose -f "$COMPOSE" -f "$override" up -d --pull always >/dev/null
+    docker compose -f "$COMPOSE" -f "$override" up -d --pull never >/dev/null
 ready=false
 for _ in $(seq 1 60); do
     if [[ "$(docker inspect "$test_container" \

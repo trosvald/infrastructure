@@ -1,0 +1,25 @@
+---
+apiVersion: image.toolkit.fluxcd.io/v1beta2
+kind: ImageUpdateAutomation
+metadata:
+  name: infrastructure
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: image-automation
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        name: flux-image-automation
+        email: flux-image-automation@monosense.io
+      messageTemplate: "chore(images): update pinned workloads"
+    push:
+      branch: flux-updates
+      refspec: refs/heads/flux-updates:refs/for/main
+  update:
+    path: ./
+    strategy: Setters

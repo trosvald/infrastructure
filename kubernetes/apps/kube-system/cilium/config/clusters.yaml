@@ -1,0 +1,95 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: cilium-srx1500-bsd-k8s-01
+spec:
+  nodeSelector:
+    matchLabels:
+      bgp.monosense.io/enabled: "true"
+      kubernetes.io/hostname: bsd-k8s-01
+  bgpInstances:
+    - name: cilium-srx1500
+      localASN: 64513
+      peers:
+        - name: srx1500
+          peerASN: 64512
+          peerAddress: 10.25.11.1
+          peerConfigRef:
+            name: cilium-srx1500-bsd-k8s-01
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: cilium-srx1500-bsd-k8s-02
+spec:
+  nodeSelector:
+    matchLabels:
+      bgp.monosense.io/enabled: "true"
+      kubernetes.io/hostname: bsd-k8s-02
+  bgpInstances:
+    - name: cilium-srx1500
+      localASN: 64513
+      peers:
+        - name: srx1500
+          peerASN: 64512
+          peerAddress: 10.25.11.1
+          peerConfigRef:
+            name: cilium-srx1500-bsd-k8s-02
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: cilium-srx1500-bsd-k8s-03
+spec:
+  nodeSelector:
+    matchLabels:
+      bgp.monosense.io/enabled: "true"
+      kubernetes.io/hostname: bsd-k8s-03
+  bgpInstances:
+    - name: cilium-srx1500
+      localASN: 64513
+      peers:
+        - name: srx1500
+          peerASN: 64512
+          peerAddress: 10.25.11.1
+          peerConfigRef:
+            name: cilium-srx1500-bsd-k8s-03
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: cilium-srx1500-bsd-k8s-04
+spec:
+  nodeSelector:
+    matchLabels:
+      bgp.monosense.io/enabled: "true"
+      kubernetes.io/hostname: bsd-k8s-04
+  bgpInstances:
+    - name: cilium-srx1500
+      localASN: 64513
+      peers:
+        - name: srx1500
+          peerASN: 64512
+          peerAddress: 10.25.11.1
+          peerConfigRef:
+            name: cilium-srx1500-bsd-k8s-04
+---
+apiVersion: cilium.io/v2
+kind: CiliumBGPClusterConfig
+metadata:
+  name: cilium-srx1500-bsd-k8s-05
+spec:
+  nodeSelector:
+    matchLabels:
+      bgp.monosense.io/enabled: "true"
+      kubernetes.io/hostname: bsd-k8s-05
+  bgpInstances:
+    - name: cilium-srx1500
+      localASN: 64513
+      peers:
+        - name: srx1500
+          peerASN: 64512
+          peerAddress: 10.25.11.1
+          peerConfigRef:
+            name: cilium-srx1500-bsd-k8s-05

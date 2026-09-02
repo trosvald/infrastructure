@@ -1,0 +1,57 @@
+#!/bin/sh
+set -eu
+
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+root=/var/lib/llmkube
+timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+stage="$root/.generation-$timestamp-$$"
+generation="$root/generations/$timestamp"
+old_key=
+cleanup() { rm -rf "$stage"; }
+trap cleanup EXIT HUP INT TERM
+install -d -o _llmkube -g staff -m 0700 "$stage" "$root/generations"
+tar -xf - -C "$stage"
+for file in llmkube-mac-tls-tls.crt llmkube-mac-tls-tls.key llmkube-mac-tls-ca.crt llmkube-embedding-api-key-api-key mac-embedding-client-tls-ca.crt; do
+    test -f "$stage/$file" && test ! -L "$stage/$file" || exit 1
+done
+test "$(find "$stage" -type f | wc -l | tr -d ' ')" = 5
+openssl verify -CAfile "$stage/llmkube-mac-tls-ca.crt" "$stage/llmkube-mac-tls-tls.crt" >/dev/null
+openssl x509 -in "$stage/llmkube-mac-tls-tls.crt" -noout -checkend 1209600 >/dev/null
+cert_pub="$(openssl x509 -in "$stage/llmkube-mac-tls-tls.crt" -pubkey -noout | openssl sha256)"
+key_pub="$(openssl pkey -in "$stage/llmkube-mac-tls-tls.key" -pubout | openssl sha256)"
+test "$cert_pub" = "$key_pub"
+test "$(wc -c <"$stage/llmkube-embedding-api-key-api-key" | tr -d ' ')" -ge 32
+if test -r "$root/current/embedding-api-key"; then old_key="$(openssl sha256 "$root/current/embedding-api-key")"; fi
+mv "$stage/llmkube-mac-tls-tls.crt" "$stage/tls.crt"
+mv "$stage/llmkube-mac-tls-tls.key" "$stage/tls.key"
+mv "$stage/llmkube-mac-tls-ca.crt" "$stage/ca.crt"
+mv "$stage/llmkube-embedding-api-key-api-key" "$stage/embedding-api-key"
+mv "$stage/mac-embedding-client-tls-ca.crt" "$stage/vmagent-client-ca.crt"
+chmod 0600 "$stage"/*
+chown -R _llmkube:staff "$stage"
+/usr/bin/python3 - "$stage" <<'PY'
+import os, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+for item in path.iterdir():
+    with item.open('rb') as handle: os.fsync(handle.fileno())
+fd = os.open(path, os.O_RDONLY)
+os.fsync(fd)
+os.close(fd)
+PY
+mv "$stage" "$generation"
+previous_target="$(readlink "$root/current" 2>/dev/null || true)"
+ln -s "$generation" "$root/.current-$timestamp"
+mv -f "$root/.current-$timestamp" "$root/current"
+if ! caddy validate --config /usr/local/etc/llmkube/Caddyfile >/dev/null; then
+    if test -n "$previous_target"; then
+        ln -s "$previous_target" "$root/.current-rollback"
+        mv -f "$root/.current-rollback" "$root/current"
+    else
+        rm -f "$root/current"
+    fi
+    exit 1
+fi
+launchctl kickstart -k system/io.monosense.llmkube-caddy
+new_key="$(openssl sha256 "$root/current/embedding-api-key")"
+if test "$old_key" != "$new_key"; then launchctl kickstart -k system/io.monosense.llmkube-metal-agent; fi
+trap - EXIT HUP INT TERM

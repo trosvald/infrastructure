@@ -300,10 +300,9 @@ class NetconfContractTests(unittest.TestCase):
             self.assertIn("show route 10.25.20.0/24 exact", evidence_source)
             self.assertIn("no_log: true", playbook)
         self.assertIn("State:\\s+Established", self.read("playbooks/bgp-verify.yml"))
-        self.assertIn(
-            "State: Established",
-            self.read("playbooks/bgp-preflight.yml"),
-        )
+        preflight = self.read("playbooks/bgp-preflight.yml")
+        self.assertNotIn("is not search('State: Established')", preflight)
+        self.assertIn("Require zero BGP routes in either direction", preflight)
     def test_bgp_peer_as_matches_multiline_display_set_output(self):
         pattern = (
             r"(?m)^set groups ANSIBLE_SRX1500 protocols bgp group CILIUM "

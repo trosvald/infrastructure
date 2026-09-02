@@ -1,0 +1,13 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata: { name: codex-adapter, namespace: ai }
+spec:
+  dependsOn:
+    - { name: openbao-config, namespace: external-secrets }
+  interval: 1h
+  path: ./kubernetes/apps/ai/codex-adapter/app
+  prune: true
+  sourceRef: { kind: GitRepository, name: flux-system, namespace: flux-system }
+  targetNamespace: ai
+  wait: true

@@ -1,0 +1,34 @@
+---
+# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: postgres
+  namespace: database
+spec:
+  dependsOn:
+    - name: barman-cloud
+      namespace: database
+    - name: external-secrets-config
+      namespace: external-secrets
+    - name: rook-ceph-cluster
+      namespace: rook-ceph
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      failed: status.phase in ['Cluster in error', 'Unrecoverable']
+      current: status.readyInstances == 3
+  interval: 1h
+  path: ./kubernetes/apps/database/postgres/cluster
+  prune: false
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: postgres-r2-mirror
+  suspend: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  targetNamespace: database
+  wait: true

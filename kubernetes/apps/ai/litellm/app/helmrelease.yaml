@@ -1,0 +1,78 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: { name: litellm }
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: litellm-helm
+      version: 1.1.2
+      sourceRef: { kind: OCIRepository, name: litellm-helm, namespace: flux-system }
+  values:
+    replicaCount: 2
+    image:
+      repository: ghcr.io/berriai/litellm
+      tag: v1.99.0@sha256:570a872d2fde8f1bc4a147634810941103c14697270f0f2918c5aa7d8201cac5
+      pullPolicy: IfNotPresent
+    serviceAccount: { create: true, automount: false, name: litellm }
+    environmentSecrets: [litellm-runtime]
+    masterkeySecretName: litellm-runtime
+    masterkeySecretKey: PROXY_MASTER_KEY
+    db: { deployStandalone: false, useExisting: true }
+    redis: { enabled: false }
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile: { type: RuntimeDefault }
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: { drop: [ALL] }
+    resources:
+      requests: { cpu: 250m, memory: 512Mi }
+      limits: { cpu: "1", memory: 1Gi }
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector: { matchLabels: { app.kubernetes.io/name: litellm } }
+    pdb: { enabled: true, minAvailable: 1 }
+    volumes:
+      - { name: cnpg-tls, secret: { secretName: cnpg-litellm-client-tls, defaultMode: 256 } }
+    volumeMounts:
+      - { name: cnpg-tls, mountPath: /etc/cnpg, readOnly: true }
+    proxy_config:
+      model_list:
+        - model_name: memini-chat
+          litellm_params:
+            model: minimax/MiniMax-M2.1
+            api_key: os.environ/MINIMAX_API_KEY
+        - model_name: forgejo-codex
+          litellm_params:
+            model: openai/forgejo-codex
+            api_base: http://codex-adapter.ai.svc.cluster.local:8080/v1
+            api_key: os.environ/PROXY_MASTER_KEY
+          model_info:
+            input_cost_per_request: 1
+            quota_unit: request
+      general_settings:
+        master_key: os.environ/PROXY_MASTER_KEY
+        database_url: os.environ/DATABASE_URL
+        store_model_in_db: true
+        disable_spend_logs: false
+      router_settings:
+        redis_host: dragonfly.database.svc.cluster.local
+        redis_port: 6379
+        redis_password: os.environ/REDIS_PASSWORD
+        redis_username: litellm-a
+        redis_ssl: true
+        disable_cache: true
+        fallbacks: []
+        context_window_fallbacks: []
+      litellm_settings:
+        turn_off_message_logging: true
+        set_verbose: false
+        json_logs: true
+        drop_params: false

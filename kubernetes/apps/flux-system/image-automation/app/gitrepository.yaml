@@ -1,0 +1,12 @@
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: image-automation
+spec:
+  interval: 5m
+  url: ssh://git@git.monosense.io/trosvald/infrastructure.git
+  ref:
+    branch: main
+  secretRef:
+    name: image-automation-forgejo

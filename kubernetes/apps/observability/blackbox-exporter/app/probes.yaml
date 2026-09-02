@@ -1,0 +1,55 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: critical-http
+spec:
+  interval: 30s
+  module: http_2xx
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      labels: { tier: critical }
+      static:
+        - https://vault.monosense.io:8200/v1/sys/health?standbyok=true
+        - https://git.monosense.io/api/healthz
+        - https://1.1.1.1/cdn-cgi/trace
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: critical-tcp
+spec:
+  interval: 30s
+  module: tcp_connect
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      labels: { tier: critical }
+      static:
+        - 10.25.20.10:6443
+        - kube-dns.kube-system.svc.cluster.local:53
+        - 10.25.13.35:53
+        - 10.25.10.100:53
+        - 10.25.13.33:53
+        - 10.25.20.40:443
+        - 10.25.20.80:443
+        - 9.9.9.9:853
+---
+apiVersion: monitoring.coreos.com/v1
+kind: Probe
+metadata:
+  name: infrastructure-hosts
+spec:
+  interval: 30s
+  module: icmp
+  prober:
+    url: blackbox-exporter.observability.svc.cluster.local:9115
+  targets:
+    staticConfig:
+      labels: { tier: infrastructure }
+      static:
+        - 10.25.13.16
+        - 10.25.10.101

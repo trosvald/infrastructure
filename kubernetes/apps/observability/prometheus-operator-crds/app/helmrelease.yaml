@@ -8,6 +8,7 @@ spec:
   chartRef:
     kind: OCIRepository
     name: prometheus-operator-crds
+    namespace: flux-system
   interval: 1h
   install:
     crds: CreateReplace

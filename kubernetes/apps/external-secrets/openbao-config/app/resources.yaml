@@ -1,0 +1,207 @@
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: openbao
+spec:
+  conditions:
+    - namespaces:
+        - flux-system
+        - kube-system
+        - networking
+        - rook-ceph
+        - kopiur-system
+        - observability
+        - database
+        - security
+        - ai
+        - system-upgrade
+  provider:
+    vault:
+      server: https://vault.monosense.io:8200
+      path: kv
+      version: v2
+      auth:
+        kubernetes:
+          mountPath: kubernetes
+          role: external-secrets
+          serviceAccountRef:
+            name: openbao
+            namespace: external-secrets
+            audiences:
+              - openbao-external-secrets
+              - https://k8s.monosense.io:6443
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-envoy-edge
+  namespace: networking
+spec:
+  vault:
+    server: https://vault.monosense.io:8200
+    path: pki-kubernetes/sign/envoy-edge
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: cert-manager-networking
+        serviceAccountRef:
+          name: openbao-issuer
+          audiences:
+            - openbao-cert-manager-networking
+            - https://k8s.monosense.io:6443
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-envoy-internal
+  namespace: networking
+spec:
+  vault:
+    server: https://vault.monosense.io:8200
+    path: pki-kubernetes/sign/envoy-internal
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: cert-manager-networking
+        serviceAccountRef:
+          name: openbao-issuer
+          audiences:
+            - openbao-cert-manager-networking
+            - https://k8s.monosense.io:6443
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-mac-caddy
+  namespace: networking
+spec:
+  vault:
+    server: https://vault.monosense.io:8200
+    path: pki-kubernetes/sign/mac-caddy
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: cert-manager-networking
+        serviceAccountRef:
+          name: openbao-issuer
+          audiences: [openbao-cert-manager-networking, https://k8s.monosense.io:6443]
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-vector-srx
+  namespace: networking
+spec:
+  vault:
+    server: https://vault.monosense.io:8200
+    path: pki-kubernetes/sign/vector-srx
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: cert-manager-networking
+        serviceAccountRef:
+          name: openbao-issuer
+          audiences: [openbao-cert-manager-networking, https://k8s.monosense.io:6443]
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-cnpg
+  namespace: database
+spec:
+  vault:
+    server: https://vault.monosense.io:8200
+    path: pki-kubernetes/sign/cnpg
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: cert-manager-database
+        serviceAccountRef:
+          name: openbao-issuer
+          audiences: [openbao-cert-manager-database, https://k8s.monosense.io:6443]
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-dragonfly
+  namespace: database
+spec:
+  vault:
+    server: https://vault.monosense.io:8200
+    path: pki-kubernetes/sign/dragonfly
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: cert-manager-database
+        serviceAccountRef:
+          name: openbao-issuer
+          audiences: [openbao-cert-manager-database, https://k8s.monosense.io:6443]
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-keycloak
+  namespace: security
+spec:
+  vault:
+    server: https://vault.monosense.io:8200
+    path: pki-kubernetes/sign/keycloak
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: cert-manager-security
+        serviceAccountRef:
+          name: openbao-issuer
+          audiences: [openbao-cert-manager-security, https://k8s.monosense.io:6443]
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-cnpg-client
+  namespace: security
+spec:
+  vault:
+    server: https://vault.monosense.io:8200
+    path: pki-kubernetes/sign/cnpg
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: cert-manager-security
+        serviceAccountRef:
+          name: openbao-issuer
+          audiences: [openbao-cert-manager-security, https://k8s.monosense.io:6443]
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-mac-embedding
+  namespace: ai
+spec:
+  vault:
+    server: https://vault.monosense.io:8200
+    path: pki-kubernetes/sign/mac-embedding
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: cert-manager-ai
+        serviceAccountRef:
+          name: openbao-issuer
+          audiences: [openbao-cert-manager-ai, https://k8s.monosense.io:6443]
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: openbao-cnpg-client
+  namespace: ai
+spec:
+  vault:
+    server: https://vault.monosense.io:8200
+    path: pki-kubernetes/sign/cnpg
+    auth:
+      kubernetes:
+        mountPath: /v1/auth/kubernetes
+        role: cert-manager-ai
+        serviceAccountRef:
+          name: openbao-issuer
+          audiences: [openbao-cert-manager-ai, https://k8s.monosense.io:6443]

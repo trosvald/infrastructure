@@ -1,0 +1,184 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: { name: oauth2-proxy-ceph }
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: oauth2-proxy
+      version: 10.7.0
+      sourceRef: { kind: HelmRepository, name: oauth2-proxy, namespace: flux-system }
+  valuesFrom:
+    - { kind: ConfigMap, name: oauth2-proxy-common, valuesKey: values.yaml }
+  values:
+    fullnameOverride: oauth2-proxy-ceph
+    config:
+      existingSecret: oauth2-proxy-ceph
+      cookieName: __Host-oauth2-ceph
+    extraArgs:
+      provider: oidc
+      oidc-issuer-url: https://auth.internal/realms/monosense
+      redirect-url: https://ceph.monosense.io/oauth2/callback
+      upstream: http://rook-ceph-mgr-dashboard.rook-ceph.svc.cluster.local:7000
+      scope: openid profile email groups
+      oidc-groups-claim: groups
+      allowed-group: /platform/ceph-users
+      email-domain: "*"
+      reverse-proxy: "true"
+      cookie-secure: "true"
+      cookie-httponly: "true"
+      cookie-samesite: lax
+      cookie-path: /
+      cookie-csrf-per-request: "true"
+      cookie-expire: 12h
+      cookie-refresh: 2m
+      pass-authorization-header: "false"
+      pass-access-token: "false"
+      pass-user-headers: "false"
+      set-authorization-header: "false"
+      set-xauthrequest: "false"
+      skip-auth-strip-headers: "false"
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector: { matchLabels: { app.kubernetes.io/instance: oauth2-proxy-ceph } }
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: { name: oauth2-proxy-alertmanager }
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: oauth2-proxy
+      version: 10.7.0
+      sourceRef: { kind: HelmRepository, name: oauth2-proxy, namespace: flux-system }
+  valuesFrom:
+    - { kind: ConfigMap, name: oauth2-proxy-common, valuesKey: values.yaml }
+  values:
+    fullnameOverride: oauth2-proxy-alertmanager
+    config:
+      existingSecret: oauth2-proxy-alertmanager
+      cookieName: __Host-oauth2-alertmanager
+    extraArgs:
+      provider: oidc
+      oidc-issuer-url: https://auth.internal/realms/monosense
+      redirect-url: https://alertmanager.monosense.io/oauth2/callback
+      upstream: http://vmalertmanager-victoria-metrics.observability.svc.cluster.local:9093
+      scope: openid profile email groups
+      oidc-groups-claim: groups
+      allowed-group: /platform/alertmanager-users
+      email-domain: "*"
+      reverse-proxy: "true"
+      cookie-secure: "true"
+      cookie-httponly: "true"
+      cookie-samesite: lax
+      cookie-path: /
+      cookie-csrf-per-request: "true"
+      cookie-expire: 12h
+      cookie-refresh: 2m
+      pass-authorization-header: "false"
+      pass-access-token: "false"
+      pass-user-headers: "false"
+      set-authorization-header: "false"
+      set-xauthrequest: "false"
+      skip-auth-strip-headers: "false"
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector: { matchLabels: { app.kubernetes.io/instance: oauth2-proxy-alertmanager } }
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: { name: oauth2-proxy-vlogs }
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: oauth2-proxy
+      version: 10.7.0
+      sourceRef: { kind: HelmRepository, name: oauth2-proxy, namespace: flux-system }
+  valuesFrom:
+    - { kind: ConfigMap, name: oauth2-proxy-common, valuesKey: values.yaml }
+  values:
+    fullnameOverride: oauth2-proxy-vlogs
+    config:
+      existingSecret: oauth2-proxy-vlogs
+      cookieName: __Host-oauth2-vlogs
+    extraArgs:
+      provider: oidc
+      oidc-issuer-url: https://auth.internal/realms/monosense
+      redirect-url: https://vlogs.monosense.io/oauth2/callback
+      upstream: http://victoria-logs.observability.svc.cluster.local:9428
+      scope: openid profile email groups
+      oidc-groups-claim: groups
+      allowed-group: /platform/vlogs-users
+      email-domain: "*"
+      reverse-proxy: "true"
+      cookie-secure: "true"
+      cookie-httponly: "true"
+      cookie-samesite: lax
+      cookie-path: /
+      cookie-csrf-per-request: "true"
+      cookie-expire: 12h
+      cookie-refresh: 2m
+      pass-authorization-header: "false"
+      pass-access-token: "false"
+      pass-user-headers: "false"
+      set-authorization-header: "false"
+      set-xauthrequest: "false"
+      skip-auth-strip-headers: "false"
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector: { matchLabels: { app.kubernetes.io/instance: oauth2-proxy-vlogs } }
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: { name: oauth2-proxy-memini }
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: oauth2-proxy
+      version: 10.7.0
+      sourceRef: { kind: HelmRepository, name: oauth2-proxy, namespace: flux-system }
+  valuesFrom:
+    - { kind: ConfigMap, name: oauth2-proxy-common, valuesKey: values.yaml }
+  values:
+    fullnameOverride: oauth2-proxy-memini
+    config:
+      existingSecret: oauth2-proxy-memini
+      cookieName: __Host-oauth2-memini
+    extraArgs:
+      provider: oidc
+      oidc-issuer-url: https://auth.internal/realms/monosense
+      redirect-url: https://memini.monosense.io/oauth2/callback
+      upstream: http://memini.ai.svc.cluster.local:3000
+      scope: openid profile email groups
+      oidc-groups-claim: groups
+      allowed-group: /platform/memini-users
+      email-domain: "*"
+      reverse-proxy: "true"
+      cookie-secure: "true"
+      cookie-httponly: "true"
+      cookie-samesite: lax
+      cookie-path: /
+      cookie-csrf-per-request: "true"
+      cookie-expire: 12h
+      cookie-refresh: 2m
+      pass-authorization-header: "false"
+      pass-access-token: "false"
+      pass-user-headers: "false"
+      set-authorization-header: "false"
+      set-xauthrequest: "false"
+      skip-auth-strip-headers: "false"
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector: { matchLabels: { app.kubernetes.io/instance: oauth2-proxy-memini } }

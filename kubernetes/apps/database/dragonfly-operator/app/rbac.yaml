@@ -1,0 +1,53 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dragonfly-operator-manager
+rules:
+  - apiGroups: [""]
+    resources: [configmaps, events, pods, pods/status, services]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [dragonflydb.io]
+    resources: [dragonflies]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [dragonflydb.io]
+    resources: [dragonflies/finalizers]
+    verbs: [update]
+  - apiGroups: [dragonflydb.io]
+    resources: [dragonflies/status]
+    verbs: [get, patch, update]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [create, get, list, patch, update, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dragonfly-operator-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: dragonfly-operator-manager
+subjects:
+  - kind: ServiceAccount
+    name: dragonfly-operator-controller-manager
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: dragonfly-operator
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dragonfly-operator
+      app.kubernetes.io/instance: dragonfly-operator

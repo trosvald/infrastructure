@@ -40,6 +40,15 @@ service_policies=(
     wildcard-reader-c1
     doco-c1
 )
+kubernetes_policies=(
+    kubernetes-external-secrets
+    kubernetes-cert-manager-networking
+    kubernetes-cert-manager-database
+    kubernetes-cert-manager-security
+    kubernetes-cert-manager-ai
+    kubernetes-keycloak-tofu
+    kubernetes-codex-checkpoint
+)
 [[ -f "$credentials_source" && ! -L "$credentials_source" ]] || {
     echo "Tracked encrypted monosense-infra credentials are missing or unsafe" >&2
     exit 1
@@ -51,6 +60,13 @@ service_policies=(
 for policy in "${service_policies[@]}"; do
     service_policy_source="$repo_dir/docker/c0/openbao/policies/$policy.hcl"
     [[ -f "$service_policy_source" && ! -L "$service_policy_source" ]] || {
+        echo "Tracked $policy policy is missing or unsafe" >&2
+        exit 1
+    }
+done
+for policy in "${kubernetes_policies[@]}"; do
+    kubernetes_policy_source="$repo_dir/docker/c0/openbao/policies/$policy.hcl"
+    [[ -f "$kubernetes_policy_source" && ! -L "$kubernetes_policy_source" ]] || {
         echo "Tracked $policy policy is missing or unsafe" >&2
         exit 1
     }
@@ -209,6 +225,71 @@ done
     echo "monosense-infra cannot revoke superseded scoped token accessors" >&2
     exit 1
 }
+kubernetes_configuration_paths=(
+    auth/kubernetes/config
+    auth/kubernetes/role/external-secrets
+    auth/kubernetes/role/cert-manager-networking
+    auth/kubernetes/role/cert-manager-database
+    auth/kubernetes/role/cert-manager-security
+    auth/kubernetes/role/cert-manager-ai
+    auth/kubernetes/role/keycloak-tofu
+    auth/kubernetes/role/codex-checkpoint
+)
+for path in "${kubernetes_configuration_paths[@]}"; do
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "$path")" == \
+        "create, read, update" ]] || {
+        echo "monosense-infra lacks exact Kubernetes configuration capability on $path" >&2
+        exit 1
+    }
+done
+for policy in "${kubernetes_policies[@]}"; do
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "sys/policies/acl/$policy")" == \
+        "create, read, update" ]] || {
+        echo "monosense-infra lacks exact policy configuration capability on $policy" >&2
+        exit 1
+    }
+done
+for role in envoy-edge envoy-internal cnpg dragonfly keycloak mac-caddy mac-embedding vector-srx; do
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "pki-kubernetes/roles/$role")" == \
+        "create, read, update" ]] || {
+        echo "monosense-infra lacks exact PKI role configuration capability on $role" >&2
+        exit 1
+    }
+done
+for index in 01 02 03 04 05; do
+    record="platform/kubernetes/kube-system/cilium-bgp-bsd-k8s-$index"
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "kv/data/$record")" == \
+        "create, read, update" ]] || {
+        echo "monosense-infra lacks exact Cilium BGP record capability on $record" >&2
+        exit 1
+    }
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "kv/metadata/$record")" == \
+        "read" ]] || {
+        echo "monosense-infra lacks exact Cilium BGP metadata capability on $record" >&2
+        exit 1
+    }
+done
+for record in \
+    platform/kubernetes/database/cloudnative-pg \
+    platform/kubernetes/database/dragonfly \
+    platform/kubernetes/security/keycloak \
+    platform/kubernetes/security/keycloak-bootstrap \
+    platform/kubernetes/security/keycloak-tofu \
+    platform/kubernetes/ai/llmkube \
+    platform/kubernetes/ai/memini \
+    platform/kubernetes/ai/litellm \
+    platform/kubernetes/ai/codex-adapter; do
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "kv/data/$record")" == \
+        "create, patch, read, update" ]] || {
+        echo "monosense-infra lacks exact platform record capability on $record" >&2
+        exit 1
+    }
+    [[ "$(BAO_TOKEN="$infra_token" bao token capabilities "kv/metadata/$record")" == \
+        "delete, read" ]] || {
+        echo "monosense-infra lacks exact platform metadata capability on $record" >&2
+        exit 1
+    }
+done
 for path in \
     kv/data/network/bgp/not-approved \
     kv/metadata/network/bgp/cilium-srx1500 \

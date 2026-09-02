@@ -1,0 +1,206 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak-tofu-runner
+  namespace: security
+automountServiceAccountToken: false
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: keycloak-tofu-runner
+  namespace: security
+spec:
+  refreshInterval: 15m
+  refreshPolicy: Periodic
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: openbao
+  target:
+    name: keycloak-tofu-runner
+    creationPolicy: Owner
+    deletionPolicy: Retain
+  dataFrom:
+    - extract:
+        key: platform/kubernetes/security/keycloak-tofu
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-tofu-runner
+  namespace: security
+data:
+  config.yaml: |
+    log:
+      level: info
+    runner:
+      capacity: 1
+      labels:
+        - keycloak-tofu:host
+      timeout: 30m
+    host:
+      workdir_parent: /workspace
+    cache:
+      enabled: false
+  tofu.rc: |
+    provider_installation {
+      filesystem_mirror {
+        path    = "/opt/provider-mirror"
+        include = ["registry.opentofu.org/keycloak/keycloak"]
+      }
+      direct {
+        exclude = ["registry.opentofu.org/keycloak/keycloak"]
+      }
+    }
+  run.sh: |
+    #!/bin/sh
+    set -eu
+    umask 077
+    rm -rf /workspace/* /data/.runner
+    forgejo-runner register --no-interactive --ephemeral \
+      --instance https://git.monosense.io \
+      --token "$(cat /run/secrets/runner_registration_token)" \
+      --name "keycloak-tofu-$(cat /etc/hostname)" \
+      --labels keycloak-tofu:host
+    trap 'rm -rf /workspace/* /data/.runner' EXIT
+    export PATH="/opt/tools:$PATH"
+    export TF_CLI_CONFIG_FILE=/etc/forgejo-runner/tofu.rc
+    exec forgejo-runner daemon --config /etc/forgejo-runner/config.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak-tofu-runner
+  namespace: security
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak-tofu-runner
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak-tofu-runner
+    spec:
+      serviceAccountName: keycloak-tofu-runner
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      restartPolicy: Always
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: install-tofu
+          image: ghcr.io/opentofu/opentofu:1.12.6@sha256:81051bd41475edc867b0da7e6ccde9bb141aa06cbddb24e10e039b6d26708b7f
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -ec]
+          args: [install -m 0555 /usr/local/bin/tofu /tools/tofu]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tools, mountPath: /tools }
+        - name: install-provider-mirror
+          image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              mc alias set --api S3v4 local https://s3.monosense.io:443 "$ACCESS_KEY_ID" "$SECRET_ACCESS_KEY"
+              mc cp --recursive local/kubernetes-keycloak-tofu/providers/ /provider-mirror/
+          env:
+            - name: ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: keycloak-tofu-runner, key: librefs_access_key_id } }
+            - name: SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: keycloak-tofu-runner, key: librefs_secret_access_key } }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: provider-mirror, mountPath: /provider-mirror }
+            - { name: tmp, mountPath: /tmp }
+      containers:
+        - name: runner
+          image: data.forgejo.org/forgejo/runner:13.1.0@sha256:96af81b1b0cd928f3f135fb8dc021d47cff868c151a4fd28af971e892990ee7a
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, /opt/runner/run.sh]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/forgejo-runner
+              readOnly: true
+            - name: config
+              mountPath: /opt/runner
+              readOnly: true
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            - name: data
+              mountPath: /data
+            - name: workspace
+              mountPath: /workspace
+            - name: tmp
+              mountPath: /tmp
+            - name: tools
+              mountPath: /opt/tools
+              readOnly: true
+            - name: provider-mirror
+              mountPath: /opt/provider-mirror
+              readOnly: true
+            - name: openbao-token
+              mountPath: /var/run/secrets/openbao
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: keycloak-tofu-runner
+            defaultMode: 0550
+        - name: secrets
+          secret:
+            secretName: keycloak-tofu-runner
+            defaultMode: 0400
+        - name: openbao-token
+          projected:
+            defaultMode: 0400
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: keycloak-tofu
+                  expirationSeconds: 600
+        - name: data
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: workspace
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
+        - name: tools
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: provider-mirror
+          emptyDir:
+            sizeLimit: 32Mi

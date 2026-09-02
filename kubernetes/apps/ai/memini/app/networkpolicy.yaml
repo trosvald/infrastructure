@@ -1,0 +1,21 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: memini }
+spec:
+  endpointSelector: { matchLabels: { app.kubernetes.io/name: memini } }
+  ingress:
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: networking, k8s:io.kubernetes.serviceaccount.name: envoy-internal }
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: security, k8s:io.kubernetes.serviceaccount.name: oauth2-proxy-memini }
+      toPorts: [{ ports: [{ port: "8080", protocol: TCP }, { port: "8081", protocol: TCP }] }]
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: observability }
+      toPorts: [{ ports: [{ port: "9090", protocol: TCP }] }]
+  egress:
+    - toServices:
+        - k8sService: { serviceName: qwen3-embedding-tls, namespace: ai }
+      toPorts: [{ ports: [{ port: "8443", protocol: TCP }] }]
+    - toServices:
+        - k8sService: { serviceName: litellm, namespace: ai }
+      toPorts: [{ ports: [{ port: "4000", protocol: TCP }] }]

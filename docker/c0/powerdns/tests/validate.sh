@@ -4,6 +4,8 @@ set -euo pipefail
 image='docker.io/powerdns/pdns-auth-51:5.1.4@sha256:bb5b1c133bcca1dd455075321de7d55db4945a8d7f2ba23339e3c7bbe416b205'
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$(mktemp -d)"
+printf '%s' 'MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=' >"$work_dir/external_dns_tsig"
+chmod 0644 "$work_dir/external_dns_tsig"
 
 docker_run=(docker run --rm --platform linux/amd64)
 managed_zones=()
@@ -45,7 +47,7 @@ identity="$("${docker_run[@]}" --entrypoint id "$image" pdns)"
 [[ "$identity" == 'uid=953(pdns) gid=953(pdns) groups=953(pdns)' ]]
 [[ "$("${docker_run[@]}" --entrypoint pdns_server "$image" --version 2>&1)" == *'PowerDNS Authoritative Server 5.1.4'* ]]
 "${docker_run[@]}" --entrypoint /bin/sh "$image" -c \
-    'command -v pdns_server && command -v pdnsutil && command -v pdns_control && command -v sqlite3' \
+    'command -v pdns_server && command -v pdnsutil && command -v pdns_control && command -v sqlite3 && command -v python3' \
     >/dev/null
 
 initialize_data_volume() {
@@ -74,8 +76,10 @@ reconcile() {
     "${docker_run[@]}" \
         --network none --cap-drop ALL --security-opt no-new-privileges:true \
         --mount "type=bind,src=$project_dir/scripts/reconcile.sh,dst=/usr/local/bin/reconcile.sh,readonly" \
+        --mount "type=bind,src=$project_dir/scripts/merge_dynamic.py,dst=/usr/local/bin/merge_dynamic.py,readonly" \
         --mount "type=bind,src=$zones_dir,dst=/zones,readonly" \
         --mount "type=bind,src=$data_dir,dst=/var/lib/powerdns" \
+        --mount "type=bind,src=$work_dir/external_dns_tsig,dst=/run/secrets/external_dns_tsig,readonly" \
         --entrypoint /usr/local/bin/reconcile.sh "$image"
 }
 
@@ -91,7 +95,8 @@ database_hash() {
     local data_dir=$1
     "${docker_run[@]}" \
         --mount "type=bind,src=$data_dir,dst=/var/lib/powerdns,readonly" \
-        --entrypoint sha256sum "$image" /var/lib/powerdns/pdns.sqlite3 |
+        --entrypoint /bin/sh "$image" -ec \
+        'sha256sum /var/lib/powerdns/pdns.sqlite3 /var/lib/powerdns/dnsupdate-policy.lua | sha256sum' |
         cut -d ' ' -f 1
 }
 
@@ -160,8 +165,15 @@ expected_zone_inventory="$(printf '%s|NATIVE\n' "${managed_zones[@]}" | sort)"
 [[ "$zone_inventory" == "$expected_zone_inventory" ]]
 
 metadata_inventory="$(sqlite "$data_dir" "SELECT d.name || '|' || m.kind || '|' || m.content FROM domainmetadata AS m JOIN domains AS d ON d.id=m.domain_id ORDER BY d.name,m.kind,m.content;")"
-expected_metadata_inventory="$(printf '%s|SOA-EDIT-API|DEFAULT\n' "${managed_zones[@]}" | sort)"
+expected_metadata_inventory="$({
+    printf '%s|SOA-EDIT-API|DEFAULT\n' "${managed_zones[@]}"
+    printf '%s\n' \
+        'monosense.io|ALLOW-DNSUPDATE-FROM|10.25.11.0/24' \
+        'monosense.io|TSIG-ALLOW-DNSUPDATE|external-dns-internal'
+} | sort)"
 [[ "$metadata_inventory" == "$expected_metadata_inventory" ]]
+[[ "$(sqlite "$data_dir" "SELECT name || '|' || algorithm || '|' || length(secret) FROM tsigkeys;")" == 'external-dns-internal|hmac-sha256|44' ]]
+[[ -s "$data_dir/dnsupdate-policy.lua" ]]
 
 [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records WHERE type='A';")" -gt 0 ]]
 [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records WHERE type='PTR';")" -gt 0 ]]
@@ -225,6 +237,72 @@ reconcile "$data_dir"
 [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records WHERE name='drift.$forward_zone';")" == 0 ]]
 [[ "$(sqlite "$data_dir" 'SELECT COUNT(*) FROM records;')" -gt 0 ]]
 
+dynamic_name="dynamic.$forward_zone"
+"${docker_run[@]}" \
+    --network none --cap-drop ALL \
+    --env FORWARD_ZONE="$forward_zone" --env DYNAMIC_NAME="$dynamic_name" \
+    --mount "type=bind,src=$data_dir,dst=/var/lib/powerdns" \
+    --entrypoint /bin/sh "$image" -ec '
+        config_dir="$(mktemp -d)"
+        trap '"'"'rm -rf "$config_dir"'"'"' EXIT
+        printf "%s\n" launch=gsqlite3 gsqlite3-database=/var/lib/powerdns/pdns.sqlite3 >"$config_dir/pdns.conf"
+        pdnsutil --config-dir="$config_dir" rrset add "$FORWARD_ZONE" "$DYNAMIC_NAME" A 300 10.25.20.40
+        pdnsutil --config-dir="$config_dir" rrset add "$FORWARD_ZONE" "$DYNAMIC_NAME" TXT 300 \
+            '"'"'"heritage=external-dns,external-dns/owner=external-dns-internal,external-dns/resource=httproute/observability/dynamic"'"'"'
+    '
+reconcile "$data_dir"
+[[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records WHERE name='$dynamic_name' AND type IN ('A','TXT');")" == 2 ]]
+"${docker_run[@]}" \
+    --network none --cap-drop ALL \
+    --env FORWARD_ZONE="$forward_zone" --env DYNAMIC_NAME="$dynamic_name" \
+    --mount "type=bind,src=$data_dir,dst=/var/lib/powerdns" \
+    --entrypoint /bin/sh "$image" -ec '
+        config_dir="$(mktemp -d)"
+        trap '"'"'rm -rf "$config_dir"'"'"' EXIT
+        printf "%s\n" launch=gsqlite3 gsqlite3-database=/var/lib/powerdns/pdns.sqlite3 >"$config_dir/pdns.conf"
+        pdnsutil --config-dir="$config_dir" rrset replace "$FORWARD_ZONE" "$DYNAMIC_NAME" A 300 10.25.20.41
+    '
+reconcile "$data_dir"
+[[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records WHERE name='$dynamic_name' AND type='A' AND content='10.25.20.41';")" == 1 ]]
+"${docker_run[@]}" \
+    --network none --cap-drop ALL \
+    --env FORWARD_ZONE="$forward_zone" --env DYNAMIC_NAME="$dynamic_name" \
+    --mount "type=bind,src=$data_dir,dst=/var/lib/powerdns" \
+    --entrypoint /bin/sh "$image" -ec '
+        config_dir="$(mktemp -d)"
+        trap '"'"'rm -rf "$config_dir"'"'"' EXIT
+        printf "%s\n" launch=gsqlite3 gsqlite3-database=/var/lib/powerdns/pdns.sqlite3 >"$config_dir/pdns.conf"
+        pdnsutil --config-dir="$config_dir" rrset delete "$FORWARD_ZONE" "$DYNAMIC_NAME" A
+        pdnsutil --config-dir="$config_dir" rrset delete "$FORWARD_ZONE" "$DYNAMIC_NAME" TXT
+    '
+reconcile "$data_dir"
+[[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records WHERE name='$dynamic_name';")" == 0 ]]
+
+python3 - "$data_dir/dnsupdate-policy.lua" <<'PY'
+import pathlib, sys
+policy = pathlib.Path(sys.argv[1]).read_text()
+assert 'tostring(input:getTsigName()) == "external-dns-internal."' in policy
+assert 'allowed_types[input:getQType()] == true' in policy
+assert '["git.monosense.io."] = true' in policy
+PY
+
+prepare_case collision
+canonical_name="$(sqlite "$work_dir/collision-data" \
+    "SELECT r.name FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$forward_zone' AND r.type='A' ORDER BY r.name LIMIT 1;")"
+"${docker_run[@]}" \
+    --network none --cap-drop ALL \
+    --env FORWARD_ZONE="$forward_zone" --env CANONICAL_NAME="$canonical_name" \
+    --mount "type=bind,src=$work_dir/collision-data,dst=/var/lib/powerdns" \
+    --entrypoint /bin/sh "$image" -ec '
+        config_dir="$(mktemp -d)"
+        trap '"'"'rm -rf "$config_dir"'"'"' EXIT
+        printf "%s\n" launch=gsqlite3 gsqlite3-database=/var/lib/powerdns/pdns.sqlite3 >"$config_dir/pdns.conf"
+        pdnsutil --config-dir="$config_dir" rrset add "$FORWARD_ZONE" "$CANONICAL_NAME" TXT 300 \
+            '"'"'"heritage=external-dns,external-dns/owner=external-dns-internal,external-dns/resource=httproute/networking/collision"'"'"'
+    '
+expect_atomic_failure 'an owned dynamic RRset shadowing a canonical Git name' \
+    "$work_dir/collision-data" "$work_dir/collision-zones"
+
 missing_zone=${managed_zones[0]}
 prepare_case missing
 rm "$work_dir/missing-zones/$missing_zone.zone"
@@ -239,7 +317,10 @@ malformed_zone=${managed_zones[1]}
 prepare_case malformed
 printf '%s\n' 'this is not a zone' >"$work_dir/malformed-zones/$malformed_zone.zone"
 expect_atomic_failure 'malformed canonical zone content' "$work_dir/malformed-data" "$work_dir/malformed-zones"
-database_path_exists "$work_dir/malformed-data" /var/lib/powerdns/pdns.sqlite3.tmp
+if database_path_exists "$work_dir/malformed-data" /var/lib/powerdns/pdns.sqlite3.tmp; then
+    printf '%s\n' 'malformed canonical zone left a candidate' >&2
+    exit 1
+fi
 
 prepare_case partial
 "${docker_run[@]}" \
@@ -262,12 +343,33 @@ fi
 "${docker_run[@]}" \
     --network none --cap-drop ALL --cap-add NET_BIND_SERVICE \
     --security-opt no-new-privileges:true \
-    --entrypoint pdns_server "$image" \
-    --config=check \
+    --mount "type=bind,src=$data_dir,dst=/var/lib/powerdns" \
+    --entrypoint /bin/sh "$image" -ec '
+        pdns_server "$@" &
+        server_pid=$!
+        trap '"'"'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true'"'"' EXIT
+        sleep 2
+        if ! kill -0 "$server_pid"; then
+            wait "$server_pid"
+            printf "%s\n" "PowerDNS exited during its startup probe" >&2
+            exit 1
+        fi
+        if ! quick_check=$(sqlite3 /var/lib/powerdns/pdns.sqlite3 "PRAGMA quick_check;"); then
+            printf "%s\n" "PowerDNS live database quick_check command failed" >&2
+            exit 1
+        fi
+        if [ "$quick_check" != ok ]; then
+            printf "%s\n" "PowerDNS live database quick_check failed: $quick_check" >&2
+            exit 1
+        fi
+        exit 0
+    ' _ \
     --api=no \
+    --dnsupdate=yes \
     --disable-axfr=yes \
     --gsqlite3-database=/var/lib/powerdns/pdns.sqlite3 \
     --launch=gsqlite3 \
+    --lua-dnsupdate-policy-script=/var/lib/powerdns/dnsupdate-policy.lua \
     --local-address=0.0.0.0 \
     --version-string=anonymous \
     --webserver=no

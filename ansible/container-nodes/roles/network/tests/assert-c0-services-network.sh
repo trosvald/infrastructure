@@ -20,6 +20,14 @@ SH
 chmod +x "$work/docker" "$work/ip"
 run(){ FAKE_NETWORK="$1" DOCKER_BIN="$work/docker" IP_BIN="$work/ip" "$SCRIPT" apply >/dev/null; }
 run "$work/network.json"
+jq '.[0].Containers={}' "$work/network.json" >"$work/empty.json"
+run "$work/empty.json"
+jq '.[0].Containers.rogue={"Name":"rogue","IPv4Address":"10.25.13.99/24","IPv6Address":""}' \
+    "$work/empty.json" >"$work/rogue.json"
+if run "$work/rogue.json" 2>/dev/null; then
+    printf 'expected rogue endpoint refusal\n' >&2
+    exit 1
+fi
 jq '.[0].Options["com.docker.network.driver.mtu"]="1500"' "$work/network.json" >"$work/drift.json"
 if run "$work/drift.json" 2>/dev/null; then
     printf 'expected MTU option drift refusal\n' >&2

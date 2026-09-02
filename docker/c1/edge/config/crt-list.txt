@@ -1,1 +1,1 @@
-/run/tls/current/combined.pem git.monosense.io
+/run/tls/current/combined.pem git.monosense.io status.monosense.io edge-acceptance.monosense.io
