@@ -1,0 +1,37 @@
+---
+- name: Read the Kubernetes workload CA record
+  ansible.builtin.uri:
+    url: https://vault.monosense.io:8200/v1/kv/data/platform/tls/kubernetes-ca
+    method: GET
+    headers:
+      X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: kubernetes_ca_recovery_record
+  no_log: true
+  diff: false
+
+- name: Validate the Kubernetes workload CA contract
+  ansible.builtin.assert:
+    that:
+      - kubernetes_ca_recovery_record.json.data.data | dict2items | map(attribute='key') | list == ['certificate']
+      - kubernetes_ca_recovery_record.json.data.data.certificate is match('^-----BEGIN CERTIFICATE-----')
+  no_log: true
+
+- name: Materialize the Kubernetes workload CA consumers
+  ansible.builtin.include_tasks: materialize-consumers.yml
+  vars:
+    runtime_materials:
+      - path: /srv/applications/apps/edge/tls/kubernetes-ca.pem
+        content: "{{ kubernetes_ca_recovery_record.json.data.data.certificate }}"
+        owner: '99'
+        group: '99'
+        parent_owner: '99'
+        parent_group: '99'
+      - path: /srv/applications/apps/forgejo/secrets/kubernetes-ca.crt
+        content: "{{ kubernetes_ca_recovery_record.json.data.data.certificate }}"
+        owner: '1000'
+        group: '1000'
+  no_log: true

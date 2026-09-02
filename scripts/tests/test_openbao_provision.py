@@ -63,6 +63,9 @@ assert "scripts/provision-kubernetes-r2-backup.sh)" in runtime
 assert "provision-database-secrets:" in justfile
 assert "scripts/with-openbao-runtime.sh scripts/provision-database-secrets.sh" in justfile
 assert "scripts/provision-database-secrets.sh)" in runtime
+assert "provision-observability-secrets:" in justfile
+assert "scripts/with-openbao-runtime.sh scripts/provision-observability-secrets.sh" in justfile
+assert "scripts/provision-observability-secrets.sh)" in runtime
 assert "provision-powerdns-dynamic-dns:" in justfile
 assert "scripts/with-openbao-runtime.sh scripts/provision-powerdns-dynamic-dns.sh" in justfile
 assert "scripts/provision-powerdns-dynamic-dns.sh)" in runtime

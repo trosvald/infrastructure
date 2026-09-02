@@ -52,6 +52,12 @@ case "$1" in
             exit 2
         }
         ;;
+    scripts/provision-observability-secrets.sh)
+        [[ $# == 1 ]] || {
+            echo "Observability secret provisioner accepts no arguments" >&2
+            exit 2
+        }
+        ;;
     scripts/rotate-vector-srx-certificate.sh)
         [[ $# == 1 ]] || {
             echo "Vector SRX certificate rotator accepts no arguments" >&2
