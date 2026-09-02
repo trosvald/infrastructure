@@ -6,6 +6,9 @@ metadata:
   name: envoy-gateway
   namespace: networking
 spec:
+  dependsOn:
+    - name: grafana-operator
+      namespace: observability
   interval: 1h
   path: ./kubernetes/apps/networking/envoy-gateway/app
   prune: true
