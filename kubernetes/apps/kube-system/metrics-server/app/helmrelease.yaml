@@ -11,10 +11,12 @@ spec:
     namespace: flux-system
   interval: 1h
   values:
-    args:
+    defaultArgs:
+      - --cert-dir=/tmp
       - --kubelet-preferred-address-types=Hostname,InternalIP
       - --kubelet-use-node-status-port
       - --metric-resolution=10s
+    args:
       - --kubelet-request-timeout=2s
     metrics:
       enabled: true
