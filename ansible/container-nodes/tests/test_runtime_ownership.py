@@ -176,6 +176,15 @@ class ProtectedRuntimeAssetTests(unittest.TestCase):
         self.assertIn("content: \"{{ runtime_c0_doco_api_secret.content | b64decode | trim }}\"", materialize)
         self.assertNotIn("atomic_secret:", controller)
 
+    def test_vector_ingest_token_is_materialized(self):
+        materialize = (
+            ROOT / "roles/runtime_assets/tasks/materialize-c0.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "| replace('@@vector_ingest_token@@', runtime_monitoring.vector_ingest_token)",
+            materialize,
+        )
+
     def test_c0_wildcard_certificate_precedes_and_safely_restarts_monitoring(self):
         updater = (
             ROOT / "roles/runtime_assets/files/update-c0-wildcard-certificate"

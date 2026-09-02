@@ -21,7 +21,9 @@
         owner: '65534'
         group: '65534'
       - path: /var/lib/monosense-monitoring/secrets/vector.yaml
-        content: "{{ lookup('ansible.builtin.file', role_path + '/templates/vector.yaml.template') }}"
+        content: >-
+          {{ lookup('ansible.builtin.file', role_path + '/templates/vector.yaml.template')
+             | replace('@@vector_ingest_token@@', runtime_monitoring.vector_ingest_token) }}
         owner: '65534'
         group: '65534'
       - path: /var/lib/monosense-monitoring/vector-tls/fullchain.pem
