@@ -1,0 +1,37 @@
+---
+- name: Recover protected c0 runtime assets
+  hosts: c0
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  vars:
+    container_nodes_action: recover-c0-assets
+    container_nodes_runtime_assets_secret_action: true
+    container_nodes_runtime_assets_controller_token: >-
+      {{ lookup(
+           'ansible.builtin.file',
+           lookup('ansible.builtin.env', 'CONTAINER_NODES_OPENBAO_TOKEN_FILE')
+         ) }}
+  tasks:
+    - name: Re-audit identity-critical state
+      ansible.builtin.include_role: {name: audit}
+
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+
+    - name: Recover the c0 Vector client credential generation
+      ansible.builtin.include_role:
+        name: runtime_assets
+        tasks_from: recover-vector-client.yml
+      vars:
+        container_nodes_runtime_assets_vector_record_path: kv/data/docker/c0/monitoring
+        container_nodes_runtime_assets_vector_consumer_path: /var/lib/monosense-monitoring/vector-client
+      no_log: true
+
+    - name: Recover the PowerDNS TSIG consumer
+      ansible.builtin.include_role:
+        name: runtime_assets
+        tasks_from: recover-powerdns-tsig.yml
+      no_log: true

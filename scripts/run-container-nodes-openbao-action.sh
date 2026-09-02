@@ -4,9 +4,9 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_dir"
 
-[[ $# -eq 1 ]] || { echo "usage: run-container-nodes-openbao-action.sh prepare-applications|provision-secrets|recover-c1|recover-monitoring|verify" >&2; exit 2; }
+[[ $# -eq 1 ]] || { echo "usage: run-container-nodes-openbao-action.sh prepare-applications|provision-secrets|recover-c0-assets|recover-c1|recover-monitoring|verify" >&2; exit 2; }
 case "$1" in
-  prepare-applications|provision-secrets|recover-c1|recover-monitoring|verify) ;;
+  prepare-applications|provision-secrets|recover-c0-assets|recover-c1|recover-monitoring|verify) ;;
   *) echo "unsupported protected container-nodes action: $1" >&2; exit 2 ;;
 esac
 [[ -n "${BAO_TOKEN:-}" && -n "${OPENBAO_RUNTIME_DIR:-}" ]] || {

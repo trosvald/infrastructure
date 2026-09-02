@@ -136,6 +136,12 @@ prepare-container-applications:
     scripts/with-openbao-runtime.sh scripts/run-container-nodes-openbao-action.sh prepare-applications
 
 [group: 'OpenBao']
+[doc('Recover protected c0 PowerDNS and Vector consumers after an outage')]
+recover-c0-assets:
+    scripts/with-openbao-runtime.sh scripts/run-container-nodes-openbao-action.sh recover-c0-assets
+
+
+[group: 'OpenBao']
 [doc('Recover c1 prerequisites, scoped tokens, and Doco applications after an outage')]
 recover-c1-containers:
     scripts/with-openbao-runtime.sh scripts/run-container-nodes-openbao-action.sh recover-c1

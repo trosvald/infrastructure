@@ -163,13 +163,14 @@ validate-blocky:
         and .upstreams.timeout == "3s"
         and .connectIPVersion == "v4"
         and .conditional.fallbackUpstream == false
-        and (.conditional.mapping | length) == 6
+        and (.conditional.mapping | length) == 7
         and .conditional.mapping."monosense.io" == "10.25.13.33"
         and .conditional.mapping."10.25.10.in-addr.arpa" == "10.25.13.33"
         and .conditional.mapping."11.25.10.in-addr.arpa" == "10.25.13.33"
         and .conditional.mapping."12.25.10.in-addr.arpa" == "10.25.13.33"
         and .conditional.mapping."13.25.10.in-addr.arpa" == "10.25.13.33"
         and .conditional.mapping."15.25.10.in-addr.arpa" == "10.25.13.33"
+        and .conditional.mapping."20.25.10.in-addr.arpa" == "10.25.13.33"
         and (.blocking.denylists.default | length) == 1
         and .blocking.denylists.default[0] == "https://raw.githubusercontent.com/hagezi/dns-blocklists/a3d0c5c7a0402f669f3f1392527b8a50622128cf/wildcard/multi.txt"
         and (.blocking.allowlists.default | length) == 1
@@ -179,6 +180,7 @@ validate-blocky:
         and (.blocking.allowlists.default[0] | contains("12.25.10.in-addr.arpa\n*.12.25.10.in-addr.arpa\n"))
         and (.blocking.allowlists.default[0] | contains("13.25.10.in-addr.arpa\n*.13.25.10.in-addr.arpa\n"))
         and (.blocking.allowlists.default[0] | contains("15.25.10.in-addr.arpa\n*.15.25.10.in-addr.arpa\n"))
+        and (.blocking.allowlists.default[0] | contains("20.25.10.in-addr.arpa\n*.20.25.10.in-addr.arpa\n"))
         and (.blocking.clientGroupsBlock.default | length) == 1
         and .blocking.clientGroupsBlock.default[0] == "default"
         and .blocking.blockType == "nxDomain"

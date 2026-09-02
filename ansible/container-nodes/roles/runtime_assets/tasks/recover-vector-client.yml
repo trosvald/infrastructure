@@ -4,14 +4,16 @@
     that:
       - container_nodes_runtime_assets_secret_action | bool
       - container_nodes_runtime_assets_controller_token | length > 20
-      - inventory_hostname == 'c1'
+      - inventory_hostname in ['c0', 'c1']
+      - container_nodes_runtime_assets_vector_record_path | length > 0
+      - container_nodes_runtime_assets_vector_consumer_path | length > 0
       - not ansible_check_mode
-    fail_msg: Vector client recovery requires protected controller authentication on c1
+    fail_msg: Vector client recovery requires an exact protected host contract
   no_log: true
 
-- name: Read the c1 edge credential record
+- name: Read the host Vector credential record
   ansible.builtin.uri:
-    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/kv/data/docker/c1/edge"
+    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/{{ container_nodes_runtime_assets_vector_record_path }}"
     method: GET
     headers:
       X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
@@ -43,7 +45,7 @@
           X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
         body_format: json
         body:
-          common_name: vector-c1
+          common_name: "vector-{{ inventory_hostname }}"
           ttl: 720h
         return_content: true
         status_code: 200
@@ -72,9 +74,9 @@
       changed_when: false
       no_log: true
 
-    - name: Merge the issued Vector client generation with the exact edge record
+    - name: Merge the issued Vector client generation with the exact host record
       ansible.builtin.uri:
-        url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/kv/data/docker/c1/edge"
+        url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/{{ container_nodes_runtime_assets_vector_record_path }}"
         method: POST
         headers:
           X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
@@ -96,9 +98,9 @@
       no_log: true
       diff: false
 
-- name: Refresh the c1 edge credential record after certificate publication
+- name: Refresh the host Vector credential record after certificate publication
   ansible.builtin.uri:
-    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/kv/data/docker/c1/edge"
+    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/{{ container_nodes_runtime_assets_vector_record_path }}"
     method: GET
     headers:
       X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
@@ -110,26 +112,26 @@
   no_log: true
   diff: false
 
-- name: Materialize the current c1 Vector client generation
+- name: Materialize the current host Vector client generation
   ansible.builtin.include_tasks: materialize-consumers.yml
   vars:
-    runtime_edge: "{{ runtime_vector_recovery_current.json.data.data }}"
+    runtime_vector: "{{ runtime_vector_recovery_current.json.data.data }}"
     container_nodes_runtime_assets_rotate: false
     runtime_materials:
-      - path: /srv/applications/apps/edge/secrets/vector-client/certificate.pem
-        content: "{{ runtime_edge.vector_client_certificate }}"
+      - path: "{{ container_nodes_runtime_assets_vector_consumer_path }}/certificate.pem"
+        content: "{{ runtime_vector.vector_client_certificate }}"
         owner: '1000'
         group: '1000'
         parent_owner: '1000'
         parent_group: '1000'
-      - path: /srv/applications/apps/edge/secrets/vector-client/private-key.pem
-        content: "{{ runtime_edge.vector_client_private_key }}"
+      - path: "{{ container_nodes_runtime_assets_vector_consumer_path }}/private-key.pem"
+        content: "{{ runtime_vector.vector_client_private_key }}"
         owner: '1000'
         group: '1000'
         parent_owner: '1000'
         parent_group: '1000'
-      - path: /srv/applications/apps/edge/secrets/vector-client/ca.pem
-        content: "{{ runtime_edge.vector_client_ca }}"
+      - path: "{{ container_nodes_runtime_assets_vector_consumer_path }}/ca.pem"
+        content: "{{ runtime_vector.vector_client_ca }}"
         owner: '1000'
         group: '1000'
         parent_owner: '1000'

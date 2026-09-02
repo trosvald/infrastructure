@@ -38,6 +38,7 @@ case "$action" in
   prepare-applications) run_playbook playbooks/prepare-applications.yml ;;
   rollout-applications) run_playbook playbooks/rollout-applications.yml ;;
   recover-c0) run_playbook playbooks/recover-c0.yml ;;
+  recover-c0-assets) run_playbook playbooks/recover-c0-assets.yml ;;
   recover-c1) run_playbook playbooks/recover-c1.yml ;;
   recover-monitoring) run_playbook playbooks/recover-monitoring.yml ;;
   rotate-secrets) run_playbook playbooks/rotate-secrets.yml ;;
@@ -48,7 +49,8 @@ case "$action" in
   reboot) run_playbook playbooks/reboot.yml ;;
   *)
     printf 'Unknown container-nodes action: %s\n' "${action:-<missing>}" >&2
-    printf '%s\n' 'Supported actions: bootstrap test lint audit check diff deploy verify drift provision-storage provision-secrets rotate-secrets prepare-applications rollout-applications recover-c0 recover-c1 recover-monitoring forgejo-source-prepare forgejo-source-cutover activate-network upgrade reboot'
+    printf '%s\n' 'Supported actions: bootstrap test lint audit check diff deploy verify drift provision-storage provision-secrets rotate-secrets prepare-applications rollout-applications recover-c0 recover-c0-assets recover-c1 recover-monitoring forgejo-source-prepare forgejo-source-cutover activate-network upgrade reboot'
+
     exit 2
     ;;
 esac
