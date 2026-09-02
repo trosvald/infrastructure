@@ -2,3 +2,8 @@
 kubernetes/apps/kube-system/descheduler/ks.yaml # Placement, PDB, local-storage, and utilization evidence is not yet accepted.
 kubernetes/apps/kopiur-system/kopia/ks.yaml # Required OpenBao librefs are not provisioned.
 kubernetes/apps/kopiur-system/kopiur/ks.yaml # Required OpenBao librefs and R2 credentials are not provisioned.
+kubernetes/apps/database/dragonfly/config/ks.yaml # Stateful database activation requires provisioned credentials and storage.
+kubernetes/apps/database/postgres/config/ks.yaml # Stateful database activation requires provisioned credentials and storage.
+kubernetes/apps/flux-system/image-automation/ks.yaml # Forgejo SSH automation credentials are not provisioned.
+kubernetes/apps/kopiur-system/kopiur/config/ks.yaml # Kopiur is excluded until its OpenBao records are provisioned.
+kubernetes/apps/rook-ceph/rook-ceph/config/ks.yaml # Ceph cluster activation remains an explicit storage gate.
