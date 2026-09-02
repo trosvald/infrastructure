@@ -21,6 +21,8 @@ REPOSITORY = "infrastructure"
 TOKEN_NAME = "bootstrap-infrastructure-source"
 PUBLIC_URL = "https://git.monosense.io/trosvald/infrastructure.git"
 UPSTREAM_URL = "https://github.com/trosvald/infrastructure.git"
+MIRROR_SYNC_TIMEOUT = 120
+MIRROR_SYNC_INTERVAL = 2
 BACKUP_LOG = pathlib.Path(
     os.environ.get(
         "FORGEJO_BACKUP_LOG",
@@ -28,6 +30,10 @@ BACKUP_LOG = pathlib.Path(
     )
 )
 OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+class RefParityError(RuntimeError):
+    pass
 
 
 def run(*args: str) -> str:
@@ -63,15 +69,37 @@ def refs(url: str) -> tuple[str, str]:
     return hashlib.sha256(payload.encode()).hexdigest(), payload
 
 
-def prove_parity() -> str:
+def matching_ref_digest() -> str:
     upstream_digest, upstream_refs = refs(UPSTREAM_URL)
     public_digest, public_refs = refs(PUBLIC_URL)
     if public_refs != upstream_refs:
-        raise SystemExit(
+        raise RefParityError(
             "Forgejo/GitHub ref parity failed: "
             f"upstream={upstream_digest} forgejo={public_digest}"
         )
     return public_digest
+
+
+def prove_parity() -> str:
+    try:
+        return matching_ref_digest()
+    except RefParityError as error:
+        raise SystemExit(str(error)) from error
+
+
+def wait_for_parity(
+    timeout: float = MIRROR_SYNC_TIMEOUT,
+    interval: float = MIRROR_SYNC_INTERVAL,
+) -> str:
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            return matching_ref_digest()
+        except RefParityError as error:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise SystemExit(str(error)) from error
+            time.sleep(min(interval, remaining))
 
 
 def repository(base: str, token: str):
@@ -156,7 +184,7 @@ def prepare(base: str, token: str, user: dict) -> str:
     refreshed = repository(base, token)
     if refreshed.get("private") or refreshed.get("mirror_updated") is None:
         raise SystemExit("Forgejo mirror is not public and refreshed")
-    digest = prove_parity()
+    digest = wait_for_parity()
     print(f"Forgejo public mirror prepared at parity digest {digest}")
     return digest
 
