@@ -13,7 +13,7 @@
   no_log: true
   diff: false
 
-- name: Validate required Gatus credentials
+- name: Validate required monitoring credentials
   ansible.builtin.assert:
     that:
       - monitoring_recovery_record.json.data.data.telegram_bot_token | length > 0
@@ -37,6 +37,26 @@
     parent_mode: '0700'
   no_log: true
   diff: false
+
+- name: Materialize authenticated Vector configuration atomically
+  atomic_secret:
+    path: /var/lib/monosense-monitoring/secrets/vector.yaml
+    content: >-
+      {{ lookup('ansible.builtin.file', role_path + '/templates/vector.yaml.template')
+         | replace('@@vector_ingest_token@@', monitoring_recovery_record.json.data.data.vector_ingest_token) }}
+    owner: '65534'
+    group: '65534'
+    mode: '0600'
+    parent_mode: '0700'
+  no_log: true
+  diff: false
+
+- name: Restart Vector with the repaired configuration
+  ansible.builtin.command:
+    argv: [docker, restart, vector-c0]
+  changed_when: true
+  no_log: true
+
 
 - name: Restart Gatus with the repaired configuration
   ansible.builtin.command:
