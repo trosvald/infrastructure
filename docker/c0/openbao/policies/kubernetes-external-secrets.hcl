@@ -1,3 +1,7 @@
+path "auth/token/lookup-self" {
+  capabilities = ["read"]
+}
+
 path "kv/data/platform/kubernetes/flux-system/image-automation" {
   capabilities = ["read"]
 }
