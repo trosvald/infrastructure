@@ -23,6 +23,7 @@
 - name: Materialize the Kubernetes workload CA consumers
   ansible.builtin.include_tasks: materialize-consumers.yml
   vars:
+    container_nodes_runtime_assets_rotate: false
     runtime_materials:
       - path: /srv/applications/apps/edge/tls/kubernetes-ca.pem
         content: "{{ kubernetes_ca_recovery_record.json.data.data.certificate }}"
