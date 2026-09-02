@@ -287,7 +287,10 @@ reconcile "$data_dir"
 reconcile "$data_dir"
 [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records WHERE name='$dynamic_name';")" == 0 ]]
 
-python3 - "$data_dir/dnsupdate-policy.lua" <<'PY'
+"${docker_run[@]}" -i \
+    --network none --cap-drop ALL \
+    --mount "type=bind,src=$data_dir,dst=/var/lib/powerdns" \
+    --entrypoint python3 "$image" - /var/lib/powerdns/dnsupdate-policy.lua <<'PY'
 import pathlib, sys
 policy = pathlib.Path(sys.argv[1]).read_text()
 assert 'tostring(input:getTsigName()) == "external-dns-internal."' in policy
