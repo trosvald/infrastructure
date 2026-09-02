@@ -163,6 +163,7 @@ def main() -> int:
             "KubePrismConfig",
         ):
             assert f"kind: {kind}" in text
+        assert 'rotate-server-certificates: "true"' in text
         assert "device: /dev/watchdog0" in text and "timeout: 10m" in text
         assert "metal-installer/" in text and ":v1.14.0-rc.2" in text
         for setting in (

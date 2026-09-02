@@ -126,6 +126,8 @@ config:
     - net.ipv4.tcp_tw_reuse
   serializeImagePulls: false
 defaultRuntimeSeccompProfileEnabled: true
+extraArgs:
+  rotate-server-certificates: "true"
 image: ghcr.io/siderolabs/kubelet:{{ topology.versions.kubernetes }}
 ---
 apiVersion: v1alpha1
