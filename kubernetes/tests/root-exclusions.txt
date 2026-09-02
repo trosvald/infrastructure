@@ -7,3 +7,16 @@ kubernetes/apps/database/postgres/config/ks.yaml # Stateful database activation 
 kubernetes/apps/flux-system/image-automation/ks.yaml # Forgejo SSH automation credentials are not provisioned.
 kubernetes/apps/kopiur-system/kopiur/config/ks.yaml # Kopiur is excluded until its OpenBao records are provisioned.
 kubernetes/apps/rook-ceph/rook-ceph/config/ks.yaml # Ceph cluster activation remains an explicit storage gate.
+kubernetes/apps/ai/codex-adapter/ks.yaml # Codex OAuth checkpoint material is not provisioned.
+kubernetes/apps/ai/litellm/ks.yaml # LiteLLM requires the excluded PostgreSQL cluster.
+kubernetes/apps/ai/llmkube/ks.yaml # LLMKube activation remains an explicit accelerator and model gate.
+kubernetes/apps/ai/memini/ks.yaml # Memini requires excluded LLMKube and backup dependencies.
+kubernetes/apps/observability/fluent-bit/ks.yaml # Fluent Bit requires the excluded VictoriaLogs storage stack.
+kubernetes/apps/observability/grafana-operator/config/ks.yaml # Grafana requires the excluded Ceph and Victoria storage stacks.
+kubernetes/apps/observability/smartctl-exporter/ks.yaml # SMART monitoring activation remains explicitly suspended.
+kubernetes/apps/observability/snmp-exporter/ks.yaml # SNMP credentials and targets are not provisioned.
+kubernetes/apps/observability/victoria-logs/ks.yaml # VictoriaLogs requires the excluded Ceph storage cluster.
+kubernetes/apps/observability/victoria-metrics-k8s-stack/ks.yaml # VictoriaMetrics requires the excluded Ceph storage cluster.
+kubernetes/apps/security/keycloak/config/ks.yaml # Keycloak requires the excluded PostgreSQL cluster.
+kubernetes/apps/security/keycloak-tofu/ks.yaml # Keycloak trust-on-first-use remains explicitly suspended.
+kubernetes/apps/security/oauth2-proxy/ks.yaml # OAuth2 Proxy requires the excluded identity and application stacks.
