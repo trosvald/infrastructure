@@ -194,9 +194,10 @@ class ProtectedRuntimeAssetTests(unittest.TestCase):
         vector = (
             ROOT / "roles/runtime_assets/templates/vector.yaml.template"
         ).read_text(encoding="utf-8")
-        self.assertNotIn("/run/tls/current/", vector)
-        self.assertEqual(vector.count("/run/vector-tls/fullchain.pem"), 2)
-        self.assertEqual(vector.count("/run/vector-tls/privkey.pem"), 2)
+        self.assertIn("/run/tls/current/fullchain.pem", vector)
+        self.assertIn("/run/tls/current/privkey.pem", vector)
+        self.assertEqual(vector.count("/run/vector-tls/fullchain.pem"), 1)
+        self.assertEqual(vector.count("/run/vector-tls/privkey.pem"), 1)
 
     def test_c0_wildcard_certificate_precedes_and_safely_restarts_monitoring(self):
         updater = (
