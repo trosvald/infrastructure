@@ -108,6 +108,12 @@
         name: runtime_assets
         tasks_from: recover-vector-client.yml
       no_log: true
+    - name: Recover c1 Kubernetes workload CA consumers
+      ansible.builtin.include_role:
+        name: runtime_assets
+        tasks_from: recover-kubernetes-ca.yml
+      no_log: true
+
 
     - name: Start c1 Doco controller
       ansible.builtin.systemd_service:

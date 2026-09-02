@@ -213,7 +213,8 @@ services:
     restart: "no"
     read_only: true
     cap_drop: [ALL]
-    cap_add: [CHOWN]
+    cap_add: [CHOWN, FOWNER]
+
     security_opt: [no-new-privileges:true]
     entrypoint: [/bin/sh, -ceu]
     command: ["install -d -o 1000 -g 1000 -m 0700 /var/lib/vector/buffer"]

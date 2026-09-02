@@ -23,6 +23,7 @@ jq -e '
   and ([.services | to_entries[] | select(.value.networks.c1_edge? != null) | .key] == ["haproxy"])
   and ([.services | to_entries[] | select(.value.networks.forgejo_frontend? != null) | .key] == ["haproxy"])
   and .services.haproxy.cap_add == ["NET_BIND_SERVICE"]
+  and .services["vector-init"].cap_add == ["CHOWN","FOWNER"]
   and .services.haproxy.ulimits.nofile == {"soft":65536,"hard":65536}
   and (.services.haproxy.mem_limit | tonumber) == 1073741824
   and (.services.haproxy.memswap_limit | tonumber) == 1073741824
