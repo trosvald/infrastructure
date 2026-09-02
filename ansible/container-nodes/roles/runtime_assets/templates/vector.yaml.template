@@ -7,7 +7,7 @@ sources:
       strategy: custom
       source: |
         .headers.authorization == "Bearer @@vector_ingest_token@@"
-    tls: { enabled: true, crt_file: /run/vector-tls/fullchain.pem, key_file: /run/vector-tls/privkey.pem }
+    tls: { enabled: true, crt_file: /run/tls/current/fullchain.pem, key_file: /run/tls/current/privkey.pem }
     decoding: { codec: json }
   srx_tls:
     type: syslog

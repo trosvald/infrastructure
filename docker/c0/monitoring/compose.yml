@@ -44,6 +44,7 @@ services:
       vector-prune: { condition: service_started }
     volumes:
       - { type: bind, source: /var/lib/monosense-monitoring/secrets/vector.yaml, target: /etc/vector/vector.yaml, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: /var/lib/monosense-monitoring/tls, target: /run/tls, read_only: true, bind: { create_host_path: false } }
       - vector-evidence:/var/lib/vector
       - { type: bind, source: /var/lib/monosense-monitoring/vector-tls, target: /run/vector-tls, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: /var/lib/monosense-monitoring/vector-client, target: /run/vector-client, read_only: true, bind: { create_host_path: false } }

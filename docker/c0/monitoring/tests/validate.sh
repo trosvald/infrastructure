@@ -22,6 +22,7 @@ jq -e '
   and .services.gatus.user == "65534:65534"
   and .services.vector.user == "65534:65534"
   and .services["vector-prune"].user == "0:0"
+  and any(.services.vector.volumes[]; .source == "/var/lib/monosense-monitoring/tls" and .target == "/run/tls" and .read_only == true)
   and .volumes["vector-evidence"] != null
   and .services.gatus.tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
   and .services.vector.tmpfs == ["/tmp:rw,nosuid,nodev,noexec,size=64m,mode=1777"]
