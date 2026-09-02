@@ -447,14 +447,18 @@ def validate_routing_contracts() -> None:
         "--rfc2136-host=10.25.13.33",
         "--rfc2136-port=53",
         "--rfc2136-zone=monosense.io",
-        "--rfc2136-create-ptr=false",
-        "--rfc2136-insecure=false",
         "--rfc2136-tsig-keyname=external-dns-internal.",
         "--rfc2136-tsig-secret-alg=hmac-sha256",
-        "--rfc2136-tsig-axfr=false",
     }
     if not required_args.issubset(set(external_dns.get("extraArgs", []))):
         fail("ExternalDNS RFC2136 arguments are incomplete")
+    invalid_boolean_args = {
+        "--rfc2136-create-ptr=false",
+        "--rfc2136-insecure=false",
+        "--rfc2136-tsig-axfr=false",
+    }
+    if invalid_boolean_args & set(external_dns.get("extraArgs", [])):
+        fail("ExternalDNS boolean flags must use secure disabled defaults")
     if list((KUBE / "apps/networking/echo-server").rglob("*.yaml")):
         fail("permanent echo-server manifests remain")
 
