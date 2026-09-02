@@ -1,2 +1,4 @@
 # Child entrypoints intentionally excluded from all active roots; each line requires a reason.
 kubernetes/apps/kube-system/descheduler/ks.yaml # Placement, PDB, local-storage, and utilization evidence is not yet accepted.
+kubernetes/apps/kopiur-system/kopia/ks.yaml # Required OpenBao librefs are not provisioned.
+kubernetes/apps/kopiur-system/kopiur/ks.yaml # Required OpenBao librefs and R2 credentials are not provisioned.

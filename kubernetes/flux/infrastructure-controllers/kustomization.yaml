@@ -33,8 +33,6 @@ resources:
   - ../../apps/rook-ceph/rook-ceph/ks.yaml
   - ../../apps/rook-ceph/ceph-csi-operator/ks.yaml
   - ../../apps/rook-ceph/ceph-csi-drivers/ks.yaml
-  - ../../apps/kopiur-system/kopiur/ks.yaml
-  - ../../apps/kopiur-system/kopia/ks.yaml
   - ../../apps/database/cloudnative-pg/ks.yaml
   - ../../apps/database/barman-cloud/ks.yaml
   - ../../apps/database/dragonfly-operator/ks.yaml
