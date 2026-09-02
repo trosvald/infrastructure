@@ -56,6 +56,7 @@ events = []
 state = {
     "repo": {"mirror": True, "mirror_updated": "2026-09-01T02:00:00Z", "private": True},
     "protected": False,
+    "owner": {"visibility": "private"},
 }
 
 
@@ -63,6 +64,11 @@ def fake_request(base, token, method, path, data=None):
     events.append((method, path, data))
     assert base == "http://forgejo:3000"
     assert token == "token"
+    if path == f"/api/v1/admin/users/{mirror.USERNAME}" and method == "PATCH":
+        state["owner"]["visibility"] = data["visibility"]
+        return state["owner"].copy()
+    if path == f"/api/v1/users/{mirror.USERNAME}" and method == "GET":
+        return state["owner"].copy()
     repo_path = f"/api/v1/repos/{mirror.USERNAME}/{mirror.REPOSITORY}"
     if path == repo_path and method == "GET":
         return state["repo"].copy()
@@ -96,6 +102,7 @@ mirror.refs = lambda url: ("a" * 64, "ref")
 digest = mirror.prepare("http://forgejo:3000", "token", {"id": 7})
 assert digest == "a" * 64
 assert state["repo"]["private"] is False
+assert state["owner"]["visibility"] == "public"
 assert any(path.endswith("/mirror-sync") for _, path, _ in events)
 
 with tempfile.TemporaryDirectory() as directory:
