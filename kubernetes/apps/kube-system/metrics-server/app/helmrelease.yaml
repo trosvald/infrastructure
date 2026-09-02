@@ -14,6 +14,7 @@ spec:
     defaultArgs:
       - --cert-dir=/tmp
       - --kubelet-preferred-address-types=Hostname,InternalIP
+      - --kubelet-certificate-authority=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
       - --kubelet-use-node-status-port
       - --metric-resolution=10s
     args:
