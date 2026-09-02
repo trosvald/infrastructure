@@ -11,6 +11,8 @@ spec:
       namespace: openebs-system
     - name: snapshot-controller
       namespace: kube-system
+    - name: external-secrets
+      namespace: external-secrets
   interval: 1h
   path: ./kubernetes/apps/kopiur-system/kopiur/app
   prune: true
