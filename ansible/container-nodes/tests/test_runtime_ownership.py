@@ -185,6 +185,13 @@ class ProtectedRuntimeAssetTests(unittest.TestCase):
             materialize,
         )
 
+    def test_monitoring_recovery_repairs_vector_ingestion(self):
+        recovery = (
+            ROOT / "roles/runtime_assets/tasks/recover-monitoring.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("/var/lib/monosense-monitoring/secrets/vector.yaml", recovery)
+        self.assertIn("argv: [docker, restart, vector-c0]", recovery)
+
     def test_c0_wildcard_certificate_precedes_and_safely_restarts_monitoring(self):
         updater = (
             ROOT / "roles/runtime_assets/files/update-c0-wildcard-certificate"
