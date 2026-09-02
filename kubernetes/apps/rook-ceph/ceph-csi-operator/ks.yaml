@@ -3,18 +3,15 @@
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
-  name: snapshot-controller
-  namespace: kube-system
+  name: ceph-csi-operator
+  namespace: rook-ceph
 spec:
-  dependsOn:
-    - name: prometheus-operator-crds
-      namespace: observability
   interval: 1h
-  path: ./kubernetes/apps/kube-system/snapshot-controller/app
+  path: ./kubernetes/apps/rook-ceph/ceph-csi-operator/app
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: kube-system
+  targetNamespace: rook-ceph
   wait: true

@@ -31,6 +31,7 @@ resources:
   - ../../apps/networking/envoy-gateway/ks.yaml
   - ../../apps/openebs-system/openebs/ks.yaml
   - ../../apps/rook-ceph/rook-ceph/ks.yaml
+  - ../../apps/rook-ceph/ceph-csi-operator/ks.yaml
   - ../../apps/rook-ceph/ceph-csi-drivers/ks.yaml
   - ../../apps/kopiur-system/kopiur/ks.yaml
   - ../../apps/kopiur-system/kopia/ks.yaml

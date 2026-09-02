@@ -25,6 +25,11 @@ root_exists() {
     kubectl -n "$ROOT_NAMESPACE" get kustomization "$1" >/dev/null 2>&1
 }
 
+suspend_graph_owner() {
+    kubectl -n "$ROOT_NAMESPACE" patch kustomization flux-system \
+        --type=merge -p '{"spec":{"suspend":true}}'
+}
+
 activate_root() {
     local requested=$1 index=-1 predecessor=''
     local i
@@ -49,8 +54,10 @@ activate_root() {
             exit 1
         }
     fi
+    suspend_graph_owner
+    flux reconcile source git flux-system --namespace "$ROOT_NAMESPACE"
     kubectl -n "$ROOT_NAMESPACE" patch kustomization "$requested" --type=merge -p '{"spec":{"suspend":null}}'
-    flux reconcile kustomization "$requested" --namespace "$ROOT_NAMESPACE" --with-source
+    flux reconcile kustomization "$requested" --namespace "$ROOT_NAMESPACE"
     root_ready "$requested" || {
         printf 'activation completed without a Ready root: %s\n' "$requested" >&2
         exit 1
