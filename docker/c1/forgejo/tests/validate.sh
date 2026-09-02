@@ -96,8 +96,28 @@ def fake_request(base, token, method, path, data=None):
     raise AssertionError((method, path, data))
 
 
+original_refs = mirror.refs
+original_sleep = mirror.time.sleep
+public_payloads = iter(("old-ref\n", "new-ref\n"))
+
+
+def lagging_refs(url):
+    if url == mirror.UPSTREAM_URL:
+        return "upstream", "new-ref\n"
+    payload = next(public_payloads)
+    return f"public-{payload.strip()}", payload
+
+
+sleeps = []
+mirror.refs = lagging_refs
+mirror.time.sleep = sleeps.append
+assert mirror.wait_for_parity(timeout=1, interval=0.01) == "public-new-ref"
+assert sleeps == [0.01]
+mirror.refs = original_refs
+mirror.time.sleep = original_sleep
+
 mirror.request = fake_request
-mirror.prove_parity = lambda: "a" * 64
+mirror.wait_for_parity = lambda: "a" * 64
 mirror.refs = lambda url: ("a" * 64, "ref")
 digest = mirror.prepare("http://forgejo:3000", "token", {"id": 7})
 assert digest == "a" * 64
@@ -123,4 +143,6 @@ source = Path("docker/c1/forgejo/scripts/configure-mirror.py").read_text()
 assert '"private": False' in source
 assert 'choices=("prepare", "cutover")' in source
 assert "/convert" in source
+assert "MIRROR_SYNC_TIMEOUT = 120" in source
+assert "digest = wait_for_parity()" in source
 PY
