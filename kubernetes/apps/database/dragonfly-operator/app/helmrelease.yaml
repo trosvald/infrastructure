@@ -41,6 +41,22 @@ spec:
               kind: ClusterRoleBinding
               metadata:
                 name: ignored
+          - target: { group: apps, version: v1, kind: Deployment, name: dragonfly-operator }
+            patch: |-
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: dragonfly-operator
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: manager
+                        env:
+                          - name: WATCH_NAMESPACE
+                            valueFrom:
+                              fieldRef:
+                                fieldPath: metadata.namespace
   values:
     fullnameOverride: dragonfly-operator
     replicaCount: 2
@@ -51,7 +67,6 @@ spec:
       runAsNonRoot: true
       seccompProfile: { type: RuntimeDefault }
     manager:
-      extraArgs: [--watch-current-namespace]
       resources:
         requests: { cpu: 50m, memory: 64Mi }
         limits: { cpu: 500m, memory: 256Mi }
