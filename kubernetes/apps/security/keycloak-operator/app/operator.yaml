@@ -90,6 +90,11 @@ spec:
             allowPrivilegeEscalation: false
             capabilities: { drop: [ALL] }
             readOnlyRootFilesystem: true
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
       securityContext:
         runAsNonRoot: true
         seccompProfile: { type: RuntimeDefault }
+      volumes:
+        - name: tmp
+          emptyDir: {}

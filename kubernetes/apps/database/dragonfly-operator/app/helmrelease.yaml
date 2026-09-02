@@ -47,6 +47,9 @@ spec:
     createAggregateRoles: false
     rbacProxy:
       enabled: false
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile: { type: RuntimeDefault }
     manager:
       extraArgs: [--watch-current-namespace]
       resources:
