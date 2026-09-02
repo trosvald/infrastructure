@@ -1,0 +1,45 @@
+---
+- name: Validate protected PowerDNS TSIG recovery boundary
+  ansible.builtin.assert:
+    that:
+      - container_nodes_runtime_assets_secret_action | bool
+      - container_nodes_runtime_assets_controller_token | length > 20
+      - inventory_hostname == 'c0'
+      - not ansible_check_mode
+    fail_msg: PowerDNS TSIG recovery requires protected controller authentication on c0
+  no_log: true
+
+- name: Read the exact PowerDNS credential record
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/kv/data/docker/c0/powerdns"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: runtime_powerdns_recovery_record
+  no_log: true
+  diff: false
+
+- name: Validate the exact PowerDNS credential contract
+  ansible.builtin.assert:
+    that:
+      - runtime_powerdns_recovery_record.json.data.data | dict2items | map(attribute='key') | list == ['tsig_secret']
+      - runtime_powerdns_recovery_record.json.data.data.tsig_secret | length >= 32
+  no_log: true
+
+- name: Materialize the PowerDNS TSIG consumer
+  ansible.builtin.include_tasks: materialize-consumers.yml
+  vars:
+    container_nodes_runtime_assets_rotate: false
+    runtime_materials:
+      - path: /var/lib/monosense-powerdns/secrets/external_dns_tsig
+        content: "{{ runtime_powerdns_recovery_record.json.data.data.tsig_secret }}"
+        owner: '953'
+        group: '953'
+        parent_owner: '953'
+        parent_group: '953'
+        mode: '0400'
+  no_log: true

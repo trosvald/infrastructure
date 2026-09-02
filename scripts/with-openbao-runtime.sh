@@ -77,9 +77,10 @@ case "$1" in
         }
         ;;
     scripts/run-container-nodes-openbao-action.sh)
-        [[ $# == 2 && "${2:-}" =~ ^(prepare-applications|provision-secrets|recover-c1|recover-monitoring|verify)$ ]] || {
-            echo "Protected container-node runtime accepts prepare-applications, provision-secrets, recover-c1, recover-monitoring, or verify" >&2
+        [[ $# == 2 && "${2:-}" =~ ^(prepare-applications|provision-secrets|recover-c0-assets|recover-c1|recover-monitoring|verify)$ ]] || {
+            echo "Protected container-node runtime accepts prepare-applications, provision-secrets, recover-c0-assets, recover-c1, recover-monitoring, or verify" >&2
             exit 2
+
         }
         ;;
     talos/scripts/render.sh)

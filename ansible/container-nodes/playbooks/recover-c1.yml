@@ -107,6 +107,9 @@
       ansible.builtin.include_role:
         name: runtime_assets
         tasks_from: recover-vector-client.yml
+      vars:
+        container_nodes_runtime_assets_vector_record_path: kv/data/docker/c1/edge
+        container_nodes_runtime_assets_vector_consumer_path: /srv/applications/apps/edge/secrets/vector-client
       no_log: true
     - name: Recover c1 Kubernetes workload CA consumers
       ansible.builtin.include_role:

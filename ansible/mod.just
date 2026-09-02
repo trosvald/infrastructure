@@ -14,7 +14,7 @@ default:
 junos action:
     exec "{{ namespace }}/junos/scripts/dispatch.sh" "$1"
 
-[arg('action', pattern='bootstrap|test|lint|audit|check|diff|deploy|verify|drift|provision-storage|provision-secrets|rotate-secrets|prepare-applications|rollout-applications|recover-c0|recover-c1|recover-monitoring|forgejo-source-prepare|forgejo-source-cutover|activate-network|upgrade|reboot')]
+[arg('action', pattern='bootstrap|test|lint|audit|check|diff|deploy|verify|drift|provision-storage|provision-secrets|rotate-secrets|prepare-applications|rollout-applications|recover-c0|recover-c0-assets|recover-c1|recover-monitoring|forgejo-source-prepare|forgejo-source-cutover|activate-network|upgrade|reboot')]
 [doc('Run a fixed action in the isolated c0/c1 container-node project')]
 container-nodes action:
     exec "{{ namespace }}/container-nodes/scripts/dispatch.sh" "$1"
