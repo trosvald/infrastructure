@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euxo pipefail
+set -euo pipefail
 
 image='docker.io/powerdns/pdns-auth-51:5.1.4@sha256:bb5b1c133bcca1dd455075321de7d55db4945a8d7f2ba23339e3c7bbe416b205'
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -173,7 +173,10 @@ expected_metadata_inventory="$({
 } | sort)"
 [[ "$metadata_inventory" == "$expected_metadata_inventory" ]]
 [[ "$(sqlite "$data_dir" "SELECT name || '|' || algorithm || '|' || length(secret) FROM tsigkeys;")" == 'external-dns-internal|hmac-sha256|44' ]]
-[[ -s "$data_dir/dnsupdate-policy.lua" ]]
+"${docker_run[@]}" \
+    --network none --cap-drop ALL \
+    --mount "type=bind,src=$data_dir,dst=/var/lib/powerdns" \
+    --entrypoint test "$image" -s /var/lib/powerdns/dnsupdate-policy.lua
 
 [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records WHERE type='A';")" -gt 0 ]]
 [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records WHERE type='PTR';")" -gt 0 ]]
