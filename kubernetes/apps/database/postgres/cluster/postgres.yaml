@@ -1,0 +1,141 @@
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.11-202608310816-system-bookworm@sha256:d0e93a6fb034e97067733ea2febe701dd97a070011c82d5fdabe99ca84b1f3d4
+  imagePullPolicy: IfNotPresent
+  enablePDB: true
+  minSyncReplicas: 1
+  maxSyncReplicas: 1
+  primaryUpdateStrategy: unsupervised
+  storage:
+    storageClass: local-hostpath-retain
+    size: 50Gi
+  affinity:
+    podAntiAffinityType: required
+    topologyKey: kubernetes.io/hostname
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  certificates:
+    serverTLSSecret: cnpg-server-tls
+    serverCASecret: cnpg-server-tls
+    clientCASecret: cnpg-server-tls
+    replicationTLSSecret: cnpg-replication-client-tls
+  postgresql:
+    parameters:
+      max_connections: "150"
+      password_encryption: scram-sha-256
+      ssl_min_protocol_version: TLSv1.3
+    pg_hba:
+      - hostssl keycloak keycloak_a,keycloak_b 0.0.0.0/0 scram-sha-256 clientcert=verify-full
+      - hostssl litellm litellm_a,litellm_b 0.0.0.0/0 scram-sha-256 clientcert=verify-full
+      - hostnossl all all 0.0.0.0/0 reject
+  bootstrap:
+    initdb:
+      database: postgres
+      owner: postgres
+      postInitSQL:
+        - CREATE ROLE keycloak_owner NOLOGIN
+        - CREATE ROLE litellm_owner NOLOGIN
+        - CREATE DATABASE keycloak OWNER keycloak_owner
+        - CREATE DATABASE litellm OWNER litellm_owner
+        - REVOKE CONNECT ON DATABASE keycloak FROM PUBLIC
+        - REVOKE CONNECT ON DATABASE litellm FROM PUBLIC
+  managed:
+    roles:
+      - name: keycloak_a
+        ensure: present
+        login: true
+        inherit: true
+        connectionLimit: 50
+        inRoles: [keycloak_owner]
+        passwordSecret: { name: postgres-keycloak-a }
+      - name: keycloak_b
+        ensure: present
+        login: true
+        inherit: true
+        connectionLimit: 50
+        inRoles: [keycloak_owner]
+        passwordSecret: { name: postgres-keycloak-b }
+      - name: litellm_a
+        ensure: present
+        login: true
+        inherit: true
+        connectionLimit: 30
+        inRoles: [litellm_owner]
+        passwordSecret: { name: postgres-litellm-a }
+      - name: litellm_b
+        ensure: present
+        login: true
+        inherit: true
+        connectionLimit: 30
+        inRoles: [litellm_owner]
+        passwordSecret: { name: postgres-litellm-b }
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: postgres-librefs
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: postgres-librefs
+spec:
+  retentionPolicy: 14d
+  configuration:
+    destinationPath: s3://kubernetes-postgres/primary
+    endpointURL: https://s3.monosense.io:443
+    s3Credentials:
+      accessKeyId: { name: postgres-backup, key: ACCESS_KEY_ID }
+      secretAccessKey: { name: postgres-backup, key: ACCESS_SECRET_KEY }
+    wal:
+      compression: gzip
+      maxParallel: 4
+    data:
+      compression: gzip
+      jobs: 2
+  instanceSidecarConfiguration:
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: postgres-r2
+spec:
+  configuration:
+    destinationPath: s3://${R2_BUCKET}/postgres
+    endpointURL: ${R2_ENDPOINT}
+    s3Credentials:
+      accessKeyId: { name: postgres-r2-mirror, key: ACCESS_KEY_ID }
+      secretAccessKey: { name: postgres-r2-mirror, key: ACCESS_SECRET_KEY }
+    wal:
+      compression: gzip
+      maxParallel: 4
+    data:
+      compression: gzip
+      jobs: 2
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: postgres-daily
+spec:
+  schedule: "0 0 18 * * *"
+  immediate: true
+  backupOwnerReference: self
+  cluster:
+    name: postgres
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io

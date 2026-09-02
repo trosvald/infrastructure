@@ -69,7 +69,7 @@ done
     || fail 'Forgejo did not return healthy after backup'
 python3 "$RUNTIME_HELPER" ready
 drained=false
-repository_script='export KOPIA_PASSWORD="$(cat /run/secrets/kopia_password)" AWS_ACCESS_KEY_ID="$(cat /run/secrets/librefs_access_key)" AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/librefs_secret_key)"; kopia repository status >/dev/null 2>&1 || kopia repository connect s3 --bucket=forgejo-backups --endpoint=s3.monosense.io || kopia repository create s3 --bucket=forgejo-backups --endpoint=s3.monosense.io; kopia policy set --global --keep-daily=30 --keep-monthly=12 >/dev/null; kopia snapshot create "/staging/'"$generation"'"; kopia snapshot verify --verify-files-percent=1 --sources="/staging/'"$generation"'"'
+repository_script='export KOPIA_PASSWORD="$(cat /run/secrets/kopia_password)" AWS_ACCESS_KEY_ID="$(cat /run/secrets/librefs_access_key)" AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/librefs_secret_key)"; kopia repository status >/dev/null 2>&1 || kopia repository connect s3 --bucket=forgejo-backups --endpoint=s3.monosense.io:443 || kopia repository create s3 --bucket=forgejo-backups --endpoint=s3.monosense.io:443; kopia policy set --global --keep-daily=30 --keep-monthly=12 >/dev/null; kopia snapshot create "/staging/'"$generation"'"; kopia snapshot verify --verify-files-percent=1 --sources="/staging/'"$generation"'"'
 docker exec --env KOPIA_LOG_DIR=/logs "$KOPIA" sh -ceu "$repository_script"
 heartbeat_token="$(tr -d '\n' <"$HEARTBEAT_TOKEN_FILE")"
 [[ "$heartbeat_token" =~ ^[A-Za-z0-9_-]{43,}$ ]] || fail 'backup heartbeat token is malformed'

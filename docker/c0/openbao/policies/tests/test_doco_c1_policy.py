@@ -10,6 +10,7 @@ expected = {
     "kv/data/docker/c1/librefs": ["read"],
     "kv/data/docker/c1/edge": ["read"],
     "kv/data/docker/c1/forgejo": ["read"],
+    "kv/data/platform/kubernetes/database/dragonfly": ["read"],
     "auth/token/lookup-self": ["read"],
     "auth/token/renew-self": ["update"],
 }

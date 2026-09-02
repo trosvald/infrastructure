@@ -49,8 +49,6 @@ def main() -> int:
         "802.3ad",
         "lacpRate",
         "DHCPv4Config",
-        "VLANConfig",
-        "2514",
         "mtu: 9000",
         "hostname: k1",
         "hostname: k2",
@@ -123,15 +121,15 @@ def main() -> int:
         assert f"type: {role}" in text
         assert address in text
         assert bootstrap_address in text
+        assert f"{node['storage_address']}/24" in text
         assert f"- {node['address']}/32" in text
-        assert "kind: LinkConfig" in text
+        assert "kind: BondConfig" in text and "name: bond0" in text
         assert "bondMode: active-backup" in text
-        assert f"hardwareAddr: '{node['links']['tor1']['permanent_mac']}'" in text
         assert "arpInterval: 1000" in text
-        assert "arpValidate: active" in text
-        assert "arpAllTargets: all" in text
-        assert "primaryReselect: failure" in text
-        assert "numPeerNotif: 3" in text
+        assert f"hardwareAddr: '{node['links']['tor1']['permanent_mac']}'" in text
+        assert f"- {fixture_data['network']['gateway']}" in text
+        assert "arpValidate: active" in text and "arpAllTargets: all" in text
+        assert "primaryReselect: failure" in text and "numPeerNotif: 3" in text
         assert "mtu: 1496" in text
         assert "enp1s0f0np0" in text and "enp1s0f1np1" in text
         assert "kind: LinkAliasConfig" not in text
@@ -139,7 +137,7 @@ def main() -> int:
         assert node["install_disk"]["wwid"] in text
         install_bus_prefix = node["install_disk"]["bus_path_prefix"]
         assert f'disk.bus_path.startsWith("{install_bus_prefix}")' in text
-        assert "filesystem:" in text and "type: xfs" in text
+        assert "filesystem:" in text and "type: xfs" in text and "projectQuotaSupport: true" in text
         assert localpv_serial.group(1) in text
         assert node["future_osd"]["serial"] not in text
         assert 'bgp.monosense.io/enabled: \"true\"' in text
@@ -165,6 +163,7 @@ def main() -> int:
             "KubePrismConfig",
         ):
             assert f"kind: {kind}" in text
+        assert "device: /dev/watchdog0" in text and "timeout: 10m" in text
         assert "metal-installer/" in text and ":v1.14.0-rc.2" in text
         for setting in (
             "fs.inotify.max_user_instances: 8192",
@@ -216,11 +215,22 @@ def main() -> int:
         assert "192.168.10.0/24" not in text
         assert "192.168.20.0/24" not in text
         assert "k8s.internal" not in text
-        assert "VLANConfig" not in text and "9000" not in text
+        assert "kind: VLANConfig" in text
+        assert "name: bond0.2514" in text
+        assert "parent: bond0" in text
+        assert "vlanID: 2514" in text
+        assert text.count("gateway:") == 2
+        assert "mtu: 9000" not in text
         if role == "controlplane":
+            assert "kind: DummyLinkConfig" in text
+            assert "name: kube-api-vip" in text
+            assert f"{fixture_data['cluster']['api_sans'][1]}/32" in text
             assert "198.51.100.0/24" in text
             for kind in (
                 "KubeAPIServerConfig",
+                "KubeAuditPolicyConfig",
+                "KubeAuthenticationConfig",
+                "KubeAuthorizerConfig",
                 "KubeControllerManagerConfig",
                 "KubeCoreDNSConfig",
                 "KubeEtcdEncryptionConfig",
@@ -229,15 +239,22 @@ def main() -> int:
                 "KubeTalosAPIAccessConfig",
             ):
                 assert f"kind: {kind}" in text
+            assert text.count("kind: KubeAuthorizerConfig") == 2
+            assert "name: node\ntype: Node" in text
+            assert "name: rbac\ntype: RBAC" in text
+            assert "path: /readyz" in text and "path: /livez" in text
+            assert "actions-runner-system" not in text
+            assert "system-upgrade" in text
             for san in fixture_data["cluster"]["api_sans"]:
                 assert san in text
             assert "node-role.kubernetes.io/control-plane" in text
         else:
             assert "198.18.0.10" not in text
-            assert "kind: KubeAPIServerConfig" not in text
-            assert "kind: KubeEtcdEncryptionConfig" not in text
-            assert "kind: KubeTalosAPIAccessConfig" not in text
+            assert "apiServer:" not in text
+            assert "secretboxEncryptionSecret:" not in text
+            assert "kubernetesTalosAPIAccess:" not in text
             assert "node-role.kubernetes.io/worker" in text
+            assert "kind: DummyLinkConfig" not in text
     print(f"Talos synthetic {len(nodes)}-node renders are strict, deterministic, and validated")
     return 0
 

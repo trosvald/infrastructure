@@ -1,0 +1,14 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: security
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: oauth2-proxy-common
+    files: [values.yaml=common-values.yaml]
+resources:
+  - externalsecrets.yaml
+  - helmreleases.yaml
+  - routes.yaml
+  - networkpolicy.yaml

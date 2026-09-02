@@ -1,8 +1,0 @@
----
-ingress:
-  - hostname: "*.monosense.io"
-    service: https://envoy-external.networking.svc.cluster.local
-    originRequest:
-      http2Origin: true
-      originServerName: external.monosense.io
-  - service: http_status:404

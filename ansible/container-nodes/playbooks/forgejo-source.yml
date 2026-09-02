@@ -1,0 +1,28 @@
+---
+- name: Prepare or cut over the public Forgejo infrastructure source
+  hosts: c1
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  vars_files:
+    - ../adoption.yml
+  tasks:
+    - name: Validate requested fixed source mode
+      ansible.builtin.assert:
+        that:
+          - container_nodes_forgejo_source_mode in ['prepare', 'cutover']
+
+    - name: Re-audit identity-critical state
+      ansible.builtin.include_role: {name: audit}
+
+    - name: Require exact reviewed adoption digest
+      ansible.builtin.include_tasks: ../tasks/require-adoption.yml
+
+    - name: Run the temporary-token Forgejo source operation
+      ansible.builtin.script:
+        cmd: >-
+          {{ playbook_dir }}/../../../docker/c1/forgejo/scripts/configure-mirror.py
+          {{ container_nodes_forgejo_source_mode }}
+      register: container_nodes_forgejo_source
+      changed_when: container_nodes_forgejo_source_mode == 'cutover'
+      no_log: false

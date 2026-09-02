@@ -12,7 +12,8 @@ import xml.etree.ElementTree as ET
 
 REVIEWED_RELEASE = re.compile(r"^23[.]4R2(?:[.-]|$)")
 AUTHENTICATION_RE = re.compile(
-    r"^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM authentication-key)\s+.+$"
+    r"^(set groups ANSIBLE_SRX1500 protocols bgp group CILIUM"
+    r"(?: neighbor \S+)? authentication-key)\s+.+$"
 )
 FAMILY_PREFIX = "set groups ANSIBLE_SRX1500 protocols bgp group CILIUM family "
 FAMILY_LINES = {

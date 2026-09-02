@@ -1,5 +1,4 @@
 ---
-# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/kustomize.toolkit.fluxcd.io/kustomization_v1.json
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -7,16 +6,53 @@ metadata:
   namespace: flux-system
 spec:
   interval: 1h
-  path: ./kubernetes/flux/repositories
+  path: ./kubernetes/flux/flux-repositories
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
-  targetNamespace: flux-system
+  suspend: true
   wait: true
 ---
-# yaml-language-server: $schema=https://k8s-schemas.home-operations.com/kustomize.toolkit.fluxcd.io/kustomization_v1.json
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure-controllers
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: flux-repositories
+      namespace: flux-system
+  interval: 1h
+  path: ./kubernetes/flux/infrastructure-controllers
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  suspend: true
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure-configs
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infrastructure-controllers
+      namespace: flux-system
+  interval: 1h
+  path: ./kubernetes/flux/infrastructure-configs
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+    namespace: flux-system
+  suspend: true
+  wait: true
+---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -24,46 +60,14 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
-    - name: flux-repositories
+    - name: infrastructure-configs
       namespace: flux-system
   interval: 1h
-  path: ./kubernetes/apps
+  path: ./kubernetes/flux/cluster-apps
   prune: true
   sourceRef:
     kind: GitRepository
     name: flux-system
     namespace: flux-system
   suspend: true
-  patches:
-    - # Add Kustomization defaults for all child Kustomizations
-      patch: |-
-        apiVersion: kustomize.toolkit.fluxcd.io/v1
-        kind: Kustomization
-        metadata:
-          name: _
-        spec:
-          patches:
-            - patch: |-
-                apiVersion: helm.toolkit.fluxcd.io/v2
-                kind: HelmRelease
-                metadata:
-                  name: _
-                spec:
-                  install:
-                    crds: CreateReplace
-                  rollback:
-                    cleanupOnFail: true
-                  upgrade:
-                    cleanupOnFail: true
-                    crds: CreateReplace
-                    strategy:
-                      name: RemediateOnFailure
-                    remediation:
-                      remediateLastFailure: true
-                      retries: 2
-              target:
-                group: helm.toolkit.fluxcd.io
-                kind: HelmRelease
-      target:
-        group: kustomize.toolkit.fluxcd.io
-        kind: Kustomization
+  wait: true

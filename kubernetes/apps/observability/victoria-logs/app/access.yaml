@@ -1,0 +1,66 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: victoria-logs-ingest
+  annotations:
+    external-dns.alpha.kubernetes.io/hostname: vlogs-ingest.internal
+spec:
+  parentRefs:
+    - name: envoy-internal
+      namespace: networking
+      sectionName: vlogs-ingest
+  hostnames: [vlogs-ingest.internal]
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /insert/ }
+      backendRefs:
+        - { name: victoria-logs, port: 9428 }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: victoria-logs
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/instance: victoria-logs
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: security
+            k8s:io.kubernetes.serviceaccount.name: oauth2-proxy-vlogs
+      toPorts:
+        - ports: [{ port: "9428", protocol: TCP }]
+          rules:
+            http:
+              - { method: GET, path: "^/$" }
+              - { method: GET, path: "^/select/.*" }
+              - { method: POST, path: "^/select/.*" }
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            k8s:io.kubernetes.serviceaccount.name: fluent-bit
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: networking
+            k8s:io.kubernetes.serviceaccount.name: envoy-internal
+      toPorts:
+        - ports: [{ port: "9428", protocol: TCP }]
+          rules:
+            http:
+              - { method: POST, path: "^/insert/.*" }
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            k8s:app.kubernetes.io/name: vmagent
+      toPorts:
+        - ports: [{ port: "9428", protocol: TCP }]
+          rules:
+            http:
+              - { method: GET, path: "^/metrics$" }
+    - fromEntities: [host]
+      toPorts:
+        - ports: [{ port: "9428", protocol: TCP }]
+          rules:
+            http:
+              - { method: GET, path: "^/health$" }

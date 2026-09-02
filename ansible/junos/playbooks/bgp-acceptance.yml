@@ -74,10 +74,26 @@
         acceptance_service_paths: >-
           {{ (acceptance_state.stdout[6:8] | join('\n')
               | regex_findall('10[.]25[.]11[.](?:11|12|13|14|15)')) | unique | sort }}
+        acceptance_api_rib_paths: >-
+          {{ (acceptance_state.stdout[8]
+              | regex_findall('10[.]25[.]11[.](?:11|12|13|14|15)')) | unique | sort }}
+        acceptance_api_fib_paths: >-
+          {{ (acceptance_state.stdout[9]
+              | regex_findall('10[.]25[.]11[.](?:11|12|13|14|15)')) | unique | sort }}
         acceptance_api_paths: >-
           {{ (acceptance_state.stdout[8:10] | join('\n')
               | regex_findall('10[.]25[.]11[.](?:11|12|13|14|15)')) | unique | sort }}
       no_log: true
+
+    - name: Report bounded acceptance path evidence
+      ansible.builtin.debug:
+        msg:
+          phase: "{{ acceptance_phase }}"
+          sessions: "{{ acceptance_established }}"
+          service: "{{ acceptance_service_paths }}"
+          api: "{{ acceptance_api_paths }}"
+          api_rib: "{{ acceptance_api_rib_paths }}"
+          api_fib: "{{ acceptance_api_fib_paths }}"
 
     - name: Require exact phase sessions, ECMP paths, and static fallback
       ansible.builtin.assert:
@@ -86,12 +102,14 @@
           - acceptance_established | int == acceptance_contracts[acceptance_phase].sessions
           - acceptance_service_paths == acceptance_contracts[acceptance_phase].service
           - acceptance_api_paths == acceptance_contracts[acceptance_phase].api
+          - acceptance_api_rib_paths == acceptance_contracts[acceptance_phase].api
+          - acceptance_api_fib_paths == acceptance_contracts[acceptance_phase].api
           - acceptance_state.stdout[10] is search('10[.]25[.]20[.]0/24')
           - acceptance_state.stdout[10] is search('Discard')
           - acceptance_state.stdout[10] is search('[*>]')
           - >-
             acceptance_phase != 'all-withdrawn' or
-            (acceptance_state.stdout[7] is search('Discard') and
-             acceptance_state.stdout[9] is search('Discard'))
+            (acceptance_state.stdout[7] is search('(?i)(discard|dscd)') and
+             acceptance_state.stdout[9] is search('(?i)(discard|dscd)'))
         fail_msg: "BGP sessions, ECMP next hops, or discard fallback differ from the phase contract."
       no_log: true

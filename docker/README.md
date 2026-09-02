@@ -32,7 +32,7 @@ application Compose operations. Doco v0.111.0 recognizes only `compose.yaml`, `c
 `docker-compose.app.yaml` cannot make the controller manage itself. Hidden directories are scanned;
 validation therefore forbids recognized Compose filenames beneath the controller source.
 
-The poller reads the public repository `https://github.com/trosvald/infrastructure.git` at
+The poller reads the public repository `https://git.monosense.io/trosvald/infrastructure.git` at
 `refs/heads/main` every 180 seconds without a target. `DEPLOY_CONFIG_BASE_DIR=./docker/c0/` selects
 the host `.doco-cd.yaml`; its `working_dir: ./docker/c0` remains repository-root-relative and
 discovers normal direct-child applications at depth one. Local filesystem watching, reconciliation,

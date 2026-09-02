@@ -8,16 +8,26 @@ spec:
   chartRef:
     kind: OCIRepository
     name: snmp-exporter
+    namespace: flux-system
   interval: 1h
   values:
     fullnameOverride: *app
+    extraArgs:
+      - --config.file=/run/secrets/snmp/auth.yml
+      - --config.expand-environment-variables
+    envFrom:
+      - secretRef: { name: snmp-auth }
+    extraSecretMounts:
+      - name: snmp-auth
+        mountPath: /run/secrets/snmp
+        secretName: snmp-auth
+        readOnly: true
+    resources:
+      requests: { cpu: 20m, memory: 32Mi }
+      limits: { cpu: 200m, memory: 128Mi }
     serviceMonitor:
       enabled: true
-      params:
-        - name: ups
-          auth: [public_v2]
-          module: [apcups]
-          target: ups.internal
+      params: []
       relabelings:
         - sourceLabels: [__param_target]
           targetLabel: instance

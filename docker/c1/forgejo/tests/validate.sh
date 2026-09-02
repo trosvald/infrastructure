@@ -26,11 +26,13 @@ jq -e '
   and ([.services | to_entries[] | select(.value.networks | has("database")) | .key] | sort) == ["forgejo","postgres"]
   and .services.forgejo.healthcheck.test == ["CMD","wget","--spider","--quiet","http://127.0.0.1:3000/api/healthz"]
   and .services.postgres.healthcheck.test == ["CMD-SHELL","pg_isready -U forgejo -d forgejo"]
-  and ([.services.forgejo.volumes[].source] | sort) == (["/srv/applications/apps/forgejo/app","/srv/applications/apps/forgejo/logs/forgejo","/srv/applications/apps/forgejo/staging","/srv/applications/apps/forgejo/secrets/app.ini"] | sort)
+  and ([.services.forgejo.volumes[].source] | sort) == (["/srv/applications/apps/forgejo/app","/srv/applications/apps/forgejo/logs/forgejo","/srv/applications/apps/forgejo/staging","/srv/applications/apps/forgejo/secrets/app.ini","/srv/applications/apps/forgejo/secrets/kubernetes-ca.crt"] | sort)
 ' "$rendered" >/dev/null
 python3 - <<'PY'
 import importlib.util
 import os
+import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -50,58 +52,75 @@ spec.loader.exec_module(mirror)
 os.environ.pop("HTTP_PROXY")
 assert not any(isinstance(handler, urllib.request.ProxyHandler) for handler in mirror.OPENER.handlers)
 
+events = []
+state = {
+    "repo": {"mirror": True, "mirror_updated": "2026-09-01T02:00:00Z", "private": True},
+    "protected": False,
+    "owner": {"visibility": "private"},
+}
 
-def exercise(existing):
-    state = {"revoked": False}
-    events = []
 
-    def fake_run(*args):
-        events.append(("run", args))
-        if args[:3] == ("docker", "inspect", mirror.CONTAINER):
-            return "172.30.15.3"
-        if "generate-access-token" in args:
-            assert args[args.index("--config") + 1] == "/etc/gitea/conf/app.ini"
-            token_name = args[args.index("--token-name") + 1]
-            assert token_name.startswith(mirror.TOKEN_NAME + "-")
-            assert token_name != mirror.TOKEN_NAME
-            return "Access token was successfully created: test-token"
-        assert args[:3] == ("docker", "exec", mirror.POSTGRES_CONTAINER)
-        assert "DELETE FROM access_token" in args[-1]
-        assert f"LIKE '{mirror.TOKEN_NAME}%'" in args[-1]
-        state["revoked"] = True
-        return "DELETE 1"
-
-    def fake_request(base, token, method, path, data=None):
-        events.append(("request", method, path, data))
-        assert base == "http://172.30.15.3:3000"
-        assert token == "test-token"
-        if path == "/api/v1/user":
-            if state["revoked"]:
-                raise urllib.error.HTTPError(path, 401, "revoked", None, None)
-            return {"id": 7, "is_admin": True}
-        if path == f"/api/v1/repos/{mirror.USERNAME}/infrastructure":
-            if existing is None:
-                raise urllib.error.HTTPError(path, 404, "missing", None, None)
-            return existing
-        if path == f"/api/v1/users/{mirror.LEGACY_USERNAME}":
-            if existing is None:
-                raise urllib.error.HTTPError(path, 404, "missing", None, None)
-            return {"login": mirror.LEGACY_USERNAME}
+def fake_request(base, token, method, path, data=None):
+    events.append((method, path, data))
+    assert base == "http://forgejo:3000"
+    assert token == "token"
+    if path == f"/api/v1/admin/users/{mirror.USERNAME}" and method == "PATCH":
+        state["owner"]["visibility"] = data["visibility"]
+        return state["owner"].copy()
+    if path == f"/api/v1/users/{mirror.USERNAME}" and method == "GET":
+        return state["owner"].copy()
+    repo_path = f"/api/v1/repos/{mirror.USERNAME}/{mirror.REPOSITORY}"
+    if path == repo_path and method == "GET":
+        return state["repo"].copy()
+    if path == repo_path and method == "PATCH":
+        state["repo"]["private"] = data["private"]
+        return state["repo"].copy()
+    if path.endswith("/mirror-sync"):
         return None
+    if path.endswith("/convert"):
+        state["repo"]["mirror"] = False
+        return None
+    if path.endswith("/branch_protections/main"):
+        if method == "GET" and not state["protected"]:
+            raise urllib.error.HTTPError(path, 404, "missing", None, None)
+        state["protected"] = True
+        return {}
+    if path.endswith("/branch_protections"):
+        state["protected"] = True
+        assert data["rule_name"] == "main"
+        assert data["enable_push"] is False
+        assert data["required_approvals"] == 1
+        assert data["merge_whitelist_usernames"] == [mirror.USERNAME]
+        assert mirror.AUTOMATION_USERNAME not in data["merge_whitelist_usernames"]
+        return {}
+    raise AssertionError((method, path, data))
 
-    mirror.run = fake_run
-    mirror.request = fake_request
-    assert mirror.main() == 0
-    assert state["revoked"]
-    return events
 
+mirror.request = fake_request
+mirror.prove_parity = lambda: "a" * 64
+mirror.refs = lambda url: ("a" * 64, "ref")
+digest = mirror.prepare("http://forgejo:3000", "token", {"id": 7})
+assert digest == "a" * 64
+assert state["repo"]["private"] is False
+assert state["owner"]["visibility"] == "public"
+assert any(path.endswith("/mirror-sync") for _, path, _ in events)
 
-created = exercise(None)
-assert any(event[0:3] == ("request", "POST", "/api/v1/repos/migrate") for event in created)
-updated = exercise({"mirror": True, "mirror_updated": "2026-09-01T02:00:00Z"})
-assert any(
-    event[0:3]
-    == ("request", "DELETE", f"/api/v1/admin/users/{mirror.LEGACY_USERNAME}?purge=true")
-    for event in updated
-)
+with tempfile.TemporaryDirectory() as directory:
+    backup = Path(directory) / "last-success.log"
+    backup.write_text("2026-09-01T00:00:00Z generation\n")
+    os.utime(backup, (time.time(), time.time()))
+    mirror.BACKUP_LOG = backup
+    mirror.cutover("http://forgejo:3000", "token")
+assert state["repo"] == {
+    "mirror": False,
+    "mirror_updated": "2026-09-01T02:00:00Z",
+    "private": False,
+}
+assert state["protected"]
+assert any(path.endswith("/convert") for _, path, _ in events)
+
+source = Path("docker/c1/forgejo/scripts/configure-mirror.py").read_text()
+assert '"private": False' in source
+assert 'choices=("prepare", "cutover")' in source
+assert "/convert" in source
 PY

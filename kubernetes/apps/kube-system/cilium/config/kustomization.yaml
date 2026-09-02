@@ -7,6 +7,7 @@ resources:
   - ./pool-internal.yaml
   - ./pool-edge-backend.yaml
   - ./advertisement.yaml
-  - ./peer.yaml
-  - ./cluster.yaml
+  - ./peers.yaml
+  - ./externalsecrets.yaml
+  - ./clusters.yaml
   - ./vip.yaml

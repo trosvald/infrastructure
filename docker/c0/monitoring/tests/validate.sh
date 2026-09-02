@@ -38,14 +38,18 @@ compose = Path("docker/c0/monitoring/compose.yml").read_text()
 gatus = Path("docker/c0/monitoring/config/gatus.yaml.template").read_text()
 vector = Path("docker/c0/monitoring/config/vector.yaml.template").read_text()
 combined = compose + gatus + vector
-for value in ("metrics: false", "hide-url: true", "hide-hostname: true", "hide-conditions: true", "hide-errors: true", "@@telegram_bot_token@@", "@@backup_heartbeat_token@@", "external-endpoints:", "heartbeat: { interval: 26h }", "0.0.0.0:8686", "strategy: custom", "@@vector_ingest_token@@", "0.0.0.0:6514", "-mtime +13", ".appname", ".msgid", "RT_FLOW", "authorization", "request_body"):
+for value in ("metrics: false", "hide-url: true", "hide-hostname: true", "hide-conditions: true", "hide-errors: true", "@@telegram_bot_token@@", "@@backup_heartbeat_token@@", "external-endpoints:", "heartbeat: { interval: 26h }", "0.0.0.0:6514", "-mtime +13", ".appname", ".msgid", "RT_FLOW", "authorization", "request_body", "https://vlogs-ingest.internal:8444/insert/jsonline", "/run/vector-client/certificate.pem", "type: disk", "when_full: block"):
     assert value in combined, value
 assert "if !allowed { abort }" in vector
 for value in ("/var/lib/monosense-monitoring/vector-tls", "/run/vector-tls/fullchain.pem", "/run/vector-tls/privkey.pem"):
     assert value in combined, value
+assert "0.0.0.0:8686" not in vector and "@@vector_ingest_token@@" in gatus
+endpoint_documents = gatus.split("\nendpoints:\n", 1)[1].split("\n  - ")[1:]
+assert endpoint_documents and all("\n    alerts: *telegram-alerts" in endpoint for endpoint in endpoint_documents)
+assert "verify_certificate: true" in vector and "verify_hostname: true" in vector
 for host_endpoint in ("tcp://10.25.13.16:22", "tcp://10.25.10.101:22"):
     assert host_endpoint in gatus, host_endpoint
 assert "env_file" not in compose and "MONITORING_" not in compose
-for forbidden in ("victoriametrics", "victorialogs", "alertmanager", "/var/run/docker.sock"):
+for forbidden in ("alertmanager", "/var/run/docker.sock"):
     assert forbidden not in combined.lower(), forbidden
 PY

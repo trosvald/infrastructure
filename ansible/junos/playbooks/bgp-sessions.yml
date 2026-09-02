@@ -1,0 +1,5 @@
+---
+- name: Run BGP verification before acceptance VIP activation
+  ansible.builtin.import_playbook: bgp-verify.yml
+  vars:
+    bgp_verify_require_ecmp: false

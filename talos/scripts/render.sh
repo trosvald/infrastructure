@@ -13,14 +13,14 @@ fi
 action="${1:-}"
 hostname="${2:-}"
 case "$action" in
-    render|apply-node|verify-node)
+    render|apply-node|verify-node|backup-storage-network|apply-storage-network)
         [[ "$hostname" =~ ^bsd-k8s-[0-9]{2,}$ && $# -eq 2 ]] || {
             echo "Talos action requires exactly one bsd-k8s-NN hostname" >&2
             exit 2
         }
         ;;
     *)
-        echo "usage: render.sh render|apply-node|verify-node bsd-k8s-NN" >&2
+        echo "usage: render.sh render|apply-node|verify-node|backup-storage-network|apply-storage-network bsd-k8s-NN" >&2
         exit 2
         ;;
 esac
@@ -122,10 +122,11 @@ wait_talos_api() {
 
 verify_node() {
     local node_hostname="$1"
-    local address bootstrap expected_version expected_schematic links routes addresses extensions modules
+    local address storage_address bootstrap expected_version expected_schematic links routes addresses extensions modules
     local volumes params watchdog disks localpv_match localpv_serial osd_serial install_model
     local install_wwid install_bus_prefix install_size tor1 tor2 extension_count ready=false
     address="$(node_field "$node_hostname" '.address')"
+    storage_address="$(node_field "$node_hostname" '.storage_address')"
     bootstrap="$(node_field "$node_hostname" '.bootstrap_address')"
     expected_version="$(jq -er '.topology.versions.talos' "$context_file")"
     expected_schematic="$(jq -er '.topology.versions.schematic' "$context_file")"
@@ -167,9 +168,11 @@ verify_node() {
         echo "$node_hostname: permanent default route is absent from bond0" >&2
         return 1
     }
-    [[ "$addresses" == *"address: $address/24"* && "$addresses" == *"address: $bootstrap/24"* &&
+    [[ "$addresses" == *"address: $address/24"* &&
+        "$addresses" == *"address: $storage_address/24"* &&
+        "$addresses" == *"address: $bootstrap/24"* &&
         ! "$addresses" =~ address:\ 10[.]25[.]11[.]2[0-5][0-9]/24 ]] || {
-        echo "$node_hostname: static permanent/bootstrap addresses or DHCP exclusion failed" >&2
+        echo "$node_hostname: static permanent/bootstrap/storage addresses or DHCP exclusion failed" >&2
         return 1
     }
     extension_count="$(python -c \
@@ -228,13 +231,16 @@ apply_one_node() {
 
     if talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" version >/dev/null 2>&1; then
         wait_verified_node "$node_hostname" >/dev/null
-        talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" reboot --wait=false
+        talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" apply-config \
+            --dry-run --mode=auto --file "$config" >/dev/null
+        talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" apply-config \
+            --mode=auto --file "$config"
         wait_talos_api "$bootstrap" || {
-            echo "$node_hostname: Talos management API did not return after reboot" >&2
+            echo "$node_hostname: Talos management API did not remain ready after reconciliation" >&2
             return 1
         }
         wait_verified_node "$node_hostname" >/dev/null
-        echo "$node_hostname: installed configuration verified; apply skipped"
+        echo "$node_hostname: installed configuration reconciled and verified"
         return
     fi
 
@@ -262,7 +268,88 @@ apply_one_node() {
         return 1
     }
     wait_verified_node "$node_hostname" >/dev/null
+
+
     echo "$node_hostname: configuration applied and reboot persistence verified"
+}
+backup_storage_network() {
+    local node_hostname="$1" bootstrap backup_dir backup temporary digest
+    command -v yq >/dev/null 2>&1 || {
+        echo "missing locked tool: yq" >&2
+        return 1
+    }
+    python "$talos_dir/scripts/validate_storage_network.py" --inventory-only >/dev/null
+    bootstrap="$(node_field "$node_hostname" '.bootstrap_address')"
+    backup_dir="$repo_dir/.private/talos-pre-storage"
+    [[ ! -L "$repo_dir/.private" && ! -L "$backup_dir" ]] || {
+        echo "Talos pre-storage backup path is unsafe" >&2
+        return 1
+    }
+    mkdir -p "$backup_dir"
+    chmod 0700 "$backup_dir"
+    backup="$backup_dir/$node_hostname.yaml"
+    [[ ! -e "$backup" ]] || {
+        echo "$backup already exists; refusing to replace reviewed rollback state" >&2
+        return 1
+    }
+    temporary="$backup.tmp"
+    talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" \
+        get machineconfig v1alpha1 --output yaml | yq -e '.spec' > "$temporary"
+    chmod 0600 "$temporary"
+    ! grep -Eq 'bond0[.]2514|vlanID:[[:space:]]*2514' "$temporary" || {
+        rm -f "$temporary"
+        echo "$node_hostname already contains VLAN 2514; refusing a post-change backup" >&2
+        return 1
+    }
+    mv "$temporary" "$backup"
+    digest="$(python -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], \"rb\").read()).hexdigest())' "$backup")"
+    printf '%s: review %s, then write only this digest to %s.reviewed\n' \
+        "$node_hostname" "$backup" "$backup" >&2
+    printf '%s\n' "$digest"
+}
+apply_storage_network() {
+    local node_hostname="$1" bootstrap config backup review digest
+    command -v kubectl >/dev/null 2>&1 || {
+        echo "missing locked tool: kubectl" >&2
+        return 1
+    }
+    python "$talos_dir/scripts/validate_storage_network.py" --inventory-only >/dev/null
+    bootstrap="$(node_field "$node_hostname" '.bootstrap_address')"
+    config="$runtime_dir/$node_hostname.yaml"
+    backup="$repo_dir/.private/talos-pre-storage/$node_hostname.yaml"
+    review="$backup.reviewed"
+    [[ -f "$backup" && ! -L "$backup" && -f "$review" && ! -L "$review" ]] || {
+        echo "$node_hostname: reviewed pre-storage Talos backup is absent or unsafe" >&2
+        return 1
+    }
+    digest="$(python -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], \"rb\").read()).hexdigest())' "$backup")"
+    [[ "$(<"$review")" == "$digest" ]] || {
+        echo "$node_hostname: backup review digest does not match rollback content" >&2
+        return 1
+    }
+    kubectl get nodes -o json | jq -e '
+        ([.items[].metadata.name] | sort) ==
+            [\"bsd-k8s-01\", \"bsd-k8s-02\", \"bsd-k8s-03\", \"bsd-k8s-04\", \"bsd-k8s-05\"] and
+        all(.items[]; any(.status.conditions[];
+            .type == \"Ready\" and .status == \"True\"))
+    ' >/dev/null || {
+        echo "all five Talos nodes must be Ready before one-node storage rollout" >&2
+        return 1
+    }
+    if ! talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" \
+        apply-config --mode=reboot --file "$config"; then
+        echo "$node_hostname: storage config apply failed before health proof" >&2
+        return 1
+    fi
+    if ! wait_talos_api "$bootstrap" || ! wait_verified_node "$node_hostname" >/dev/null ||
+        ! kubectl wait --for=condition=Ready "node/$node_hostname" --timeout=10m; then
+        echo "$node_hostname: health failed; restoring reviewed pre-storage config" >&2
+        talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" \
+            apply-config --mode=reboot --file "$backup" || true
+        wait_talos_api "$bootstrap" || true
+        return 1
+    fi
+    echo "$node_hostname: VLAN 2514 applied; node and cluster readiness verified"
 }
 
 case "$action" in
@@ -271,5 +358,11 @@ case "$action" in
         ;;
     verify-node)
         wait_verified_node "$hostname"
+        ;;
+    backup-storage-network)
+        backup_storage_network "$hostname"
+        ;;
+    apply-storage-network)
+        apply_storage_network "$hostname"
         ;;
 esac

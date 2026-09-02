@@ -4,28 +4,17 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: flux-operator
+  namespace: flux-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   chartRef:
     kind: OCIRepository
     name: flux-operator
-  interval: 1h
+    namespace: flux-system
+  interval: 30m
   values:
-    serviceMonitor:
-      create: true
     web:
-      config:
-        authentication:
-          type: Anonymous
-          anonymous:
-            username: flux
-            groups:
-              - flux-admin
-      httpRoute:
-        enabled: true
-        hostnames:
-          - flux-operator.monosense.io
-        parentRefs:
-          - name: envoy-internal
-            namespace: networking
-      networkPolicy:
-        create: false
+      enabled: false
+    serviceMonitor:
+      create: false

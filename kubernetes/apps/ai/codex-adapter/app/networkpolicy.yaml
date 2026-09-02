@@ -1,0 +1,18 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: codex-adapter }
+spec:
+  endpointSelector: { matchLabels: { app.kubernetes.io/name: codex-adapter } }
+  ingress:
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: ai, k8s:io.kubernetes.serviceaccount.name: litellm }
+      toPorts: [{ ports: [{ port: "8080", protocol: TCP }] }]
+  egress:
+    - toFQDNs: [{ matchName: chatgpt.com }, { matchName: auth.openai.com }]
+      toPorts: [{ ports: [{ port: "443", protocol: TCP }] }]
+    - toCIDR: [10.25.13.34/32]
+      toPorts: [{ ports: [{ port: "8200", protocol: TCP }] }]
+    - toEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: kube-system, k8s:k8s-app: kube-dns }
+      toPorts: [{ ports: [{ port: "53", protocol: UDP }, { port: "53", protocol: TCP }] }]

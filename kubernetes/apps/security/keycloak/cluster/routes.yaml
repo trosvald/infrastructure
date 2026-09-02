@@ -1,0 +1,62 @@
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: keycloak-oidc
+spec:
+  parentRefs:
+    - { name: envoy-internal, namespace: networking, sectionName: https }
+  hostnames: [auth.internal]
+  rules:
+    - backendRefs:
+        - { name: keycloak, port: 8443 }
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: keycloak-admin
+spec:
+  parentRefs:
+    - { name: envoy-internal, namespace: networking, sectionName: https }
+  hostnames: [auth-admin.internal]
+  rules:
+    - backendRefs:
+        - { name: keycloak, port: 8443 }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-backend-ca
+  annotations:
+    cert-manager.io/inject-ca-from: security/keycloak-server-tls
+data: {}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: keycloak
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: keycloak
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: keycloak-backend-ca
+    hostname: keycloak.security.svc.cluster.local
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: SecurityPolicy
+metadata:
+  name: keycloak-admin-source
+spec:
+  targetRefs:
+    - { group: gateway.networking.k8s.io, kind: HTTPRoute, name: keycloak-admin }
+  authorization:
+    defaultAction: Deny
+    rules:
+      - action: Allow
+        principal:
+          clientCIDRs: [10.25.10.0/24]

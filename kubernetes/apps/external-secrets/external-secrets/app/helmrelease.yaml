@@ -8,12 +8,40 @@ spec:
   chartRef:
     kind: OCIRepository
     name: external-secrets
+    namespace: flux-system
   interval: 1h
   values:
     leaderElect: true
+    replicaCount: 2
+    rbac:
+      serviceAccountTokenCreate: false
     serviceMonitor:
-      enabled: true
+      enabled: false
     grafanaDashboard:
+      enabled: false
+    podDisruptionBudget:
       enabled: true
+      minAvailable: 1
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/instance: external-secrets
+            app.kubernetes.io/name: external-secrets
     webhook:
       replicaCount: 2
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/instance: external-secrets
+              app.kubernetes.io/name: external-secrets-webhook
+    certController:
+      replicaCount: 1

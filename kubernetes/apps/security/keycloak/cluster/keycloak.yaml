@@ -1,0 +1,87 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak
+automountServiceAccountToken: false
+---
+apiVersion: k8s.keycloak.org/v2beta1
+kind: Keycloak
+metadata:
+  name: keycloak
+spec:
+  instances: 2
+  image: quay.io/keycloak/keycloak:26.7.3@sha256:ff4257d0d64efbe99ed1ddfaf07765cc3c36dc7518bf8324d41961327f441c54
+  automountServiceAccountToken: false
+  db:
+    vendor: postgres
+    host: postgres-rw.database.svc.cluster.local
+    port: 5432
+    database: keycloak
+    schema: public
+    usernameSecret: { name: keycloak-database, key: username }
+    passwordSecret: { name: keycloak-database, key: password }
+    poolInitialSize: 5
+    poolMinSize: 5
+    poolMaxSize: 20
+  http:
+    httpEnabled: false
+    httpsPort: 8443
+    serviceName: keycloak
+    tlsSecret: keycloak-server-tls
+  hostname:
+    hostname: https://auth.internal
+    admin: https://auth-admin.internal
+    strict: true
+    backchannelDynamic: true
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: "2", memory: 2Gi }
+  scheduling:
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: keycloak
+            app.kubernetes.io/instance: keycloak
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app: keycloak
+                app.kubernetes.io/instance: keycloak
+  additionalOptions:
+    - { name: proxy-headers, value: xforwarded }
+    - { name: db-url-properties, value: "sslmode=verify-full&sslrootcert=/opt/keycloak/conf/db/ca.crt&sslcert=/opt/keycloak/conf/db/tls.crt&sslkey=/opt/keycloak/conf/db/tls.key" }
+    - { name: cache-metrics-histograms-enabled, value: "true" }
+    - { name: event-metrics-user-enabled, value: "true" }
+    - { name: log-level, value: INFO }
+    - { name: log-console-output, value: json }
+  unsupported:
+    podTemplate:
+      spec:
+        serviceAccountName: keycloak
+        containers:
+          - name: keycloak
+            volumeMounts:
+              - { name: database-client-tls, mountPath: /opt/keycloak/conf/db, readOnly: true }
+        volumes:
+          - name: database-client-tls
+            secret:
+              secretName: cnpg-keycloak-client-tls
+              defaultMode: 0400
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: keycloak
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: keycloak
+      app.kubernetes.io/instance: keycloak

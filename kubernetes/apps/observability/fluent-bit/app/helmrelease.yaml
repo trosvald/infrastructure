@@ -8,6 +8,7 @@ spec:
   chartRef:
     kind: OCIRepository
     name: fluent-bit
+    namespace: flux-system
   interval: 1h
   values:
     kind: DaemonSet
@@ -61,6 +62,41 @@ spec:
     updateStrategy:
       type: RollingUpdate
 
+    luaScripts:
+      sanitize.lua: |
+        local function insensitive(value)
+          return (value:gsub("%a", function(character)
+            return "[" .. character:lower() .. character:upper() .. "]"
+          end))
+        end
+
+        function sanitize(tag, timestamp, record)
+          local kubernetes = record["kubernetes"] or {}
+          local labels = kubernetes["labels"] or {}
+          local message = tostring(record["log"] or record["message"] or "")
+          for _, field in ipairs({"authorization", "cookie", "token", "password", "secret"}) do
+            message = message:gsub(
+              insensitive(field) .. "%s*[=:]%s*[^%s,;]+",
+              field .. "=[REDACTED]"
+            )
+          end
+          local clean = {
+            message = message,
+            stream = record["stream"],
+            kubernetes = {
+              namespace_name = kubernetes["namespace_name"],
+              pod_name = kubernetes["pod_name"],
+              container_name = kubernetes["container_name"],
+              labels = {
+                app = labels["app"],
+                app_name = labels["app.kubernetes.io/name"],
+                app_instance = labels["app.kubernetes.io/instance"]
+              }
+            }
+          }
+          return 2, timestamp, clean
+        end
+
     config:
       service: |
         [SERVICE]
@@ -101,11 +137,15 @@ spec:
             Kube_Token_File /var/run/secrets/kubernetes.io/serviceaccount/token
             Kube_Tag_Prefix kube.var.log.containers.
             Merge_Log On
-            Keep_Log On
+            Keep_Log Off
             Labels On
             Annotations Off
-            K8S-Logging.Parser On
-            K8S-Logging.Exclude On
+
+        [FILTER]
+            Name lua
+            Match kube.*
+            script /fluent-bit/scripts/sanitize.lua
+            call sanitize
 
       outputs: |
         [OUTPUT]
@@ -113,7 +153,7 @@ spec:
             Match kube.*
             Host victoria-logs.observability.svc.cluster.local
             Port 9428
-            URI /insert/jsonline?_stream_fields=kubernetes.namespace_name,kubernetes.pod_name,kubernetes.container_name&_msg_field=log&_time_field=time&decolorize_fields=log
+            URI /insert/jsonline?_stream_fields=kubernetes.namespace_name,kubernetes.pod_name,kubernetes.container_name,kubernetes.labels.app_name,kubernetes.labels.app_instance&_msg_field=message&_time_field=time&decolorize_fields=message
             Format json_lines
             Json_Date_Key time
             Json_Date_Format iso8601

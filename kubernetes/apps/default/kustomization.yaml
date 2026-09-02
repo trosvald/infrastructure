@@ -3,12 +3,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: default
-components:
-  - ../../components/alerts
 resources:
   - ./namespace.yaml
-  - ./atuin/ks.yaml
-  - ./home-assistant/ks.yaml
-  - ./mosquitto/ks.yaml
-  - ./thelounge/ks.yaml
-  - ./zigbee2mqtt/ks.yaml
+  - ./networkpolicy.yaml

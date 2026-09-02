@@ -13,9 +13,10 @@ jq -e '
     "geoipupdate":"docker.io/maxmindinc/geoipupdate:v7.1.1@sha256:45e15eb310528fd308c5c0abee9a8e6d580f1e2b1251e960dec2863dc7f0102f",
     "haproxy":"docker.io/library/haproxy:3.2.23-alpine@sha256:0666a2c2f41d341084ed2da85392b48cdcd766adfa28231f31305724ed5c6ea5",
     "spoa":"docker.io/crowdsecurity/spoa-bouncer:v0.3.1@sha256:94707833e96caf215160c10dacfb9f13bf71d59136feb574cf425e84010f33f3",
-    "vector":"docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee"
+    "vector":"docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee",
+    "vector-init":"docker.io/timberio/vector:0.58.0-alpine@sha256:645f51687e293577f2134d2907444da139538710f3c334f091c6070e122ef2ee"
   }
-  and (.services | keys | sort) == ["certbot","crowdsec","geoipupdate","haproxy","spoa","vector"]
+  and (.services | keys | sort) == ["certbot","crowdsec","geoipupdate","haproxy","spoa","vector","vector-init"]
   and all(.services[]; ((.ports // []) | length) == 0 and .privileged != true and .read_only == true and .cap_drop == ["ALL"] and .security_opt == ["no-new-privileges:true"])
   and all(.services[]; all((.volumes // [])[]; .source != "/var/run/docker.sock"))
   and .services.haproxy.networks.c1_edge.ipv4_address == "10.25.15.10"
@@ -38,8 +39,17 @@ assert cfg.count("set-header X-Request-ID %[unique-id]") == 1
 compose = Path("docker/c1/edge/compose.yml").read_text()
 assert "${EDGE_" not in compose
 crt_list = Path("docker/c1/edge/config/crt-list.txt").read_text()
-assert crt_list == "/run/tls/current/combined.pem git.monosense.io\n"
-assert "edge-test" not in cfg and "edge-test" not in compose and "edge-test" not in crt_list
+assert crt_list == "/run/tls/current/combined.pem git.monosense.io status.monosense.io edge-acceptance.monosense.io\n"
+assert "edge-test" not in cfg and "edge-test" not in compose
+assert "server envoy-edge 10.25.20.80:443" in cfg
+assert "ca-file /run/tls/kubernetes-ca.pem" in cfg
+assert "verifyhost envoy-edge.networking.svc.cluster.local" in cfg
+assert "verify none" not in cfg
+assert "https://vlogs-ingest.internal:8444/insert/jsonline" in Path("docker/c1/edge/config/vector.yaml").read_text()
+assert "verify_certificate: true" in Path("docker/c1/edge/config/vector.yaml").read_text()
+assert "/run/vector-client" in compose and "vector-buffer:/var/lib/vector" in compose
+assert "server gatus 10.25.13.36:443 check ssl verify required" in cfg
+assert "verifyhost status.monosense.io" in cfg
 assert "var(txn.crowdsec.remediation)" in cfg
 assert "var(txn.crowdsec.isocode)" in cfg
 assert "default_backend reject_unknown" in cfg

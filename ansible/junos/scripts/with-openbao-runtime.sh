@@ -56,6 +56,7 @@ case "$mode" in
                       "$2" == "playbooks/precutover-baseline.yml" ||
                       "$2" == "playbooks/syslog-verify.yml" ||
                       "$2" == "playbooks/bgp-preflight.yml" ||
+                      "$2" == "playbooks/bgp-sessions.yml" ||
                       "$2" == "playbooks/bgp-verify.yml" ) ]]; then
                     :
                 elif [[ $# -eq 4 && "$2" == "playbooks/bgp-acceptance.yml" &&
@@ -145,11 +146,13 @@ jq -e '
 }
 jq -e '
     (.data.data | type == "object") and
-    (.data.data | keys) == ["password"] and
-    (.data.data.password |
-        type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$"))
+    (.data.data | keys) ==
+        ["password_01", "password_02", "password_03", "password_04", "password_05"] and
+    ([.data.data[] |
+        type == "string" and length == 43 and test("^[A-Za-z0-9_-]{43}$")] | all) and
+    ([.data.data[]] | unique | length) == 5
 ' "$bgp_raw" >/dev/null || {
-    echo "OpenBao Cilium BGP record must contain exactly one 43-character base64url password" >&2
+    echo "OpenBao Cilium BGP record must contain five unique per-node 43-character base64url passwords" >&2
     exit 1
 }
 
@@ -158,7 +161,15 @@ jq -n \
     --slurpfile bgp "$bgp_raw" \
     '$topology[0].data.data |
         del(.netconf_host_key, .backup_age_recipient) |
-        .bgp = ((.bgp // {}) + {authentication_key: $bgp[0].data.data.password})' \
+        .bgp = ((.bgp // {}) + {
+            authentication_keys: [
+                $bgp[0].data.data.password_01,
+                $bgp[0].data.data.password_02,
+                $bgp[0].data.data.password_03,
+                $bgp[0].data.data.password_04,
+                $bgp[0].data.data.password_05
+            ]
+        })' \
     > "$topology_file"
 chmod 0600 "$topology_file"
 export JUNOS_TOPOLOGY_FILE="$topology_file"

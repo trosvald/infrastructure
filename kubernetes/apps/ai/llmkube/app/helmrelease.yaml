@@ -1,0 +1,48 @@
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: llmkube
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: llmkube
+      version: 0.9.24
+      sourceRef: { kind: HelmRepository, name: llmkube, namespace: flux-system }
+  values:
+    namespace: ai
+    controllerManager:
+      replicaCount: 2
+      leaderElection: { enabled: true }
+      image:
+        repository: ghcr.io/defilantech/llmkube-controller
+        tag: 0.9.24
+        digest: sha256:7b6b3f71a2bb4f1b30dae534deb0107eda39d60463b8cfa7ec14de9f02e4340e
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector: { matchLabels: { app.kubernetes.io/name: llmkube } }
+      resources:
+        requests: { cpu: 100m, memory: 256Mi }
+        limits: { cpu: 500m, memory: 1Gi }
+    modelCache: { enabled: false }
+    metrics: { enabled: true, secure: false }
+    priorityClasses: { enabled: false }
+    networkPolicies: { enabled: false }
+    prometheus:
+      serviceMonitor: { enabled: true }
+    webhook:
+      enabled: true
+      failurePolicy: Fail
+      certManager: { enabled: true }
+    crds: { install: true, keep: true }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: llmkube
+spec:
+  minAvailable: 1
+  selector: { matchLabels: { app.kubernetes.io/name: llmkube } }

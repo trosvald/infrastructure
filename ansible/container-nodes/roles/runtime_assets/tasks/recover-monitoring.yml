@@ -1,0 +1,55 @@
+---
+- name: Read the exact c0 monitoring record
+  ansible.builtin.uri:
+    url: https://vault.monosense.io:8200/v1/kv/data/docker/c0/monitoring
+    method: GET
+    headers:
+      X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: monitoring_recovery_record
+  no_log: true
+  diff: false
+
+- name: Validate required Gatus credentials
+  ansible.builtin.assert:
+    that:
+      - monitoring_recovery_record.json.data.data.telegram_bot_token | length > 0
+      - monitoring_recovery_record.json.data.data.telegram_chat_id | length > 0
+      - monitoring_recovery_record.json.data.data.backup_heartbeat_token | length > 0
+      - monitoring_recovery_record.json.data.data.vector_ingest_token | length > 0
+  no_log: true
+
+- name: Materialize alert-enabled Gatus configuration atomically
+  atomic_secret:
+    path: /var/lib/monosense-monitoring/secrets/gatus.yaml
+    content: >-
+      {{ lookup('ansible.builtin.file', role_path + '/templates/gatus.yaml.template')
+         | replace('@@telegram_bot_token@@', monitoring_recovery_record.json.data.data.telegram_bot_token)
+         | replace('@@telegram_chat_id@@', monitoring_recovery_record.json.data.data.telegram_chat_id)
+         | replace('@@backup_heartbeat_token@@', monitoring_recovery_record.json.data.data.backup_heartbeat_token)
+         | replace('@@vector_ingest_token@@', monitoring_recovery_record.json.data.data.vector_ingest_token) }}
+    owner: '65534'
+    group: '65534'
+    mode: '0600'
+    parent_mode: '0700'
+  no_log: true
+  diff: false
+
+- name: Restart Gatus with the repaired configuration
+  ansible.builtin.command:
+    argv: [docker, restart, gatus-c0]
+  changed_when: true
+  no_log: true
+
+- name: Wait for Gatus HTTPS readiness
+  ansible.builtin.uri:
+    url: https://status.monosense.io/api/v1/endpoints/statuses
+    status_code: 200
+  register: monitoring_recovery_health
+  retries: 12
+  delay: 5
+  until: monitoring_recovery_health.status == 200
+  no_log: true

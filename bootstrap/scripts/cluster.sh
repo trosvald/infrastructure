@@ -5,7 +5,8 @@ repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 bootstrap_dir="$repo_dir/bootstrap"
 cd "$repo_dir"
 
-stages=(preflight nodes kubernetes kubeconfig-node cilium bgp api-vip kubeconfig-cilium verify)
+stages=(preflight nodes kubernetes kubeconfig-node cilium bgp api-vip kubeconfig-cilium coredns flux verify)
+network_stages=(nodes kubernetes kubeconfig-node cilium bgp api-vip kubeconfig-cilium coredns)
 authenticated=false
 if [[ "${1:-}" == "--authenticated" ]]; then
     authenticated=true
@@ -13,13 +14,10 @@ if [[ "${1:-}" == "--authenticated" ]]; then
 fi
 requested_stage="${1:-all}"
 [[ $# -le 1 ]] || { echo "bootstrap accepts at most one fixed stage" >&2; exit 2; }
-if [[ "$requested_stage" != "all" ]]; then
-    valid=false
-    for stage in "${stages[@]}"; do
-        [[ "$requested_stage" == "$stage" ]] && valid=true
-    done
-    [[ "$valid" == true ]] || { echo "unknown bootstrap stage: $requested_stage" >&2; exit 2; }
-fi
+case "$requested_stage" in
+    all|preflight|network|flux|verify) ;;
+    *) echo "unknown bootstrap boundary: $requested_stage" >&2; exit 2 ;;
+esac
 
 if [[ "$authenticated" == false ]]; then
     exec "$repo_dir/scripts/with-openbao-runtime.sh" \
@@ -31,7 +29,7 @@ fi
     exit 1
 }
 
-for tool in age ansible-playbook bao helmfile jq kubectl kustomize minijinja-cli python talosctl yq; do
+for tool in age ansible-playbook bao helm helmfile jq kubectl kustomize minijinja-cli python talosctl yq; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "missing locked bootstrap tool: $tool" >&2
         exit 1
@@ -93,10 +91,13 @@ chmod 0600 "$topology_raw" "$secrets_raw" "$bgp_raw"
 jq -e '.data.data | type == "object"' "$topology_raw" >/dev/null
 jq -e '.data.data | type == "object"' "$secrets_raw" >/dev/null
 jq -e '
-    (.data.data | keys) == ["password"] and
-    (.data.data.password | type == "string" and length == 43 and test("^[A-Za-z0-9_-]+$"))
+    (.data.data | keys) ==
+        ["password_01", "password_02", "password_03", "password_04", "password_05"] and
+    ([.data.data[] |
+        type == "string" and length == 43 and test("^[A-Za-z0-9_-]+$")] | all) and
+    ([.data.data[]] | unique | length) == 5
 ' "$bgp_raw" >/dev/null || {
-    echo "shared Cilium BGP record is missing its exact password field" >&2
+    echo "Cilium BGP record must contain five unique per-node password fields" >&2
     exit 1
 }
 jq -n --slurpfile topology "$topology_raw" --slurpfile secrets "$secrets_raw" \
@@ -122,7 +123,17 @@ done
 talosconfig="$runtime_dir/nodes/bsd-k8s-01/talosconfig"
 kubeconfig="$runtime_dir/kubeconfig"
 export KUBECONFIG="$kubeconfig"
+acceptance_active=false
 cleanup_acceptance_service() {
+    if [[ "$acceptance_active" == true && -f "$kubeconfig" ]]; then
+        for index in 01 02 03 04 05; do
+            set_bgp_label "bsd-k8s-$index" present >/dev/null 2>&1 || true
+        done
+        kubectl --kubeconfig "$kubeconfig" apply --server-side \
+            --field-manager=bootstrap-cilium-config \
+            -f "$repo_dir/kubernetes/apps/kube-system/cilium/config/clusters.yaml" \
+            >/dev/null 2>&1 || true
+    fi
     if [[ -f "$kubeconfig" ]]; then
         kubectl --kubeconfig "$kubeconfig" delete -f \
             "$repo_dir/kubernetes/tests/cilium-bgp/all-nodes-service.yaml" \
@@ -140,16 +151,31 @@ node_field() {
 }
 
 junos_playbook() {
+    local playbook="$1"
+    shift
     "$repo_dir/ansible/junos/scripts/with-openbao-runtime.sh" --authenticated live \
-        ansible-playbook "$1"
+        ansible-playbook "$playbook" "$@"
+}
+
+talos_get() {
+    local address="$1" resource="$2"
+    if talosctl --talosconfig "$talosconfig" --nodes "$address" version >/dev/null 2>&1; then
+        talosctl --talosconfig "$talosconfig" --nodes "$address" get "$resource" --output yaml
+    else
+        talosctl --nodes "$address" get "$resource" --insecure --output yaml
+    fi
 }
 
 stage_preflight() {
     just kube validate-cilium-bgp
+    "$bootstrap_dir/scripts/verify-oci-digests.py"
     yq -e 'select(.metadata.name == "cluster-apps") | .spec.suspend == true' \
         "$repo_dir/kubernetes/flux/cluster/ks.yaml" >/dev/null
-    python -c 'import socket; assert socket.gethostbyname("k8s.monosense.io") == "10.25.20.10"'
-    junos_playbook playbooks/bgp-preflight.yml
+    if stage_complete bgp; then
+        junos_playbook playbooks/bgp-sessions.yml
+    else
+        junos_playbook playbooks/bgp-preflight.yml
+    fi
 
     local hostname bootstrap inventory disks links install_model install_wwid install_bus_prefix install_size
     local localpv_match localpv_serial osd_serial tor1 tor2
@@ -166,8 +192,8 @@ stage_preflight() {
         osd_serial="$(node_field "$hostname" '.future_osd.serial')"
         tor1="$(node_field "$hostname" '.links.tor1.permanent_mac')"
         tor2="$(node_field "$hostname" '.links.tor2.permanent_mac')"
-        disks="$(talosctl --nodes "$bootstrap" get disks --insecure --output yaml)"
-        links="$(talosctl --nodes "$bootstrap" get linkstatus --insecure --output yaml)"
+        disks="$(talos_get "$bootstrap" disks)"
+        links="$(talos_get "$bootstrap" linkstatus)"
         [[ "$disks" == *"$install_model"* && "$disks" == *"$install_wwid"* &&
             "$disks" == *"$install_bus_prefix"* && "$disks" == *"$install_size"* &&
             "$disks" == *"$localpv_serial"* && "$disks" == *"$osd_serial"* ]] || {
@@ -178,7 +204,7 @@ stage_preflight() {
             echo "$hostname: one or both protected X710 links are absent" >&2
             return 1
         }
-        inventory="$(talosctl --nodes "$bootstrap" get timestatus --insecure --output yaml)"
+        inventory="$(talos_get "$bootstrap" timestatus)"
         [[ "$inventory" == *"synced: true"* ]] || {
             echo "$hostname: NTP is not synchronized" >&2
             return 1
@@ -198,6 +224,15 @@ apply_node() {
     bootstrap="$(node_field "$hostname" '.bootstrap_address')"
     address="$(node_field "$hostname" '.address')"
     config="$runtime_dir/nodes/$hostname/$hostname.yaml"
+    if talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" version >/dev/null 2>&1; then
+        talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" apply-config \
+            --dry-run --mode=auto --file "$config" >/dev/null
+        talosctl --talosconfig "$talosconfig" --nodes "$bootstrap" apply-config \
+            --mode=auto --file "$config"
+        wait_talos_api "$bootstrap"
+        printf '%s: authenticated Talos configuration reconciled\n' "$hostname"
+        return
+    fi
     talosctl --nodes "$bootstrap" apply-config --insecure --file "$config"
     wait_talos_api "$address"
     link_status="$(talosctl --talosconfig "$talosconfig" --nodes "$address" get linkstatus --output yaml)"
@@ -249,30 +284,57 @@ apply_node() {
     }
 }
 
+member_count() {
+    talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 etcd members |
+        python -c 'import sys; print(max(0, len([line for line in sys.stdin if line.strip()]) - 1))'
+}
+
+three_members_ready() {
+    [[ "$(member_count)" == 3 ]]
+}
+
 stage_nodes() {
-    local members snapshot recipient
-    apply_node bsd-k8s-01
-    if ! talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 get members >/dev/null 2>&1; then
+    local members snapshot recipient count
+
+    for index in 01 02 03 04 05; do
+        apply_node "bsd-k8s-$index"
+    done
+
+    count="$(member_count)"
+    if [[ "$count" == 0 ]]; then
         talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 bootstrap
+    elif [[ "$count" != 3 ]]; then
+        printf 'existing etcd membership is incomplete before bootstrap: %s\n' "$count" >&2
     fi
-    retry 60 5 talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 get members >/dev/null
+
+    retry 60 5 three_members_ready || {
+        printf 'expected exactly three etcd members after bootstrap; found %s\n' "$(member_count)" >&2
+        return 1
+    }
+    members="$(talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 etcd members)"
+    [[ "$members" == *"10.25.11.11"* && "$members" == *"10.25.11.12"* &&
+        "$members" == *"10.25.11.13"* ]] || {
+        printf 'etcd members do not match the three reviewed control planes\n' >&2
+        return 1
+    }
+
     snapshot="$runtime_dir/etcd.snapshot"
     talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 etcd snapshot "$snapshot"
     recipient="$(jq -er '.topology.cluster.snapshot_age_recipient' "$context_file")"
     age -r "$recipient" -o "$state_dir/etcd-bootstrap.snapshot.age" "$snapshot"
     chmod 0600 "$state_dir/etcd-bootstrap.snapshot.age"
+}
 
-    apply_node bsd-k8s-02
-    retry 60 5 talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 get members >/dev/null
-    members="$(talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 get members --output yaml)"
-    [[ "$members" == *"10.25.11.11"* && "$members" == *"10.25.11.12"* ]] || return 1
-    apply_node bsd-k8s-03
-    retry 60 5 talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 get members >/dev/null
-    members="$(talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 get members --output yaml)"
-    [[ "$members" == *"10.25.11.11"* && "$members" == *"10.25.11.12"* &&
-        "$members" == *"10.25.11.13"* ]] || return 1
-    apply_node bsd-k8s-04
-    apply_node bsd-k8s-05
+set_kubeconfig_server() {
+    local server="$1" cluster
+    cluster="$(kubectl --kubeconfig "$kubeconfig" config view --minify \
+        -o jsonpath='{.contexts[0].context.cluster}')"
+    [[ -n "$cluster" ]] || {
+        echo "generated kubeconfig has no current cluster" >&2
+        return 1
+    }
+    kubectl --kubeconfig "$kubeconfig" config set-cluster "$cluster" \
+        --server="$server" >/dev/null
 }
 
 fetch_direct_kubeconfig() {
@@ -280,17 +342,20 @@ fetch_direct_kubeconfig() {
     talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 kubeconfig \
         --force --force-context-name bootstrap "$runtime_dir"
     chmod 0600 "$kubeconfig"
-    kubectl --kubeconfig "$kubeconfig" config set-cluster bootstrap \
-        --server=https://10.25.11.11:6443 >/dev/null
+    set_kubeconfig_server https://10.25.11.11:6443
+}
+
+five_nodes_registered() {
+    local names
+    names="$(kubectl --kubeconfig "$kubeconfig" get nodes -o json |
+        jq -c '[.items[].metadata.name] | sort')"
+    [[ "$names" == '["bsd-k8s-01","bsd-k8s-02","bsd-k8s-03","bsd-k8s-04","bsd-k8s-05"]' ]]
 }
 
 stage_kubernetes() {
     fetch_direct_kubeconfig
     retry 60 5 kubectl --kubeconfig "$kubeconfig" get --raw=/readyz >/dev/null
-    retry 60 5 bash -c '
-        [[ "$(kubectl --kubeconfig "$1" get nodes -o json |
-          jq "[.items[] | select(any(.status.conditions[]; .type == \"Ready\" and .status == \"False\"))] | length")" == 5 ]]
-    ' _ "$kubeconfig"
+    retry 60 5 five_nodes_registered
 }
 
 stage_kubeconfig_node() {
@@ -298,15 +363,35 @@ stage_kubeconfig_node() {
     kubectl --kubeconfig "$kubeconfig" get --raw=/readyz >/dev/null
 }
 
+flux_release_ready() {
+    local name=$1
+    [[ "$(kubectl --kubeconfig "$kubeconfig" -n kube-system get helmrelease "$name" \
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == True ]]
+}
+flux_config_ready() {
+    [[ "$(kubectl --kubeconfig "$kubeconfig" -n kube-system get kustomization cilium-config \
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null)" == True ]]
+}
+
+
+
 apply_cilium_base() {
-    helmfile -f "$bootstrap_dir/helmfile/crds.yaml" template -q |
-        yq ea -r -e 'select(.kind == "CustomResourceDefinition")' |
-        kubectl --kubeconfig "$kubeconfig" apply --server-side --force-conflicts -f -
+    if flux_release_ready cilium; then
+        kubectl --kubeconfig "$kubeconfig" -n kube-system rollout status \
+            daemonset/cilium --timeout=5m
+        kubectl --kubeconfig "$kubeconfig" -n kube-system rollout status \
+            deployment/cilium-operator --timeout=5m
+        return
+    fi
+    "$bootstrap_dir/scripts/verify-oci-digests.py"
     helmfile -f "$bootstrap_dir/helmfile/apps.yaml" --selector name=cilium sync --hide-notes
     retry 60 5 kubectl --kubeconfig "$kubeconfig" -n kube-system rollout status \
         daemonset/cilium --timeout=10s
-    for resource in pool-infrastructure pool-internal pool-edge-backend advertisement peer; do
-        kubectl --kubeconfig "$kubeconfig" apply --server-side --force-conflicts \
+    retry 60 5 kubectl --kubeconfig "$kubeconfig" -n kube-system rollout status \
+        deployment/cilium-operator --timeout=10s
+    for resource in pool-infrastructure pool-internal pool-edge-backend advertisement peers; do
+        kubectl --kubeconfig "$kubeconfig" apply --server-side \
+            --field-manager=bootstrap-cilium-config \
             -f "$repo_dir/kubernetes/apps/kube-system/cilium/config/$resource.yaml"
     done
 }
@@ -317,71 +402,131 @@ stage_cilium() {
 }
 
 cilium_sessions_ready() {
-    local output
-    output="$(kubectl --kubeconfig "$kubeconfig" -n kube-system exec daemonset/cilium -- \
-        cilium bgp peers 2>/dev/null)" || return 1
-    [[ "$(printf '%s\n' "$output" | awk 'tolower($0) ~ /established/ {count++} END {print count+0}')" == 5 ]]
+    local pod output
+    local established=0
+    local -a pods
+    mapfile -t pods < <(
+        kubectl --kubeconfig "$kubeconfig" -n kube-system get pods \
+            -l k8s-app=cilium -o name
+    )
+    [[ "${#pods[@]}" == 5 ]] || return 1
+    for pod in "${pods[@]}"; do
+        output="$(kubectl --kubeconfig "$kubeconfig" -n kube-system exec "$pod" -- \
+            cilium bgp peers 2>/dev/null)" || return 1
+        [[ "$(printf '%s\n' "$output" |
+            awk 'tolower($0) ~ /established/ {count++} END {print count+0}')" == 1 ]] ||
+            return 1
+        ((established += 1))
+    done
+    [[ "$established" == 5 ]]
 }
 
 stage_bgp() {
     fetch_direct_kubeconfig
-    password_file="$runtime_dir/bgp-password"
-    jq -er '.data.data.password' "$bgp_raw" > "$password_file"
-    chmod 0600 "$password_file"
-    kubectl --kubeconfig "$kubeconfig" -n kube-system create secret generic cilium-bgp-auth \
-        --from-file=password="$password_file" --dry-run=client -o yaml |
-        kubectl --kubeconfig "$kubeconfig" apply --server-side --force-conflicts -f -
-    secret_length="$(kubectl --kubeconfig "$kubeconfig" -n kube-system get secret cilium-bgp-auth \
-        -o json | jq -er '.data.password | @base64d | length')"
-    [[ "$secret_length" == 43 ]] || { echo "Cilium BGP Secret is empty or malformed" >&2; return 1; }
-    kubectl --kubeconfig "$kubeconfig" apply --server-side --force-conflicts \
-        -f "$repo_dir/kubernetes/apps/kube-system/cilium/config/cluster.yaml"
+    if flux_config_ready; then
+        for index in 01 02 03 04 05; do
+            set_bgp_label "bsd-k8s-$index" present
+        done
+        retry 30 3 cilium_sessions_ready
+        junos_playbook playbooks/bgp-sessions.yml
+        return
+    fi
+    for index in 01 02 03 04 05; do
+        password_file="$runtime_dir/bgp-password-$index"
+        password="$(jq -er --arg field "password_$index" '.data.data[$field]' "$bgp_raw")"
+        printf '%s' "$password" > "$password_file"
+        chmod 0600 "$password_file"
+        secret="cilium-bgp-auth-bsd-k8s-$index"
+        kubectl --kubeconfig "$kubeconfig" -n kube-system create secret generic "$secret" \
+            --from-file=password="$password_file" --dry-run=client -o yaml |
+            kubectl --kubeconfig "$kubeconfig" apply --server-side \
+                --field-manager=bootstrap-cilium-config -f -
+        secret_length="$(kubectl --kubeconfig "$kubeconfig" -n kube-system get secret "$secret" \
+            -o json | jq -er '.data.password | @base64d | length')"
+        [[ "$secret_length" == 43 ]] || {
+            echo "$secret is empty or malformed" >&2
+            return 1
+        }
+    done
+    kubectl --kubeconfig "$kubeconfig" apply --server-side --field-manager=bootstrap-cilium-config \
+        -f "$repo_dir/kubernetes/apps/kube-system/cilium/config/clusters.yaml"
+    for index in 01 02 03 04 05; do
+        set_bgp_label "bsd-k8s-$index" present
+    done
     sleep 5
     if kubectl --kubeconfig "$kubeconfig" -n kube-system logs daemonset/cilium --since=5m |
         python -c 'import sys; raise SystemExit(0 if "will continue with empty password" in sys.stdin.read() else 1)'; then
         kubectl --kubeconfig "$kubeconfig" delete -f \
-            "$repo_dir/kubernetes/apps/kube-system/cilium/config/cluster.yaml" --ignore-not-found
+            "$repo_dir/kubernetes/apps/kube-system/cilium/config/clusters.yaml" --ignore-not-found
         echo "Cilium attempted an empty-password fallback; ClusterConfig was removed" >&2
         return 1
     fi
     retry 30 3 cilium_sessions_ready
-    junos_playbook playbooks/bgp-verify.yml
+    junos_playbook playbooks/bgp-sessions.yml
 }
 
 stage_api_vip() {
     fetch_direct_kubeconfig
+    kubectl --kubeconfig "$kubeconfig" -n default delete service kube-vip \
+        --ignore-not-found >/dev/null
+    if flux_config_ready; then
+        kubectl --kubeconfig "$kubeconfig" apply -f \
+            "$repo_dir/kubernetes/apps/kube-system/cilium/config/vip.yaml"
+        retry 30 3 bash -c '
+            [[ "$(kubectl --kubeconfig "$1" -n kube-system get service kube-vip -o json |
+              jq -r ".status.loadBalancer.ingress[0].ip // empty")" == "10.25.20.10" ]]
+        ' _ "$kubeconfig"
+        retry 30 3 kubectl --kubeconfig "$kubeconfig" \
+            --server https://10.25.20.10:6443 get --raw=/readyz >/dev/null
+        return
+    fi
     kubectl --kubeconfig "$kubeconfig" apply -f \
         "$repo_dir/kubernetes/tests/cilium-bgp/all-nodes-service.yaml"
     retry 30 3 bash -c '
         [[ "$(kubectl --kubeconfig "$1" -n kube-system get service cilium-bgp-all-nodes -o json |
           jq -r ".status.loadBalancer.ingress[0].ip // empty")" == "10.25.20.11" ]]
     ' _ "$kubeconfig"
-    junos_playbook playbooks/bgp-verify.yml
+    retry 30 3 junos_playbook playbooks/bgp-verify.yml
     kubectl --kubeconfig "$kubeconfig" apply -f \
         "$repo_dir/kubernetes/apps/kube-system/cilium/config/vip.yaml"
     retry 30 3 bash -c '
         [[ "$(kubectl --kubeconfig "$1" -n kube-system get service kube-vip -o json |
           jq -r ".status.loadBalancer.ingress[0].ip // empty")" == "10.25.20.10" ]]
     ' _ "$kubeconfig"
-    retry 30 3 python -c '
-import ssl, urllib.request
-context = ssl.create_default_context()
-with urllib.request.urlopen("https://k8s.monosense.io:6443/readyz", context=context, timeout=3) as response:
-    assert response.read().strip() == b"ok"
-'
+    retry 30 3 kubectl --kubeconfig "$kubeconfig" \
+        --server https://10.25.20.10:6443 get --raw=/readyz >/dev/null
 }
 
 stage_kubeconfig_cilium() {
     fetch_direct_kubeconfig
-    kubectl --kubeconfig "$kubeconfig" config set-cluster bootstrap \
-        --server=https://k8s.monosense.io:6443 >/dev/null
+    set_kubeconfig_server https://k8s.monosense.io:6443
     cp "$kubeconfig" "$repo_dir/kubeconfig"
     chmod 0600 "$repo_dir/kubeconfig"
     cp "$talosconfig" "$repo_dir/talosconfig"
     chmod 0600 "$repo_dir/talosconfig"
-    helmfile -f "$bootstrap_dir/helmfile/apps.yaml" --selector name=coredns sync --hide-notes
+}
+
+stage_coredns() {
+    "$bootstrap_dir/scripts/verify-oci-digests.py"
+    fetch_direct_kubeconfig
+    if ! flux_release_ready coredns; then
+        helmfile -f "$bootstrap_dir/helmfile/apps.yaml" --selector name=coredns sync --hide-notes
+    fi
     retry 30 5 kubectl --kubeconfig "$kubeconfig" -n kube-system rollout status \
         deployment/coredns --timeout=10s
+    if ! kubectl --kubeconfig "$kubeconfig" -n kube-system rollout status \
+        deployment/hubble-relay --timeout=10s; then
+        kubectl --kubeconfig "$kubeconfig" -n kube-system rollout restart \
+            deployment/hubble-relay
+    fi
+    retry 30 5 kubectl --kubeconfig "$kubeconfig" -n kube-system rollout status \
+        deployment/hubble-relay --timeout=10s
+}
+
+stage_flux() {
+    "$bootstrap_dir/scripts/verify-oci-digests.py"
+    fetch_direct_kubeconfig
+    KUBECONFIG="$kubeconfig" "$bootstrap_dir/scripts/install-flux.sh"
 }
 
 junos_acceptance() {
@@ -400,11 +545,24 @@ set_bgp_label() {
             bgp.monosense.io/enabled=true --overwrite >/dev/null
     fi
 }
+set_bgp_peer_state() {
+    local hostname="$1" value="$2"
+    if [[ "$value" == "absent" ]]; then
+        kubectl --kubeconfig "$kubeconfig" delete ciliumbgpclusterconfig \
+            "cilium-srx1500-$hostname" --ignore-not-found --wait=false >/dev/null
+    else
+        kubectl --kubeconfig "$kubeconfig" apply --server-side \
+            --field-manager=bootstrap-cilium-config \
+            -f "$repo_dir/kubernetes/apps/kube-system/cilium/config/clusters.yaml" >/dev/null
+    fi
+}
+
+
 
 measure_acceptance() {
     local phase="$1" start end
     start="$(date +%s)"
-    retry 8 1 junos_acceptance "$phase"
+    retry 8 1 junos_acceptance "$phase" >&2
     end="$(date +%s)"
     printf '%s' "$((end - start))"
 }
@@ -413,58 +571,67 @@ stage_verify() {
     local worker_withdraw worker_restore controlplane_withdraw controlplane_restore
     local all_withdraw all_restore temporary_withdraw render_digest snapshot_digest
     local members hostname address localpv_match localpv_serial osd_serial disks
-    local stability_started_at edge_review_not_before
+    local stability_started_at edge_review_not_before acceptance_timeout=15
     fetch_direct_kubeconfig
+    acceptance_active=true
+    for index in 01 02 03 04 05; do
+        set_bgp_label "bsd-k8s-$index" present
+    done
     kubectl --kubeconfig "$kubeconfig" apply -f \
         "$repo_dir/kubernetes/tests/cilium-bgp/all-nodes-service.yaml"
     retry 30 3 cilium_sessions_ready
-    junos_playbook playbooks/bgp-verify.yml
+    if ! retry 30 3 junos_playbook playbooks/bgp-verify.yml; then
+        kubectl --kubeconfig "$kubeconfig" -n kube-system get \
+            ciliumbgpadvertisement cilium-loadbalancer-hosts -o yaml >&2
+        kubectl --kubeconfig "$kubeconfig" -n kube-system get \
+            service cilium-bgp-all-nodes -o yaml >&2
+        while IFS= read -r pod; do
+            printf '%s\n' "advertised routes from $pod:" >&2
+            kubectl --kubeconfig "$kubeconfig" -n kube-system exec "$pod" -- \
+                cilium bgp routes advertised ipv4 unicast >&2
+        done < <(kubectl --kubeconfig "$kubeconfig" -n kube-system get pods \
+            -l k8s-app=cilium -o name | sort)
+        return 1
+    fi
     retry 8 1 junos_acceptance all
 
-    set_bgp_label bsd-k8s-05 absent
+    set_bgp_peer_state bsd-k8s-05 absent
     worker_withdraw="$(measure_acceptance worker-withdrawn)"
-    ((worker_withdraw <= 9)) || { echo "worker withdrawal exceeded 9 seconds" >&2; return 1; }
-    kubectl --kubeconfig "$kubeconfig" get --raw=/readyz >/dev/null
-    set_bgp_label bsd-k8s-05 present
-    worker_restore="$(measure_acceptance all)"
-
-    set_bgp_label bsd-k8s-03 absent
-    controlplane_withdraw="$(measure_acceptance controlplane-withdrawn)"
-    ((controlplane_withdraw <= 9)) || {
-        echo "control-plane withdrawal exceeded 9 seconds" >&2
+    ((worker_withdraw <= acceptance_timeout)) || {
+        echo "worker withdrawal exceeded ${acceptance_timeout} seconds" >&2
         return 1
     }
-    retry 10 1 python -c '
-import ssl, urllib.request
-with urllib.request.urlopen(
-    "https://k8s.monosense.io:6443/readyz",
-    context=ssl.create_default_context(),
-    timeout=3,
-) as response:
-    assert response.read().strip() == b"ok"
-'
-    set_bgp_label bsd-k8s-03 present
+    kubectl --kubeconfig "$kubeconfig" get --raw=/readyz >/dev/null
+    set_bgp_peer_state bsd-k8s-05 present
+    worker_restore="$(measure_acceptance all)"
+
+    set_bgp_peer_state bsd-k8s-03 absent
+    controlplane_withdraw="$(measure_acceptance controlplane-withdrawn)"
+    ((controlplane_withdraw <= acceptance_timeout)) || {
+        echo "control-plane withdrawal exceeded ${acceptance_timeout} seconds" >&2
+        return 1
+    }
+    retry 10 1 kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 \
+        --request-timeout=3s get --raw=/readyz >/dev/null
+    set_bgp_peer_state bsd-k8s-03 present
     controlplane_restore="$(measure_acceptance all)"
 
     for index in 01 02 03 04 05; do
-        set_bgp_label "bsd-k8s-$index" absent
+        set_bgp_peer_state "bsd-k8s-$index" absent
     done
     all_withdraw="$(measure_acceptance all-withdrawn)"
-    ((all_withdraw <= 9)) || { echo "all-peer withdrawal exceeded 9 seconds" >&2; return 1; }
-    if python -c '
-import ssl, urllib.request
-urllib.request.urlopen(
-    "https://k8s.monosense.io:6443/readyz",
-    context=ssl.create_default_context(),
-    timeout=3,
-)
-'; then
+    ((all_withdraw <= acceptance_timeout)) || {
+        echo "all-peer withdrawal exceeded ${acceptance_timeout} seconds" >&2
+        return 1
+    }
+    if kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 \
+        --request-timeout=3s get --raw=/readyz >/dev/null 2>&1; then
         echo "VIP remained reachable after complete BGP withdrawal" >&2
         return 1
     fi
     kubectl --kubeconfig "$kubeconfig" get --raw=/readyz >/dev/null
     for index in 01 02 03 04 05; do
-        set_bgp_label "bsd-k8s-$index" present
+        set_bgp_peer_state "bsd-k8s-$index" present
     done
     all_restore="$(measure_acceptance all)"
 
@@ -472,7 +639,6 @@ urllib.request.urlopen(
         "$repo_dir/kubernetes/tests/cilium-bgp/all-nodes-service.yaml" --ignore-not-found
     temporary_withdraw="$(measure_acceptance temporary-removed)"
     kubectl --kubeconfig "$kubeconfig" get --raw=/readyz >/dev/null
-    junos_playbook playbooks/bgp-verify.yml
 
     [[ "$(kubectl --kubeconfig "$kubeconfig" get nodes -o json |
         jq '[.items[] | select(any(.status.conditions[]; .type == "Ready" and .status == "True"))] | length')" == 5 ]] || {
@@ -543,32 +709,56 @@ print((datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:
         }' > "$state_dir/acceptance-evidence.json"
     chmod 0600 "$state_dir/acceptance-evidence.json"
 
-    kubectl --kubeconfig "$kubeconfig" config set-cluster bootstrap \
-        --server=https://k8s.monosense.io:6443 >/dev/null
+    set_kubeconfig_server https://k8s.monosense.io:6443
     cp "$kubeconfig" "$repo_dir/kubeconfig"
     chmod 0600 "$repo_dir/kubeconfig"
     cp "$talosconfig" "$repo_dir/talosconfig"
     chmod 0600 "$repo_dir/talosconfig"
-    kubectl --kubeconfig "$kubeconfig" get nodes
+    kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 get nodes
     talosctl --talosconfig "$talosconfig" --nodes 10.25.11.11 get members
+    [[ "$(kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 get nodes \
+        -o json | jq '[.items[] | select(any(.status.conditions[]; .type == "Ready" and .status == "True"))] | length')" == 5 ]]
+    kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 \
+        -n flux-system wait deployment/flux-operator --for=condition=Available --timeout=5m
+    kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 \
+        -n flux-system wait fluxinstance/flux --for=condition=Ready --timeout=5m
+    [[ "$(kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 \
+        -n flux-system get gitrepository flux-system \
+        -o jsonpath='{.spec.url} {.spec.interval}')" == \
+        'https://git.monosense.io/trosvald/infrastructure.git 5m' ]]
+    [[ "$(kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 \
+        -n flux-system get kustomization flux-system \
+        -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" == True ]]
+    for root in flux-repositories infrastructure-controllers infrastructure-configs cluster-apps; do
+        [[ "$(kubectl --kubeconfig "$kubeconfig" --server https://10.25.20.10:6443 \
+            -n flux-system get kustomization "$root" \
+            -o jsonpath='{.spec.suspend}')" == true ]] || {
+            printf 'bootstrap root is missing or not suspended: %s\n' "$root" >&2
+            return 1
+        }
+    done
 }
 
 run_stage() {
     local stage="$1" function_name
     if stage_complete "$stage"; then
-        printf 'bootstrap stage already complete: %s\n' "$stage"
-        return
+        printf 'revalidating bootstrap stage recorded by advisory checkpoint: %s\n' "$stage"
+    else
+        printf 'running bounded bootstrap stage: %s\n' "$stage"
     fi
-    printf 'running bounded bootstrap stage: %s\n' "$stage"
     function_name="stage_${stage//-/_}"
     "$function_name"
     mark_complete "$stage"
 }
 
-if [[ "$requested_stage" == "all" ]]; then
-    for stage in "${stages[@]}"; do
-        run_stage "$stage"
-    done
-else
-    run_stage "$requested_stage"
-fi
+case "$requested_stage" in
+    all)
+        for stage in "${stages[@]}"; do run_stage "$stage"; done
+        ;;
+    network)
+        for stage in "${network_stages[@]}"; do run_stage "$stage"; done
+        ;;
+    preflight|flux|verify)
+        run_stage "$requested_stage"
+        ;;
+esac

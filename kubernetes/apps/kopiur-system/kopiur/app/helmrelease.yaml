@@ -8,19 +8,25 @@ spec:
   chartRef:
     kind: OCIRepository
     name: kopiur
+    namespace: flux-system
   interval: 1h
   values:
-    extraVolumes:
-      - name: repo
-        nfs:
-          server: tank.internal
-          path: /mnt/sank/kopiur
-    extraVolumeMounts:
-      - name: repo
-        mountPath: /repo
     features:
       credentialProjection:
         enabled: true
+    replicaCount: 2
+    leaderElection:
+      enabled: true
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: kopiur
     monitoring:
       dashboards:
         enabled: true
@@ -41,5 +47,16 @@ spec:
     resources:
       requests:
         cpu: 100m
-      limits:
-        memory: 2Gi
+        memory: 128Mi
+    webhook:
+      replicaCount: 2
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: 1
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: kopiur

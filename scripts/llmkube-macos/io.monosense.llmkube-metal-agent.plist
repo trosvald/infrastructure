@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>io.monosense.llmkube-metal-agent</string>
+<key>UserName</key><string>_llmkube</string><key>GroupName</key><string>staff</string>
+<key>EnvironmentVariables</key><dict><key>KUBECONFIG</key><string>/var/lib/llmkube/kubeconfig</string></dict><key>ProgramArguments</key><array><string>/usr/local/libexec/llmkube/metal-agent</string><string>--namespace</string><string>ai</string><string>--model-store</string><string>/var/lib/llmkube/models</string><string>--host-ip</string><string>10.25.13.95</string><string>--llama-server</string><string>/usr/local/libexec/llmkube/llama</string><string>--llama-server-port</string><string>8081</string><string>--client-port</string><string>0</string><string>--inference-service-allowlist</string><string>qwen3-embedding</string><string>--port</string><string>9090</string></array>
+<key>RunAtLoad</key><true/><key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict><key>ThrottleInterval</key><integer>10</integer>
+<key>StandardOutPath</key><string>/var/log/llmkube-metal-agent.log</string><key>StandardErrorPath</key><string>/var/log/llmkube-metal-agent.err</string>
+</dict></plist>

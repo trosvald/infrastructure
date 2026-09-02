@@ -20,7 +20,7 @@ external-endpoints:
     group: Backups
     token: @@backup_heartbeat_token@@
     heartbeat: { interval: 26h }
-    alerts: [{ type: telegram }]
+    alerts: &telegram-alerts [{ type: telegram }]
 endpoints:
   - &dns
     name: DNS resolver
@@ -28,61 +28,73 @@ endpoints:
     url: 10.25.13.35:53
     dns: { query-name: monosense.io, query-type: A }
     conditions: ["[DNS_RCODE] == NOERROR", "[RESPONSE_TIME] < 3000"]
+    alerts: *telegram-alerts
     ui: &private { hide-url: true, hide-hostname: true, hide-port: true, hide-conditions: true, hide-errors: true }
   - name: Authoritative DNS
     group: Core
     url: tcp://10.25.13.33:53
     conditions: ["[CONNECTED] == true", "[RESPONSE_TIME] < 3000"]
+    alerts: *telegram-alerts
     ui: *private
   - name: Secrets
     group: Core
     url: https://vault.monosense.io:8200/v1/sys/health
     conditions: ["[STATUS] == any(200, 429, 472, 473, 501, 503)", "[CERTIFICATE_EXPIRATION] > 168h"]
+    alerts: *telegram-alerts
     ui: *private
   - name: c0 host
     group: Hosts
     url: tcp://10.25.13.16:22
     conditions: ["[CONNECTED] == true"]
+    alerts: *telegram-alerts
     ui: *private
   - name: c1 host
     group: Hosts
     url: tcp://10.25.10.101:22
     conditions: ["[CONNECTED] == true"]
+    alerts: *telegram-alerts
     ui: *private
-  - name: Edge HTTP
+  - name: Edge HTTPS
     group: Edge
-    url: tcp://10.25.15.10:80
+    url: tcp://10.25.15.10:443
     conditions: ["[CONNECTED] == true"]
+    alerts: *telegram-alerts
     ui: *private
   - name: Edge SSH
     group: Edge
     url: tcp://10.25.15.10:22
     conditions: ["[CONNECTED] == true"]
+    alerts: *telegram-alerts
     ui: *private
   - name: Edge security
     group: Edge
     url: https://git.monosense.io/.env
     conditions: ["[STATUS] == 403"]
+    alerts: *telegram-alerts
     ui: *private
   - name: Forgejo web
     group: Forgejo
     url: https://git.monosense.io/
     conditions: ["[STATUS] == 200", "[CERTIFICATE_EXPIRATION] > 168h"]
+    alerts: *telegram-alerts
     ui: *private
   - name: Forgejo API
     group: Forgejo
     url: https://git.monosense.io/api/healthz
     conditions: ["[STATUS] == 200"]
+    alerts: *telegram-alerts
     ui: *private
   - name: Forgejo SSH
     group: Forgejo
     url: tcp://10.25.15.10:22
     conditions: ["[CONNECTED] == true"]
+    alerts: *telegram-alerts
     ui: *private
   - name: Object storage TLS
     group: Backups
     url: https://s3.monosense.io/
     conditions: ["[STATUS] < 500", "[CERTIFICATE_EXPIRATION] > 168h"]
+    alerts: *telegram-alerts
     ui: *private
   - name: Log ingestion
     group: Evidence
@@ -91,4 +103,5 @@ endpoints:
     headers: { Authorization: "Bearer @@vector_ingest_token@@" }
     body: '{}'
     conditions: ["[STATUS] == 200"]
+    alerts: *telegram-alerts
     ui: *private

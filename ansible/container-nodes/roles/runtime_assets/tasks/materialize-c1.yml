@@ -5,7 +5,15 @@
     runtime_monitoring: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c0_monitoring') | first).json.data.data }}"
     runtime_edge: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_edge') | first).json.data.data }}"
     runtime_forgejo: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_forgejo') | first).json.data.data }}"
+    runtime_dragonfly: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'c1_dragonfly') | first).json.data.data }}"
+    runtime_kubernetes_ca: "{{ (runtime_kv_responses.results | selectattr('item.key', 'equalto', 'kubernetes_ca') | first).json.data.data }}"
     runtime_materials:
+      - path: /srv/applications/apps/edge/tls/kubernetes-ca.pem
+        content: "{{ runtime_kubernetes_ca.certificate }}"
+        owner: '99'
+        group: '99'
+        parent_owner: '99'
+        parent_group: '99'
       - {path: /srv/applications/apps/edge/secrets/bouncer_key_spoa, content: "{{ runtime_edge.crowdsec_bouncer_key }}\n", owner: '1000', group: '1000'}
       - path: /srv/applications/apps/edge/secrets/spoa.yaml
         content: "{{
@@ -20,7 +28,24 @@
       - {path: /srv/applications/apps/edge/secrets/acme_email, content: "{{ runtime_edge.acme_email }}\n", owner: root, group: root}
       - {path: /srv/applications/apps/edge/secrets/maxmind_account_id, content: "{{ runtime_edge.maxmind_account_id }}\n", owner: '1000', group: '1000'}
       - {path: /srv/applications/apps/edge/secrets/maxmind_license_key, content: "{{ runtime_edge.maxmind_license_key }}\n", owner: '1000', group: '1000'}
-      - {path: /srv/applications/apps/edge/secrets/vector_token, content: "{{ runtime_edge.vector_ingest_token }}\n", owner: '1000', group: '1000'}
+      - path: /srv/applications/apps/edge/secrets/vector-client/certificate.pem
+        content: "{{ runtime_edge.vector_client_certificate }}"
+        owner: '1000'
+        group: '1000'
+        parent_owner: '1000'
+        parent_group: '1000'
+      - path: /srv/applications/apps/edge/secrets/vector-client/private-key.pem
+        content: "{{ runtime_edge.vector_client_private_key }}"
+        owner: '1000'
+        group: '1000'
+        parent_owner: '1000'
+        parent_group: '1000'
+      - path: /srv/applications/apps/edge/secrets/vector-client/ca.pem
+        content: "{{ runtime_edge.vector_client_ca }}"
+        owner: '1000'
+        group: '1000'
+        parent_owner: '1000'
+        parent_group: '1000'
       - path: /srv/applications/apps/forgejo/secrets/app.ini
         content: >-
           {{ lookup('ansible.builtin.file', role_path + '/templates/app.ini.template')
@@ -30,7 +55,12 @@
              | replace('@@forgejo_internal_token@@', runtime_forgejo.forgejo_internal_token)
              | replace('@@forgejo_jwt_secret@@', runtime_forgejo.forgejo_jwt_secret)
              | replace('@@zoho_username@@', runtime_forgejo.zoho_username)
+             | replace('@@dragonfly_password@@', runtime_dragonfly.forgejo_a_password)
              | replace('@@zoho_password@@', runtime_forgejo.zoho_password) }}
+        owner: '1000'
+        group: '1000'
+      - path: /srv/applications/apps/forgejo/secrets/kubernetes-ca.crt
+        content: "{{ runtime_kubernetes_ca.certificate }}"
         owner: '1000'
         group: '1000'
       - {path: /srv/applications/apps/forgejo/secrets/postgres_password, content: "{{ runtime_forgejo.postgres_password }}\n", owner: '70', group: '70'}

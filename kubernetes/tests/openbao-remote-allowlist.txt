@@ -1,0 +1,22 @@
+# Exact logical OpenBao remote keys referenced by ExternalSecret and PushSecret resources.
+platform/kubernetes/ai/codex-adapter
+platform/kubernetes/ai/litellm
+platform/kubernetes/ai/llmkube
+platform/kubernetes/ai/memini
+platform/kubernetes/database/cloudnative-pg
+platform/kubernetes/database/dragonfly
+platform/kubernetes/flux-system/image-automation
+platform/kubernetes/kube-system/cilium-bgp-bsd-k8s-01
+platform/kubernetes/kube-system/cilium-bgp-bsd-k8s-02
+platform/kubernetes/kube-system/cilium-bgp-bsd-k8s-03
+platform/kubernetes/kube-system/cilium-bgp-bsd-k8s-04
+platform/kubernetes/kube-system/cilium-bgp-bsd-k8s-05
+platform/kubernetes/kopiur-system/kopiur
+platform/kubernetes/kopiur-system/r2
+platform/kubernetes/networking/external-dns
+platform/kubernetes/observability/alertmanager
+platform/kubernetes/observability/grafana
+platform/kubernetes/observability/snmp
+platform/kubernetes/security/keycloak
+platform/kubernetes/security/keycloak-tofu
+platform/tls/kubernetes-ca

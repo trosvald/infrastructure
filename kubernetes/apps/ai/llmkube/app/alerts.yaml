@@ -1,0 +1,18 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata: { name: llmkube-mac }
+spec:
+  groups:
+    - name: llmkube-mac
+      rules:
+        - alert: LLMKubeMacClientCertificateExpiring
+          expr: llmkube_metal_agent_client_certificate_expiry_seconds - time() < 30 * 24 * 60 * 60
+          for: 15m
+          labels: { severity: warning }
+          annotations: { summary: LLMKube Mac client certificate expires within 30 days }
+        - alert: LLMKubeMacUnavailable
+          expr: up{job="llmkube-mac"} == 0
+          for: 5m
+          labels: { severity: critical }
+          annotations: { summary: LLMKube Mac appliance is unavailable }

@@ -8,11 +8,13 @@ spec:
   chartRef:
     kind: OCIRepository
     name: reloader
+    namespace: flux-system
   interval: 1h
   values:
     fullnameOverride: *app
     reloader:
+      autoReloadAll: false
       readOnlyRootFileSystem: true
       podMonitor:
-        enabled: true
+        enabled: false
         namespace: "{{ .Release.Namespace }}"

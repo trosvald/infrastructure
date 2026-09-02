@@ -1,0 +1,62 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: keycloak-tofu-state-replication
+  namespace: security
+spec:
+  schedule: "43 3 * * *"
+  timeZone: Asia/Jakarta
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: keycloak-tofu-runner
+        spec:
+          serviceAccountName: keycloak-tofu-runner
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: replicate
+              image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+              command: [/bin/sh, -ec]
+              args:
+                - |
+                  mc alias set --api S3v4 local https://s3.monosense.io:443 "$LOCAL_ACCESS_KEY_ID" "$LOCAL_SECRET_ACCESS_KEY"
+                  mc alias set --api S3v4 r2 "$R2_ENDPOINT" "$R2_ACCESS_KEY_ID" "$R2_SECRET_ACCESS_KEY"
+                  mc mirror --preserve --overwrite local/kubernetes-keycloak-tofu/state "r2/$R2_BUCKET/keycloak-tofu/state"
+                  mc diff local/kubernetes-keycloak-tofu/state "r2/$R2_BUCKET/keycloak-tofu/state"
+              env:
+                - { name: LOCAL_ACCESS_KEY_ID, valueFrom: { secretKeyRef: { name: keycloak-tofu-runner, key: librefs_access_key_id } } }
+                - { name: LOCAL_SECRET_ACCESS_KEY, valueFrom: { secretKeyRef: { name: keycloak-tofu-runner, key: librefs_secret_access_key } } }
+                - { name: R2_ACCESS_KEY_ID, valueFrom: { secretKeyRef: { name: keycloak-tofu-runner, key: r2_access_key_id } } }
+                - { name: R2_SECRET_ACCESS_KEY, valueFrom: { secretKeyRef: { name: keycloak-tofu-runner, key: r2_secret_access_key } } }
+                - { name: R2_ENDPOINT, valueFrom: { secretKeyRef: { name: keycloak-tofu-runner, key: r2_endpoint } } }
+                - { name: R2_BUCKET, valueFrom: { secretKeyRef: { name: keycloak-tofu-runner, key: r2_bucket } } }
+              resources:
+                requests: { cpu: 20m, memory: 32Mi }
+                limits: { cpu: 200m, memory: 128Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: tmp
+              emptyDir: { sizeLimit: 64Mi }

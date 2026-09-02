@@ -31,6 +31,25 @@ routes:
   - gateway: {{ topology.network.gateway }}
     metric: 1024
 mtu: 1496
+{% if node.role == "controlplane" %}
+---
+apiVersion: v1alpha1
+kind: DummyLinkConfig
+name: kube-api-vip
+up: true
+addresses:
+  - address: {{ topology.cluster.api_sans[1] }}/32
+{% endif %}
+---
+apiVersion: v1alpha1
+kind: VLANConfig
+name: bond0.{{ topology.storage_network.vlan_id }}
+parent: bond0
+vlanID: {{ topology.storage_network.vlan_id }}
+up: true
+mtu: {{ topology.storage_network.mtu }}
+addresses:
+  - address: {{ node.storage_address }}/24
 ---
 apiVersion: v1alpha1
 kind: ResolverConfig
@@ -47,5 +66,5 @@ kind: TimeSyncConfig
 ntp:
   servers:
 {% for server in topology.ntp_servers %}
-    - {{ server }}
+  - {{ server }}
 {% endfor %}

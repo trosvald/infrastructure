@@ -8,6 +8,7 @@ spec:
   chartRef:
     kind: OCIRepository
     name: victoria-metrics-k8s-stack
+    namespace: flux-system
   interval: 1h
   install:
     crds: CreateReplace
@@ -44,10 +45,8 @@ spec:
       spec:
         retentionPeriod: 14d
         resources:
-          requests:
-            cpu: 100m
-          limits:
-            memory: 4Gi
+          requests: { cpu: 100m, memory: 512Mi }
+          limits: { cpu: "2", memory: 4Gi }
         storage:
           accessModes:
             - ReadWriteOnce
@@ -56,22 +55,12 @@ spec:
             requests:
               storage: 50Gi
       route:
-        enabled: true
-        hostnames:
-          - prometheus.monosense.io
-        parentRefs:
-          - name: envoy-internal
-            namespace: networking
+        enabled: false
 
     alertmanager:
-      config:
-        global:
-          resolve_timeout: 5m
-        route:
-          receiver: blackhole
-        receivers:
-          - name: blackhole
+      config: {}
       spec:
+        configSecret: alertmanager-config
         externalURL: https://alertmanager.monosense.io
         disableNamespaceMatcher: true
         selectAllByDefault: true
@@ -85,21 +74,30 @@ spec:
                 requests:
                   storage: 1Gi
       route:
-        enabled: true
-        hostnames:
-          - alertmanager.monosense.io
-        parentRefs:
-          - name: envoy-internal
-            namespace: networking
+        enabled: false
 
     vmalert:
       spec:
         selectAllByDefault: true
+        resources:
+          requests: { cpu: 50m, memory: 128Mi }
+          limits: { cpu: 500m, memory: 512Mi }
 
     vmagent:
       spec:
         selectAllByDefault: true
         scrapeInterval: 20s
+        statefulMode: true
+        statefulStorage:
+          volumeClaimTemplate:
+            spec:
+              accessModes: [ReadWriteOnce]
+              storageClassName: ceph-block
+              resources:
+                requests: { storage: 10Gi }
+        resources:
+          requests: { cpu: 100m, memory: 256Mi }
+          limits: { cpu: "1", memory: 1Gi }
 
     kubeEtcd:
       service:

@@ -1,0 +1,64 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dragonfly-default-deny
+spec:
+  podSelector:
+    matchLabels:
+      dragonfly.dragonflydb.io/name: dragonfly
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: dragonfly
+spec:
+  endpointSelector:
+    matchLabels:
+      dragonfly.dragonflydb.io/name: dragonfly
+  ingress:
+    - fromCIDR: [10.25.10.101/32]
+      toPorts:
+        - ports:
+            - { port: "6379", protocol: TCP }
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: security
+            k8s:io.kubernetes.serviceaccount.name: keycloak
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: ai
+            k8s:io.kubernetes.serviceaccount.name: litellm
+      toPorts:
+        - ports:
+            - { port: "6379", protocol: TCP }
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: database
+            k8s:control-plane: controller-manager
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: database
+            k8s:dragonfly.dragonflydb.io/name: dragonfly
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: observability
+            k8s:io.kubernetes.serviceaccount.name: vmagent
+      toPorts:
+        - ports:
+            - { port: "9999", protocol: TCP }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: database
+            k8s:dragonfly.dragonflydb.io/name: dragonfly
+      toPorts:
+        - ports:
+            - { port: "6379", protocol: TCP }
+            - { port: "9999", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: TCP }
+            - { port: "53", protocol: UDP }

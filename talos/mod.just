@@ -26,6 +26,25 @@ verify-node node:
 validate-inventory:
     "{{ source_directory() }}/scripts/validate_inventory.sh"
 
+[doc('Inventory exactly one stable approximately-1-TB OSD identity per node')]
+inventory-storage:
+    "{{ source_directory() }}/scripts/inventory_storage.py"
+
+[doc('Prove reviewed VLAN 2514 switch inventory and five-node tagged L2 reachability')]
+validate-storage-network:
+    "{{ source_directory() }}/scripts/validate_storage_network.py"
+
+[arg('node', pattern='bsd-k8s-0[1-5]')]
+[doc('Capture one pre-storage Talos rollback config after switch inventory review')]
+backup-storage-network-node node:
+    "{{ source_directory() }}/scripts/render.sh" backup-storage-network "{{ node }}"
+
+[arg('node', pattern='bsd-k8s-0[1-5]')]
+[confirm('Apply VLAN 2514 to ' + node + ' after reviewed rollback and switch gates? [y|N]')]
+[doc('Apply VLAN 2514 to one fixed node and restore on failed health')]
+apply-storage-network-node node:
+    "{{ source_directory() }}/scripts/render.sh" apply-storage-network "{{ node }}"
+
 [doc('Render and validate every synthetic Talos inventory node twice')]
 test:
     "{{ source_directory() }}/tests/test.sh"

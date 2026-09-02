@@ -27,8 +27,6 @@ services:
         mode: 0400
     cap_drop:
       - ALL
-    sysctls:
-      net.ipv4.ip_unprivileged_port_start: "443"
     security_opt:
       - no-new-privileges:true
     tmpfs:

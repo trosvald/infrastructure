@@ -1,0 +1,16 @@
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: llmkube
+  namespace: ai
+spec:
+  dependsOn:
+    - { name: cert-manager, namespace: cert-manager }
+    - { name: openbao-config, namespace: external-secrets }
+  interval: 1h
+  path: ./kubernetes/apps/ai/llmkube/app
+  prune: true
+  sourceRef: { kind: GitRepository, name: flux-system, namespace: flux-system }
+  targetNamespace: ai
+  wait: true

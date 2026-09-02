@@ -8,11 +8,14 @@ spec:
   chartRef:
     kind: OCIRepository
     name: ceph-csi-drivers
+    namespace: flux-system
   interval: 1h
   values:
     drivers:
       cephfs:
-        enabled: false
+        enabled: true
+        name: rook-ceph.cephfs.csi.ceph.com
+        snapshotPolicy: volumeSnapshot
       nfs:
         enabled: false
       nvmeof:

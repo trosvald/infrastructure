@@ -1,0 +1,78 @@
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: memini-sqlite-backup }
+spec:
+  schedule: "17 */6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - name: sqlite-backup
+              image: docker.io/keinos/sqlite3:3.50.4@sha256:7ea29f0c7e91a8c3f315e831459d07000f34e9e9b25fbc30be2e0481b3e0450f
+              command: [/bin/sh, -ec]
+              args:
+                - >-
+                  mkdir -p /data/backups/physical;
+                  out=/data/backups/physical/memini-$(date -u +%Y%m%dT%H%M%SZ).db;
+                  sqlite3 /data/memini.db "VACUUM INTO '$out'";
+                  test "$(sqlite3 "$out" 'PRAGMA integrity_check')" = ok;
+                  find /data/backups/physical -type f -mtime +14 -delete
+              securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+              volumeMounts: [{ name: data, mountPath: /data }]
+          volumes: [{ name: data, persistentVolumeClaim: { claimName: data-memini-0 } }]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: memini-logical-backup }
+spec:
+  schedule: "43 18 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - name: export
+              image: ghcr.io/eleboucher/memini:0.7.18@sha256:a8c5ef541beddbbaff615ab71494b3b79ae7798378358767e7decd9dcd0a836f
+              command: [/usr/local/bin/memini]
+              args: [export, --all-namespaces, --remote, http://memini:8080, -o, /data/backups/logical/memini.json]
+              env: [{ name: MEMINI_API_KEY, valueFrom: { secretKeyRef: { name: memini-api-keys, key: operator-key } } }]
+              securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+              volumeMounts: [{ name: data, mountPath: /data }]
+          volumes: [{ name: data, persistentVolumeClaim: { claimName: data-memini-0 } }]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: memini-fsck }
+spec:
+  schedule: "13 20 * * 0"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          securityContext: { runAsNonRoot: true, runAsUser: 65532, runAsGroup: 65532, fsGroup: 65532, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - name: fsck
+              image: docker.io/curlimages/curl:8.18.0@sha256:d94d07ba9e7d6de898b6d96c1a072f6f8266c687af78a74f380087a0addf5d17
+              command: [/bin/sh, -ec]
+              args:
+                - |
+                  test -n "$(find /data/backups/physical -type f -mtime -1 -print -quit)"
+                  curl --fail --silent --show-error --variable %MEMINI_API_KEY \
+                    --expand-header 'Authorization: Bearer {{MEMINI_API_KEY}}' \
+                    -X POST http://memini:8080/v1/fsck
+              env: [{ name: MEMINI_API_KEY, valueFrom: { secretKeyRef: { name: memini-api-keys, key: operator-key } } }]
+              securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+              volumeMounts: [{ name: data, mountPath: /data, readOnly: true }]
+          volumes: [{ name: data, persistentVolumeClaim: { claimName: data-memini-0 } }]

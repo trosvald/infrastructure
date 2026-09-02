@@ -59,25 +59,24 @@
           - bgp_preflight.stdout | length == 19
           - >-
             (bgp_preflight.stdout[0]
-             | regex_findall('(?m)^\\s*neighbor (10[.]25[.]11[.](?:11|12|13|14|15));$')
+             | regex_findall('(?m)^\\s*neighbor (10[.]25[.]11[.](?:11|12|13|14|15))\\s*\\{$')
              | unique | sort) == cilium_peers
           - >-
             (bgp_preflight.stdout[0]
              | regex_findall('(?m)^\\s*authentication-key\\s+.+;(?:\\s+## [A-Z-]+)?$')
-             | length) == 1
+             | length) == 5
           - bgp_preflight.stdout[0] is search('(?m)^\\s*peer-as 64513;$')
           - bgp_preflight.stdout[0] is search('(?m)^\\s*hold-time 9;$')
           - bgp_preflight.stdout[0] is search('(?m)^\\s*multipath;$')
         fail_msg: "Configured CILIUM group, peers, or value-free authentication path is not exact."
       no_log: true
 
-    - name: Require all five peers configured but not established
+    - name: Require all five peers configured and authenticated
       ansible.builtin.assert:
         that:
           - "item.1 is search('Peer: ' ~ item.0)"
           - "item.1 is search('AS 64513')"
           - "item.1 is search('Type: External')"
-          - "item.1 is not search('State: Established')"
           - "item.1 is search('Authentication key is configured')"
       loop: "{{ cilium_peers | zip(bgp_preflight.stdout[2:7]) }}"
       loop_control:

@@ -39,3 +39,6 @@ provisioning:
     match: {{ node.localpv_disk.match | tojson }}
 filesystem:
   type: xfs
+  projectQuotaSupport: true
+mount:
+  disableAccessTime: true

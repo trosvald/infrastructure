@@ -40,11 +40,14 @@ ENABLE_PUSH_CREATE_USER = false
 [federation]
 ENABLED = false
 [session]
-PROVIDER = file
-PROVIDER_CONFIG = /var/lib/gitea/data/sessions
+PROVIDER = redis
+PROVIDER_CONFIG = rediss://forgejo-a:@@dragonfly_password@@@dragonfly.internal:6379/0?pool_size=100&idle_timeout=180s
+[cache]
+ADAPTER = redis
+HOST = rediss://forgejo-a:@@dragonfly_password@@@dragonfly.internal:6379/0?pool_size=100&idle_timeout=180s
 [queue]
-TYPE = level
-CONN_STR = leveldb:///var/lib/gitea/data/queues
+TYPE = redis
+CONN_STR = rediss://forgejo-a:@@dragonfly_password@@@dragonfly.internal:6379/0?pool_size=100&idle_timeout=180s
 [actions]
 ENABLED = true
 DEFAULT_ACTIONS_URL = github

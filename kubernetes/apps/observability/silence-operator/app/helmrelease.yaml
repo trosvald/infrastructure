@@ -8,6 +8,7 @@ spec:
   chartRef:
     kind: OCIRepository
     name: silence-operator
+    namespace: flux-system
   interval: 1h
   values:
     alertmanagerAddress: http://vmalertmanager-victoria-metrics.observability.svc.cluster.local:9093

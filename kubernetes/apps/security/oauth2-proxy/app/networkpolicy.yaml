@@ -1,0 +1,100 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: oauth2-proxy-default-deny }
+spec:
+  podSelector:
+    matchLabels: { app.kubernetes.io/name: oauth2-proxy }
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: oauth2-proxy-ceph }
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/instance: oauth2-proxy-ceph }
+  ingress:
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: networking, k8s:io.kubernetes.serviceaccount.name: envoy-internal }
+      toPorts: [{ ports: [{ port: "4180", protocol: TCP }] }]
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: observability, k8s:io.kubernetes.serviceaccount.name: vmagent }
+      toPorts: [{ ports: [{ port: "44180", protocol: TCP }] }]
+  egress:
+    - toEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: kube-system, k8s:k8s-app: kube-dns }
+      toPorts: [{ ports: [{ port: "53", protocol: TCP }, { port: "53", protocol: UDP }] }]
+    - toCIDR: [10.25.20.40/32]
+      toPorts: [{ ports: [{ port: "443", protocol: TCP }] }]
+    - toServices:
+        - k8sService: { serviceName: rook-ceph-mgr-dashboard, namespace: rook-ceph }
+      toPorts: [{ ports: [{ port: "7000", protocol: TCP }] }]
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: oauth2-proxy-alertmanager }
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/instance: oauth2-proxy-alertmanager }
+  ingress:
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: networking, k8s:io.kubernetes.serviceaccount.name: envoy-internal }
+      toPorts: [{ ports: [{ port: "4180", protocol: TCP }] }]
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: observability, k8s:io.kubernetes.serviceaccount.name: vmagent }
+      toPorts: [{ ports: [{ port: "44180", protocol: TCP }] }]
+  egress:
+    - toEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: kube-system, k8s:k8s-app: kube-dns }
+      toPorts: [{ ports: [{ port: "53", protocol: TCP }, { port: "53", protocol: UDP }] }]
+    - toCIDR: [10.25.20.40/32]
+      toPorts: [{ ports: [{ port: "443", protocol: TCP }] }]
+    - toServices:
+        - k8sService: { serviceName: vmalertmanager-victoria-metrics, namespace: observability }
+      toPorts: [{ ports: [{ port: "9093", protocol: TCP }] }]
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: oauth2-proxy-vlogs }
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/instance: oauth2-proxy-vlogs }
+  ingress:
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: networking, k8s:io.kubernetes.serviceaccount.name: envoy-internal }
+      toPorts: [{ ports: [{ port: "4180", protocol: TCP }] }]
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: observability, k8s:io.kubernetes.serviceaccount.name: vmagent }
+      toPorts: [{ ports: [{ port: "44180", protocol: TCP }] }]
+  egress:
+    - toEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: kube-system, k8s:k8s-app: kube-dns }
+      toPorts: [{ ports: [{ port: "53", protocol: TCP }, { port: "53", protocol: UDP }] }]
+    - toCIDR: [10.25.20.40/32]
+      toPorts: [{ ports: [{ port: "443", protocol: TCP }] }]
+    - toServices:
+        - k8sService: { serviceName: victoria-logs, namespace: observability }
+      toPorts: [{ ports: [{ port: "9428", protocol: TCP }] }]
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata: { name: oauth2-proxy-memini }
+spec:
+  endpointSelector:
+    matchLabels: { app.kubernetes.io/instance: oauth2-proxy-memini }
+  ingress:
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: networking, k8s:io.kubernetes.serviceaccount.name: envoy-internal }
+      toPorts: [{ ports: [{ port: "4180", protocol: TCP }] }]
+    - fromEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: observability, k8s:io.kubernetes.serviceaccount.name: vmagent }
+      toPorts: [{ ports: [{ port: "44180", protocol: TCP }] }]
+  egress:
+    - toEndpoints:
+        - matchLabels: { k8s:io.kubernetes.pod.namespace: kube-system, k8s:k8s-app: kube-dns }
+      toPorts: [{ ports: [{ port: "53", protocol: TCP }, { port: "53", protocol: UDP }] }]
+    - toCIDR: [10.25.20.40/32]
+      toPorts: [{ ports: [{ port: "443", protocol: TCP }] }]
+    - toServices:
+        - k8sService: { serviceName: memini, namespace: ai }
+      toPorts: [{ ports: [{ port: "3000", protocol: TCP }] }]

@@ -17,6 +17,7 @@ networks:
   prod: { subnet: 198.51.100.0/24, gateway: 198.51.100.1, gateway_cidr: 198.51.100.1/24, dhcp_low: 198.51.100.100, dhcp_high: 198.51.100.200 }
   home: { subnet: 203.0.113.0/27, gateway: 203.0.113.1, gateway_cidr: 203.0.113.1/27, dhcp_low: 203.0.113.10, dhcp_high: 203.0.113.20 }
   dev: { subnet: 192.0.2.32/27, gateway: 192.0.2.33, gateway_cidr: 192.0.2.33/27, dhcp_low: 192.0.2.40, dhcp_high: 192.0.2.50 }
+  storage: { subnet: 198.18.3.0/24, gateway: 198.18.3.1, gateway_cidr: 198.18.3.1/24 }
   edge: { subnet: 198.18.1.0/24, gateway: 198.18.1.1, gateway_cidr: 198.18.1.1/24, haproxy: 198.18.1.10, haproxy_cidr: 198.18.1.10/32 }
 bgp:
   router_id: 198.51.100.1
@@ -25,7 +26,12 @@ bgp:
   peer_as: 64513
   peers: [198.51.100.11, 198.51.100.12, 198.51.100.13, 198.51.100.14, 198.51.100.15]
   lb_pool: 198.18.0.0/24
-  authentication_key: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq
+  authentication_keys:
+    - ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq
+    - ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopr
+    - ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnops
+    - ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopt
+    - ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopu
 reservations:
   mgmt:
     - { name: synthetic-mgmt-a, mac: "02:00:00:00:10:01", ip: 192.0.2.11 }

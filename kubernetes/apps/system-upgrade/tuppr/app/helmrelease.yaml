@@ -8,9 +8,34 @@ spec:
   chartRef:
     kind: OCIRepository
     name: tuppr
+    namespace: flux-system
   interval: 1h
   values:
     replicaCount: 2
+    serviceAccount:
+      create: true
+      automount: true
+    talosServiceAccount:
+      create: true
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65532
+      runAsGroup: 65532
+      fsGroup: 65532
+      seccompProfile: { type: RuntimeDefault }
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities: { drop: [ALL] }
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 65532
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: tuppr
+            topologyKey: kubernetes.io/hostname
     monitoring:
       dashboards:
         enabled: true

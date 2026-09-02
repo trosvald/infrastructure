@@ -1,0 +1,47 @@
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: keycloak-tofu-runner
+  namespace: security
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak-tofu-runner
+  ingress: []
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: security
+            k8s:app: keycloak
+      toPorts:
+        - ports:
+            - { port: "8443", protocol: TCP }
+    - toCIDR:
+        - 10.25.15.10/32
+      toPorts:
+        - ports:
+            - { port: "443", protocol: TCP }
+    - toCIDR:
+        - 10.25.13.34/32
+      toPorts:
+        - ports:
+            - { port: "8200", protocol: TCP }
+    - toCIDR:
+        - 10.25.13.65/32
+      toPorts:
+        - ports:
+            - { port: "9000", protocol: TCP }
+    - toFQDNs:
+        - matchPattern: "*.r2.cloudflarestorage.com"
+      toPorts:
+        - ports:
+            - { port: "443", protocol: TCP }

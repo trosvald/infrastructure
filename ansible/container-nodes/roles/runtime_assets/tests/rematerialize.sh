@@ -4,7 +4,7 @@ readonly HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT="$HERE/../files/rematerialize-c1-librefs-credentials"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work/bin" "$work/data/github.com/trosvald/infrastructure/.git" "$work/containers"
+mkdir -p "$work/bin" "$work/data/git.monosense.io/trosvald/infrastructure/.git" "$work/containers"
 printf '%s\n' 'c1-safe-api-secret-canary-abcdefghijklmnopqrstuvwxyz' >"$work/api-secret"
 chmod 0600 "$work/api-secret"
 containers=(librefs-c1 haproxy-c1 crowdsec-c1 crowdsec-spoa-c1 vector-c1 forgejo-c1 forgejo-postgres-c1 kopia-forgejo-c1)
@@ -24,7 +24,7 @@ if [[ "$1" == inspect ]]; then
   if [[ "$#" == 2 ]]; then exit 0; fi
   if [[ "$*" == *'.State.Status'* ]]; then printf '%s\n' running
   elif [[ "$*" == *'.State.Health'* ]]; then printf '%s\n' healthy
-  elif [[ "$*" == *'cd.doco.source.url'* ]]; then printf '%s\n' "${PROVENANCE_VALUE:-https://github.com/trosvald/infrastructure.git}"
+  elif [[ "$*" == *'cd.doco.source.url'* ]]; then printf '%s\n' "${PROVENANCE_VALUE:-https://git.monosense.io/trosvald/infrastructure.git}"
   else exit 20; fi
   exit
 fi
@@ -80,7 +80,7 @@ run() {
     DATA_ROOT="$work/data" API_SECRET_FILE="$work/api-secret" CONTAINER_ROOT="$work/containers" \
     SYSTEMCTL_LOG="$work/systemctl.log" PAYLOAD_LOG="$work/payload.log" \
     CURL_FAIL="${CURL_FAIL:-false}" GATE_FAIL="${GATE_FAIL:-false}" RM_FAIL="${RM_FAIL:-false}" \
-    STAT_RESULT="${STAT_RESULT:-root:root:600}" PROVENANCE_VALUE="${PROVENANCE_VALUE:-https://github.com/trosvald/infrastructure.git}" \
+    STAT_RESULT="${STAT_RESULT:-root:root:600}" PROVENANCE_VALUE="${PROVENANCE_VALUE:-https://git.monosense.io/trosvald/infrastructure.git}" \
     "$SCRIPT"
 }
 must_fail() { if run >/dev/null 2>&1; then printf 'expected rematerialization failure\n' >&2; exit 1; fi; }
@@ -89,7 +89,7 @@ output="$(run)"
 [[ "$output" == 'Doco rematerialized exact c1 project allowlist and normalized remote-main provenance' ]]
 [[ "$(sed -n '$=' "$work/payload.log")" == 2 ]]
 grep -F '"target":"rotation"' "$work/payload.log" >/dev/null
-grep -F 'https://github.com/trosvald/infrastructure.git' "$work/payload.log" >/dev/null
+grep -F 'https://git.monosense.io/trosvald/infrastructure.git' "$work/payload.log" >/dev/null
 for project in librefs-c1 edge-c1 forgejo-c1; do
   grep -Fx "stop doco-project-$project.service" "$work/systemctl.log" >/dev/null
   grep -Fx "start doco-project-$project.service" "$work/systemctl.log" >/dev/null

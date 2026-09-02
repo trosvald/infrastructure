@@ -48,15 +48,16 @@ interfaces:
   - name: xe-0/0/18
     description: TO-TOR1-10G-TRUNK
     native_vlan: 2510
-    units: [{ unit: 0, family: ethernet-switching, mode: trunk, vlans: [VLAN-MGMT, VLAN-PROD, VLAN-HOME, VLAN-DEV, VLAN-EDGE] }]
+    units: [{ unit: 0, family: ethernet-switching, mode: trunk, vlans: [VLAN-MGMT, VLAN-PROD, VLAN-HOME, VLAN-DEV, VLAN-STORAGE, VLAN-EDGE] }]
   - name: xe-0/0/19
     description: TO-TOR2-10G-TRUNK
     native_vlan: 2510
-    units: [{ unit: 0, family: ethernet-switching, mode: trunk, vlans: [VLAN-MGMT, VLAN-PROD, VLAN-HOME, VLAN-DEV, VLAN-EDGE] }]
+    units: [{ unit: 0, family: ethernet-switching, mode: trunk, vlans: [VLAN-MGMT, VLAN-PROD, VLAN-HOME, VLAN-DEV, VLAN-STORAGE, VLAN-EDGE] }]
   - name: irb
     units:
       - { unit: 2510, family: inet, mtu: 1496, address: { topology: networks.mgmt.gateway_cidr } }
       - { unit: 2511, family: inet, mtu: 1496, address: { topology: networks.prod.gateway_cidr } }
       - { unit: 2512, family: inet, mtu: 1496, address: { topology: networks.home.gateway_cidr } }
       - { unit: 2513, family: inet, mtu: 1496, address: { topology: networks.dev.gateway_cidr } }
+      - { unit: 2514, family: inet, mtu: 1496, address: { topology: networks.storage.gateway_cidr } }
       - { unit: 2515, family: inet, mtu: 1496, address: { topology: networks.edge.gateway_cidr } }

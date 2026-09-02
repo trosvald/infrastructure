@@ -1,0 +1,95 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: keycloak-operator
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: keycloak-operator
+rules:
+  - apiGroups: [k8s.keycloak.org]
+    resources: [keycloaks, keycloaks/status, keycloaks/finalizers, keycloakrealmimports, keycloakrealmimports/status, keycloakrealmimports/finalizers, keycloakoidcclients, keycloakoidcclients/status, keycloakoidcclients/finalizers, keycloaksamlclients, keycloaksamlclients/status, keycloaksamlclients/finalizers]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [monitoring.coreos.com]
+    resources: [servicemonitors]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [""]
+    resources: [services, secrets]
+    verbs: [create, delete, get, list, patch, update, watch]
+  - apiGroups: [""]
+    resources: [configmaps, pods]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: keycloak-operator
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: keycloak-operator }
+subjects:
+  - { kind: ServiceAccount, name: keycloak-operator }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-operator
+spec:
+  selector: { app.kubernetes.io/name: keycloak-operator }
+  ports:
+    - { name: http, port: 80, targetPort: 8080, protocol: TCP }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak-operator
+  labels: { app.kubernetes.io/name: keycloak-operator, app.kubernetes.io/version: 26.7.3 }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: keycloak-operator }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: keycloak-operator, app.kubernetes.io/version: 26.7.3 }
+    spec:
+      serviceAccountName: keycloak-operator
+      containers:
+        - name: keycloak-operator
+          image: quay.io/keycloak/keycloak-operator:26.7.3@sha256:e3856fd1aeb404f0e6ae2180b01875c8eeebd3748b0e5d955da77b5d41095ae4
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KUBERNETES_NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            - { name: RELATED_IMAGE_KEYCLOAK, value: "quay.io/keycloak/keycloak:26.7.3@sha256:ff4257d0d64efbe99ed1ddfaf07765cc3c36dc7518bf8324d41961327f441c54" }
+            - { name: QUARKUS_OPERATOR_SDK_CONTROLLERS_KEYCLOAKREALMIMPORTCONTROLLER_NAMESPACES, value: JOSDK_WATCH_CURRENT }
+            - { name: QUARKUS_OPERATOR_SDK_CONTROLLERS_KEYCLOAKSAMLCLIENTCONTROLLER_NAMESPACES, value: JOSDK_WATCH_CURRENT }
+            - { name: QUARKUS_OPERATOR_SDK_CONTROLLERS_KEYCLOAKCONTROLLER_NAMESPACES, value: JOSDK_WATCH_CURRENT }
+            - { name: QUARKUS_OPERATOR_SDK_CONTROLLERS_KEYCLOAKOIDCCLIENTCONTROLLER_NAMESPACES, value: JOSDK_WATCH_CURRENT }
+          ports:
+            - { name: http, containerPort: 8080, protocol: TCP }
+          livenessProbe: { httpGet: { path: /q/health/live, port: 8080 }, initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 10 }
+          readinessProbe: { httpGet: { path: /q/health/ready, port: 8080 }, initialDelaySeconds: 5, periodSeconds: 10, timeoutSeconds: 10 }
+          startupProbe: { httpGet: { path: /q/health/started, port: 8080 }, failureThreshold: 6, periodSeconds: 10, timeoutSeconds: 10 }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 700m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+            readOnlyRootFilesystem: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }

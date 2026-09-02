@@ -66,16 +66,18 @@ openssl x509 -in "$runtime/leaf.pem" -noout -checkend 33696000 >/dev/null
 bao kv get -mount=kv -format=json docker/c0/monitoring > "$runtime/current.json"
 chmod 0600 "$runtime/current.json"
 jq -e '
-  (.data.data | keys | sort) == ([
-    "backup_heartbeat_token", "telegram_bot_token", "telegram_chat_id", "vector_ingest_token"
-  ] | sort) or
-  (.data.data | keys | sort) == ([
-    "backup_heartbeat_token", "telegram_bot_token", "telegram_chat_id", "vector_ingest_token",
-    "vector_tls_certificate", "vector_tls_fullchain", "vector_tls_not_after",
-    "vector_tls_private_key", "vector_tls_serial"
-  ] | sort)
+  def base: ["backup_heartbeat_token", "telegram_bot_token", "telegram_chat_id"];
+  def tls: ["vector_tls_certificate", "vector_tls_fullchain", "vector_tls_not_after",
+            "vector_tls_private_key", "vector_tls_serial"];
+  def client: ["vector_client_ca", "vector_client_certificate", "vector_client_expiration",
+               "vector_client_private_key", "vector_client_serial"];
+  (.data.data | keys) as $keys |
+  (base - $keys | length) == 0 and
+  ($keys - (base + tls + client) | length) == 0 and
+  ((tls - $keys | length) == 0 or (tls - $keys | length) == (tls | length)) and
+  ((client - $keys | length) == 0 or (client - $keys | length) == (client | length))
 ' "$runtime/current.json" >/dev/null || {
-    echo "monitoring record differs from the exact pre-rotation or rotated contract" >&2
+    echo "monitoring record differs from the exact staged Vector contracts" >&2
     exit 1
 }
 version="$(jq -er '.data.metadata.version | select(type == "number" and . > 0)' "$runtime/current.json")"
@@ -103,13 +105,17 @@ chmod 0600 "$runtime/payload.json"
 bao patch kv/data/docker/c0/monitoring - < "$runtime/payload.json" >/dev/null
 bao kv get -mount=kv -format=json docker/c0/monitoring > "$runtime/verified.json"
 jq -e --arg serial "$serial" --arg not_after "$not_after" --argjson version "$((version + 1))" '
+  def base: ["backup_heartbeat_token", "telegram_bot_token", "telegram_chat_id"];
+  def tls: ["vector_tls_certificate", "vector_tls_fullchain", "vector_tls_not_after",
+            "vector_tls_private_key", "vector_tls_serial"];
+  def client: ["vector_client_ca", "vector_client_certificate", "vector_client_expiration",
+               "vector_client_private_key", "vector_client_serial"];
+  (.data.data | keys) as $keys |
   .data.metadata.version == $version and
   .data.data.vector_tls_serial == $serial and
   .data.data.vector_tls_not_after == $not_after and
-  (.data.data | keys | sort) == ([
-    "backup_heartbeat_token", "telegram_bot_token", "telegram_chat_id", "vector_ingest_token",
-    "vector_tls_certificate", "vector_tls_fullchain", "vector_tls_not_after",
-    "vector_tls_private_key", "vector_tls_serial"
-  ] | sort)
+  (base - $keys | length) == 0 and (tls - $keys | length) == 0 and
+  ($keys - (base + tls + client) | length) == 0 and
+  ((client - $keys | length) == 0 or (client - $keys | length) == (client | length))
 ' "$runtime/verified.json" >/dev/null
 printf '%s\n' 'Dedicated Vector SRX certificate rotated with strict IP identity'

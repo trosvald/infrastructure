@@ -1,0 +1,71 @@
+---
+name: Keycloak OpenTofu
+
+on:
+  pull_request:
+    paths:
+      - .forgejo/workflows/keycloak-tofu.yaml
+      - kubernetes/apps/security/keycloak-tofu/**
+  push:
+    branches: [main]
+    paths:
+      - .forgejo/workflows/keycloak-tofu.yaml
+      - kubernetes/apps/security/keycloak-tofu/**
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keycloak-tofu-global
+  cancel-in-progress: false
+
+env:
+  FORGEJO_SHA: ${{ forgejo.sha }}
+  FORGEJO_REF_NAME: ${{ forgejo.ref_name }}
+
+jobs:
+  pull-request-plan:
+    if: forgejo.event_name == 'pull_request'
+    runs-on: keycloak-tofu
+    timeout-minutes: 20
+    steps:
+      - name: Run redacted plan
+        run: |
+          set -eu
+          bootstrap="$(mktemp -d)"
+          trap 'rm -rf "$bootstrap"' EXIT
+          git -c credential.helper= clone --no-tags --filter=blob:none https://git.monosense.io/trosvald/infrastructure.git "$bootstrap/repository" >/dev/null 2>&1
+          git -C "$bootstrap/repository" checkout --detach "$FORGEJO_SHA" >/dev/null 2>&1
+          "$bootstrap/repository/kubernetes/apps/security/keycloak-tofu/run-tofu.sh" plan
+
+  protected-main-apply:
+    if: forgejo.event_name == 'push' && forgejo.ref_name == 'main'
+    runs-on: keycloak-tofu
+    timeout-minutes: 30
+    environment: keycloak-production
+    steps:
+      - name: Apply reviewed saved plan
+        run: |
+          set -eu
+          bootstrap="$(mktemp -d)"
+          trap 'rm -rf "$bootstrap"' EXIT
+          git -c credential.helper= clone --no-tags --filter=blob:none https://git.monosense.io/trosvald/infrastructure.git "$bootstrap/repository" >/dev/null 2>&1
+          git -C "$bootstrap/repository" checkout --detach "$FORGEJO_SHA" >/dev/null 2>&1
+          "$bootstrap/repository/kubernetes/apps/security/keycloak-tofu/run-tofu.sh" apply
+
+  daily-drift:
+    if: forgejo.event_name == 'schedule' || forgejo.event_name == 'workflow_dispatch'
+    runs-on: keycloak-tofu
+    timeout-minutes: 20
+    steps:
+      - name: Run plan-only drift check
+        run: |
+          set -eu
+          bootstrap="$(mktemp -d)"
+          trap 'rm -rf "$bootstrap"' EXIT
+          git -c credential.helper= clone --no-tags --filter=blob:none https://git.monosense.io/trosvald/infrastructure.git "$bootstrap/repository" >/dev/null 2>&1
+          git -C "$bootstrap/repository" checkout --detach "$FORGEJO_SHA" >/dev/null 2>&1
+          "$bootstrap/repository/kubernetes/apps/security/keycloak-tofu/run-tofu.sh" drift

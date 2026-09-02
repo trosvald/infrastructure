@@ -16,6 +16,10 @@ network:
 management_network:
   subnet: 192.0.2.0/24
   gateway: 192.0.2.1
+storage_network:
+  subnet: 203.0.113.0/24
+  vlan_id: 2514
+  mtu: 1496
 private_dns: [192.0.2.53, 198.51.100.53]
 ntp_servers: [time-a.example.invalid, time-b.example.invalid, time-c.example.invalid]
 versions:
@@ -29,6 +33,7 @@ nodes:
     role: controlplane
     address: 198.51.100.11
     bootstrap_address: 192.0.2.101
+    storage_address: 203.0.113.11
     bootstrap_link: eno1
     links:
       tor1: { permanent_mac: "02:00:00:00:01:11", switch: synthetic-tor1, port: xe-0/0/11, native_vlan: 2511 }
@@ -41,6 +46,7 @@ nodes:
     role: controlplane
     address: 198.51.100.12
     bootstrap_address: 192.0.2.102
+    storage_address: 203.0.113.12
     bootstrap_link: eno1
     links:
       tor1: { permanent_mac: "02:00:00:00:01:12", switch: synthetic-tor1, port: xe-0/0/12, native_vlan: 2511 }
@@ -53,6 +59,7 @@ nodes:
     role: controlplane
     address: 198.51.100.13
     bootstrap_address: 192.0.2.103
+    storage_address: 203.0.113.13
     bootstrap_link: eno1
     links:
       tor1: { permanent_mac: "02:00:00:00:01:13", switch: synthetic-tor1, port: xe-0/0/13, native_vlan: 2511 }
@@ -65,6 +72,7 @@ nodes:
     role: worker
     address: 198.51.100.14
     bootstrap_address: 192.0.2.104
+    storage_address: 203.0.113.14
     bootstrap_link: eno1
     links:
       tor1: { permanent_mac: "02:00:00:00:01:14", switch: synthetic-tor1, port: xe-0/0/14, native_vlan: 2511 }
@@ -77,6 +85,7 @@ nodes:
     role: worker
     address: 198.51.100.15
     bootstrap_address: 192.0.2.105
+    storage_address: 203.0.113.15
     bootstrap_link: eno1
     links:
       tor1: { permanent_mac: "02:00:00:00:01:15", switch: synthetic-tor1, port: xe-0/0/15, native_vlan: 2511 }

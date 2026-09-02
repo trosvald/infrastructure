@@ -14,8 +14,15 @@ The apply path does not read `.private/**`. Protected local inventory is used on
 inventory-provisioning utilities that populate reviewed OpenBao records.
 
 Run commands from the mise-activated repository shell. The renderer rejects any `talosctl` client
-whose version differs from `topology.versions.talos`; the current reviewed version is
-`v1.14.0-rc.2`. Do not use a Homebrew or system `talosctl` in place of the locked project binary.
+whose version differs from `topology.versions.talos`. The current five-node pre-bootstrap
+installation runs `v1.14.0-rc.2`, so the locked management client and modular machine
+configuration intentionally match that installed version. Do not use the v1.13 client for Talos
+configuration or lifecycle mutations.
+
+The installed prerelease is a current-state compatibility pin, not an upgrade target. No
+TalosUpgrade may point backward to v1.13. A separate reviewed change may add an attended
+TalosUpgrade only after a stable v1.14 patch is available and proves a forward transition from
+every live node.
 
 ```sh
 mise trust

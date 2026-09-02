@@ -1,0 +1,138 @@
+---
+- name: Validate protected Forgejo administrator recovery boundary
+  ansible.builtin.assert:
+    that:
+      - container_nodes_runtime_assets_secret_action | bool
+      - container_nodes_runtime_assets_controller_token | length > 20
+      - inventory_hostname == 'c1'
+      - not ansible_check_mode
+    fail_msg: Forgejo administrator recovery requires protected controller authentication on c1
+  no_log: true
+
+- name: Read the exact Forgejo credential record
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_openbao_url }}/v1/kv/data/docker/c1/forgejo"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ container_nodes_runtime_assets_controller_token }}"
+    return_content: true
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: runtime_forgejo_recovery_record
+  no_log: true
+  diff: false
+
+- name: Validate the Forgejo administrator credential contract
+  ansible.builtin.assert:
+    that:
+      - runtime_forgejo_recovery_record.json.data.metadata.version | int > 0
+      - runtime_forgejo_recovery_record.json.data.data.admin_password | length > 0
+      - runtime_forgejo_recovery_record.json.data.data.admin_email | length > 3
+  no_log: true
+  diff: false
+
+- name: Probe the OpenBao-held Forgejo administrator credential
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_forgejo_url }}/api/v1/user"
+    method: GET
+    url_username: "{{ container_nodes_runtime_assets_forgejo_admin }}"
+    url_password: "{{ runtime_forgejo_recovery_record.json.data.data.admin_password }}"
+    force_basic_auth: true
+    return_content: true
+    status_code: [200, 401, 403]
+  register: runtime_forgejo_recovery_probe
+  no_log: true
+  diff: false
+
+- name: Recover the existing Forgejo administrator credential
+  when: runtime_forgejo_recovery_probe.status != 200
+  block:
+    - name: Require the exact existing Forgejo administrator
+      ansible.builtin.command:
+        argv: [docker, exec, forgejo-c1, forgejo, --config, /etc/gitea/conf/app.ini, admin, user, list, --admin]
+      register: runtime_forgejo_recovery_admins
+      changed_when: false
+      no_log: true
+      diff: false
+
+    - name: Refuse recovery of an absent or ambiguous administrator
+      ansible.builtin.assert:
+        that:
+          - runtime_forgejo_recovery_admins.stdout is regex('(^|\\s)' + container_nodes_runtime_assets_forgejo_admin + '(\\s|$)')
+        fail_msg: The exact managed Forgejo administrator is absent; refusing credential recovery
+      no_log: true
+
+    - name: Set the existing administrator to the OpenBao-held credential
+      ansible.builtin.command:
+        argv:
+          - docker
+          - exec
+          - forgejo-c1
+          - forgejo
+          - --config
+          - /etc/gitea/conf/app.ini
+          - admin
+          - user
+          - change-password
+          - --username
+          - "{{ container_nodes_runtime_assets_forgejo_admin }}"
+          - --password
+          - "{{ runtime_forgejo_recovery_record.json.data.data.admin_password }}"
+          - --must-change-password=false
+      changed_when: true
+      no_log: true
+      diff: false
+
+- name: Verify the recovered Forgejo administrator credential
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_forgejo_url }}/api/v1/user"
+    method: GET
+    url_username: "{{ container_nodes_runtime_assets_forgejo_admin }}"
+    url_password: "{{ runtime_forgejo_recovery_record.json.data.data.admin_password }}"
+    force_basic_auth: true
+    return_content: true
+    status_code: 200
+  register: runtime_forgejo_recovery_verify
+  no_log: true
+  diff: false
+- name: Reconcile the managed administrator email and password-change gate
+  ansible.builtin.uri:
+    url: >-
+      {{ container_nodes_runtime_assets_forgejo_url
+         }}/api/v1/admin/users/{{ container_nodes_runtime_assets_forgejo_admin }}
+    method: PATCH
+    url_username: "{{ container_nodes_runtime_assets_forgejo_admin }}"
+    url_password: "{{ runtime_forgejo_recovery_record.json.data.data.admin_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      email: "{{ runtime_forgejo_recovery_record.json.data.data.admin_email }}"
+      must_change_password: false
+    status_code: 200
+  when: runtime_forgejo_recovery_verify.json.email != runtime_forgejo_recovery_record.json.data.data.admin_email
+  no_log: true
+  diff: false
+
+- name: Read the final Forgejo administrator identity
+  ansible.builtin.uri:
+    url: "{{ container_nodes_runtime_assets_forgejo_url }}/api/v1/user"
+    method: GET
+    url_username: "{{ container_nodes_runtime_assets_forgejo_admin }}"
+    url_password: "{{ runtime_forgejo_recovery_record.json.data.data.admin_password }}"
+    force_basic_auth: true
+    return_content: true
+    status_code: 200
+  register: runtime_forgejo_recovery_final
+  no_log: true
+  diff: false
+
+
+- name: Require the recovered Forgejo administrator identity
+  ansible.builtin.assert:
+    that:
+      - runtime_forgejo_recovery_final.json.login == container_nodes_runtime_assets_forgejo_admin
+      - runtime_forgejo_recovery_final.json.is_admin is sameas true
+      - runtime_forgejo_recovery_final.json.email == runtime_forgejo_recovery_record.json.data.data.admin_email
+  no_log: true
+  diff: false

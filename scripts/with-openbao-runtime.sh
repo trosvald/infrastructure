@@ -28,6 +28,30 @@ case "$1" in
             exit 2
         }
         ;;
+    scripts/provision-powerdns-dynamic-dns.sh)
+        [[ $# == 1 ]] || {
+            echo "PowerDNS dynamic DNS provisioner accepts no arguments" >&2
+            exit 2
+        }
+        ;;
+    scripts/provision-kubernetes-backup.sh)
+        [[ $# == 1 ]] || {
+            echo "Kubernetes backup provisioner accepts no arguments" >&2
+            exit 2
+        }
+        ;;
+    scripts/provision-kubernetes-r2-backup.sh)
+        [[ $# == 1 ]] || {
+            echo "Kubernetes R2 backup provisioner accepts no arguments" >&2
+            exit 2
+        }
+        ;;
+    scripts/provision-database-secrets.sh)
+        [[ $# == 1 ]] || {
+            echo "Database secret provisioner accepts no arguments" >&2
+            exit 2
+        }
+        ;;
     scripts/rotate-vector-srx-certificate.sh)
         [[ $# == 1 ]] || {
             echo "Vector SRX certificate rotator accepts no arguments" >&2
@@ -47,8 +71,8 @@ case "$1" in
         }
         ;;
     scripts/run-container-nodes-openbao-action.sh)
-        [[ $# == 2 && "${2:-}" =~ ^(prepare-applications|provision-secrets|verify)$ ]] || {
-            echo "Protected container-node runtime accepts prepare-applications, provision-secrets, or verify" >&2
+        [[ $# == 2 && "${2:-}" =~ ^(prepare-applications|provision-secrets|recover-c1|recover-monitoring|verify)$ ]] || {
+            echo "Protected container-node runtime accepts prepare-applications, provision-secrets, recover-c1, recover-monitoring, or verify" >&2
             exit 2
         }
         ;;
@@ -61,6 +85,12 @@ case "$1" in
     bootstrap/scripts/cluster.sh)
         [[ "${2:-}" == "--authenticated" ]] || {
             echo "Bootstrap runtime must use the authenticated internal entry point" >&2
+            exit 2
+        }
+        ;;
+    scripts/configure-openbao-kubernetes.sh|scripts/verify-openbao-kubernetes.sh)
+        [[ $# == 1 ]] || {
+            echo "OpenBao Kubernetes action accepts no arguments" >&2
             exit 2
         }
         ;;

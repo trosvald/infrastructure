@@ -1,0 +1,39 @@
+---
+apiVersion: fluxcd.controlplane.io/v1
+kind: FluxInstance
+metadata:
+  name: flux
+  namespace: flux-system
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  distribution:
+    version: "2.x"
+    registry: ghcr.io/fluxcd
+  components:
+    - source-controller
+    - kustomize-controller
+    - helm-controller
+    - notification-controller
+    - image-reflector-controller
+    - image-automation-controller
+  cluster:
+    type: kubernetes
+    multitenant: false
+    networkPolicy: true
+    domain: cluster.local
+  sync:
+    kind: GitRepository
+    url: https://git.monosense.io/trosvald/infrastructure.git
+    ref: refs/heads/main
+    path: ./kubernetes/flux/cluster
+    interval: 5m
+  kustomize:
+    patches:
+      - target:
+          kind: Deployment
+          name: (helm-controller|kustomize-controller)
+        patch: |-
+          - op: add
+            path: /spec/template/spec/containers/0/args/-
+            value: --watch-configs-label-selector=reconcile.fluxcd.io/watch=Enabled

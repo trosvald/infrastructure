@@ -9,11 +9,11 @@ x=json.load(sys.stdin);i=x[0] if len(x)==1 else {};v=(i.get("ifname")=="c1-svc-s
 address_status(){ "$IP_BIN" -j address show dev "$SHIM" | "$PYTHON_BIN" -c 'import json,sys
 x=json.load(sys.stdin);a=[(v.get("local"),v.get("prefixlen")) for v in x[0].get("addr_info",[]) if v.get("family")=="inet"] if len(x)==1 else None;raise SystemExit(0 if a==[("10.25.13.17",32)] else 4 if a==[] else 3)'; }
 route_status(){ "$IP_BIN" -j route show 10.25.13.64/27 | "$PYTHON_BIN" -c 'import json,sys
-x=json.load(sys.stdin);raise SystemExit(4 if not x else 0 if len(x)==1 and x[0].get("dst")=="10.25.13.64/27" and x[0].get("dev")=="c1-svc-shim" and x[0].get("scope")=="link" else 3)'; }
+x=json.load(sys.stdin);exact=len(x)==1 and x[0].get("dst")=="10.25.13.64/27" and x[0].get("dev")=="c1-svc-shim" and x[0].get("scope")=="link";raise SystemExit(4 if not x else 0 if exact and x[0].get("prefsrc")=="10.25.13.17" else 5 if exact and "prefsrc" not in x[0] else 3)'; }
 main(){ local mode="${1:-check}" s; [[ $# -le 1 && ( "$mode" == check || "$mode" == apply ) ]] || fail 'usage: ensure-c1-services-shim [check|apply]'; inspect_parent
  if ! "$IP_BIN" link show dev "$SHIM" >/dev/null 2>&1; then [[ "$mode" == apply ]] || { printf 'shim absent; apply would create it\n'; return; }; "$IP_BIN" link add "$SHIM" link "$PARENT" type ipvlan mode l2; "$IP_BIN" link set dev "$SHIM" mtu 1496; fi
  [[ "$mode" != apply ]] || "$IP_BIN" link set dev "$SHIM" up; inspect_link
  set +e; address_status; s=$?; set -e; case $s in 0);;4) [[ "$mode" == apply ]] || fail 'shim address absent'; "$IP_BIN" address add 10.25.13.17/32 dev "$SHIM"; address_status;;*) fail 'shim address drift';;esac
- set +e; route_status; s=$?; set -e; case $s in 0);;4) [[ "$mode" == apply ]] || fail 'shim route absent'; "$IP_BIN" route add 10.25.13.64/27 dev "$SHIM"; route_status;;*) fail 'shim route drift';;esac
+ set +e; route_status; s=$?; set -e; case $s in 0);;4) [[ "$mode" == apply ]] || fail 'shim route absent'; "$IP_BIN" route add 10.25.13.64/27 dev "$SHIM" src 10.25.13.17; route_status;;5) [[ "$mode" == apply ]] || fail 'shim route lacks required source'; "$IP_BIN" route replace 10.25.13.64/27 dev "$SHIM" src 10.25.13.17; route_status;;*) fail 'shim route drift';;esac
 }
 main "$@"

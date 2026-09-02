@@ -10,6 +10,10 @@ path "kv/data/docker/c1/forgejo" {
   capabilities = ["read"]
 }
 
+path "kv/data/platform/kubernetes/database/dragonfly" {
+  capabilities = ["read"]
+}
+
 path "auth/token/lookup-self" {
   capabilities = ["read"]
 }

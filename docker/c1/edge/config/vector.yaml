@@ -1,7 +1,4 @@
-secret:
-  local:
-    type: directory
-    path: /run/secrets
+data_dir: /var/lib/vector
 sources:
   haproxy:
     type: socket
@@ -20,29 +17,33 @@ transforms:
     inputs: [haproxy, forgejo]
     drop_on_error: true
     source: |
-      del(.authorization)
-      del(.cookie)
-      del(.headers)
-      del(.password)
-      del(.token)
-      del(.request_body)
-      if exists(.message) {
-        .message = redact!(string!(.message), filters: [r'(?i)(authorization|cookie|password|token|secret)=?[^ ]*', r'https?://[^/@ ]+:[^/@ ]+@'])
+      message = to_string(.message) ?? ""
+      app = if exists(.file) { "forgejo" } else { "haproxy" }
+      message = redact!(message, filters: [r'(?i)(authorization|cookie|password|token|secret)=?[^ ]*', r'https?://[^/@ ]+:[^/@ ]+@'])
+      . = {
+        "message": message,
+        "app": app,
+        "host": to_string(.host) ?? "c1",
+        "source_type": to_string(.source_type) ?? "unknown"
       }
 sinks:
-  c0:
+  victoria_logs:
     type: http
     inputs: [sanitize]
-    uri: https://logs-ingest.monosense.io:8686/
+    uri: https://vlogs-ingest.internal:8444/insert/jsonline?_stream_fields=host,source_type,app&_msg_field=message
     method: post
     encoding: { codec: json }
     framing: { method: newline_delimited }
-    auth:
-      strategy: bearer
-      token: SECRET[local.vector_token]
+    compression: gzip
     tls:
       verify_certificate: true
       verify_hostname: true
-      ca_file: /etc/ssl/certs/ca-certificates.crt
+      ca_file: /run/vector-client/ca.pem
+      crt_file: /run/vector-client/certificate.pem
+      key_file: /run/vector-client/private-key.pem
     batch: { max_bytes: 1048576, timeout_secs: 2 }
-    request: { timeout_secs: 5, retry_attempts: 3 }
+    request: { timeout_secs: 10, retry_attempts: 5 }
+    buffer:
+      type: disk
+      max_size: 268435488
+      when_full: block

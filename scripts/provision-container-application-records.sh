@@ -83,7 +83,7 @@ jq -er '.DEFAULT.dns_cloudflare_api_token | select(type == "string" and length >
 chmod 0600 "$runtime/acme_email" "$runtime/cloudflare_token"
 printf '%s\n' 'Encrypted ACME and Cloudflare sources validated'
 
-for name in vector_ingest_token backup_heartbeat_token crowdsec_lapi_key crowdsec_bouncer_key \
+for name in backup_heartbeat_token crowdsec_lapi_key crowdsec_bouncer_key \
     postgres_password forgejo_secret_key forgejo_internal_token admin_password \
     kopia_repository_password librefs_access_key librefs_secret_key; do
     openssl rand -hex 32 > "$runtime/$name"
@@ -106,7 +106,7 @@ mkdir -m 0700 "$runtime/mc"
 tunnel_port="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 ssh -M -S "$ssh_control" -fN -o BatchMode=yes -o ExitOnForwardFailure=yes \
     -o StrictHostKeyChecking=yes \
-    -L "127.0.0.1:$tunnel_port:10.25.13.65:9000" monosense@10.25.10.101
+    -L "127.0.0.1:$tunnel_port:10.25.13.65:443" monosense@10.25.10.101
 touch "$runtime/ssh-tunnel"
 python3 - "$runtime" "$tunnel_port" <<'PY'
 import json, pathlib, sys
@@ -164,8 +164,8 @@ leaf = re.search(r"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----", ful
 serial = format(int(subprocess.check_output(["openssl","x509","-in",str(lineage / "cert.pem"),"-noout","-serial"], text=True).strip().split("=",1)[1], 16), "x")
 end = subprocess.check_output(["openssl","x509","-in",str(lineage / "cert.pem"),"-noout","-enddate"], text=True).strip().split("=",1)[1]
 not_after = datetime.datetime.strptime(end, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=datetime.timezone.utc).isoformat().replace("+00:00","Z")
-payload("monitoring-payload.json", {k:text(k) for k in ["telegram_bot_token","telegram_chat_id","vector_ingest_token","backup_heartbeat_token"]})
-payload("edge-payload.json", {"acme_email":text("acme_email"),"cloudflare_dns_token":text("cloudflare_token"),"maxmind_account_id":text("maxmind_account_id"),"maxmind_license_key":text("maxmind_license_key"),"crowdsec_lapi_key":text("crowdsec_lapi_key"),"crowdsec_bouncer_key":text("crowdsec_bouncer_key"),"vector_ingest_token":text("vector_ingest_token")})
+payload("monitoring-payload.json", {k:text(k) for k in ["telegram_bot_token","telegram_chat_id","backup_heartbeat_token"]})
+payload("edge-payload.json", {"acme_email":text("acme_email"),"cloudflare_dns_token":text("cloudflare_token"),"maxmind_account_id":text("maxmind_account_id"),"maxmind_license_key":text("maxmind_license_key"),"crowdsec_lapi_key":text("crowdsec_lapi_key"),"crowdsec_bouncer_key":text("crowdsec_bouncer_key")})
 payload("forgejo-payload.json", {k:text(k) for k in ["postgres_password","forgejo_secret_key","forgejo_internal_token","forgejo_jwt_secret","forgejo_lfs_jwt_secret","admin_password","admin_email","zoho_username","zoho_password","kopia_repository_password","librefs_access_key","librefs_secret_key"]})
 payload("wildcard-payload.json", {"certificate":leaf,"fullchain":fullchain,"private_key":private_key,"serial":serial,"not_after":not_after})
 PY

@@ -9,9 +9,9 @@ if [[ "$*" == '-j list table inet c1_forgejo_egress' ]]; then
  [[ -e "$s/exists" ]] || { printf 'Error: No such file or directory\n' >&2; exit 1; }
  python3 - "$s" <<'PY'
 import json,sys
-s=sys.argv[1]; comments=['table','denied-v4','forward']+['r%d'%i for i in range(1,8)]
+s=sys.argv[1]; comments=['table','denied-v4','forward']+['r%d'%i for i in range(1,9)]
 o=[{'table':{'family':'inet','name':'c1_forgejo_egress','comment':'monosense:forgejo-egress:v1:table'}},{'set':{'family':'inet','table':'c1_forgejo_egress','name':'denied_v4','type':'ipv4_addr','flags':['interval'],'comment':'monosense:forgejo-egress:v1:denied-v4'}},{'chain':{'family':'inet','table':'c1_forgejo_egress','name':'forward','hook':'forward','prio':-5,'policy':'accept','comment':'monosense:forgejo-egress:v1:forward'}}]
-for i in range(1,8): o.append({'rule':{'family':'inet','table':'c1_forgejo_egress','chain':'forward','comment':'monosense:forgejo-egress:v1:r%d'%i}})
+for i in range(1,9): o.append({'rule':{'family':'inet','table':'c1_forgejo_egress','chain':'forward','comment':'monosense:forgejo-egress:v1:r%d'%i}})
 if __import__('os').environ.get('LEGACY') and not __import__('os').path.exists(s+'/labeled'):
     for obj in o: next(iter(obj.values())).pop('comment')
 if __import__('os').environ.get('DRIFT'): o[-1]['rule']['comment']='bad'
@@ -21,6 +21,7 @@ elif [[ "$*" == '-nn list table inet c1_forgejo_egress' ]]; then
  cat <<'TXT'
 ct state 0x2,0x4 accept
 ip saddr 172.30.15.67 ip daddr 10.25.13.65 tcp dport 443 accept
+ip saddr 172.30.15.66 ip daddr 10.25.20.41 tcp dport 6379 accept
 ip saddr { 172.30.15.66, 172.30.15.67 } ip daddr @denied_v4 drop
 ip saddr { 172.30.15.66, 172.30.15.67 } udp dport 53 accept
 ip saddr { 172.30.15.66, 172.30.15.67 } tcp dport { 53, 443 } accept

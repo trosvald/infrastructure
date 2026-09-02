@@ -83,8 +83,10 @@ node_index="$(jq -r --arg hostname "$hostname" \
 marker="$FAKE_STATE_DIR/applied-$hostname"
 
 if [[ "$joined" == *" apply-config "* ]]; then
-    printf 'apply %s\n' "$target" >>"$FAKE_STATE_DIR/mutations"
-    touch "$marker"
+    if [[ "$joined" != *" --dry-run "* ]]; then
+        printf 'apply %s\n' "$target" >>"$FAKE_STATE_DIR/mutations"
+        touch "$marker"
+    fi
     exit 0
 fi
 if [[ "$joined" == *" reboot "* ]]; then
@@ -116,6 +118,7 @@ osd_serial="$(jq -r '.future_osd.serial' <<<"$node_json")"
 tor1="$(jq -r '.links.tor1.permanent_mac' <<<"$node_json")"
 tor2="$(jq -r '.links.tor2.permanent_mac' <<<"$node_json")"
 address="$(jq -r '.address' <<<"$node_json")"
+storage_address="$(jq -r '.storage_address' <<<"$node_json")"
 bootstrap="$(jq -r '.bootstrap_address' <<<"$node_json")"
 
 case "$resource" in
@@ -150,7 +153,8 @@ case "$resource" in
         fi
         ;;
     addressstatus)
-        printf 'address: %s/24\naddress: %s/24\n' "$address" "$bootstrap"
+        printf 'address: %s/24\naddress: %s/24\naddress: %s/24\n' \
+            "$address" "$bootstrap" "$storage_address"
         ;;
     extensionstatus)
         printf '%s\n' \
@@ -195,12 +199,14 @@ yq -o=json '.' "$talos_dir/tests/topology.yml" | jq '
     .cluster.snapshot_age_recipient = "age14a89rfvvdrf62v0xe8hlp6hdvgwfnxcku9sjrxc2f47ujkqf5qqqz0c7wk" |
     .network = {subnet:"10.25.11.0/24", gateway:"10.25.11.1"} |
     .management_network = {subnet:"10.25.10.0/24", gateway:"10.25.10.1"} |
+    .storage_network = {subnet:"10.25.14.0/24", vlan_id:2514, mtu:1496} |
     .private_dns = ["10.25.13.35", "10.25.10.100"] |
     .ntp_servers = ["time.cloudflare.com", "time.google.com", "0.id.pool.ntp.org"] |
     .approved_admin_sources = ["10.25.10.0/24"] |
     .nodes |= to_entries | .nodes |= map(
         .value.address = "10.25.11.\(.key + 11)" |
         .value.bootstrap_address = "10.25.10.\(.key + 111)" |
+        .value.storage_address = "10.25.14.\(.key + 11)" |
         .value.bootstrap_link = "eno1" |
         .value.links.tor1.switch = "tor1" |
         .value.links.tor2.switch = "tor2" |
@@ -240,11 +246,11 @@ run_case() {
 }
 
 run_case installed 1 bsd-k8s-01
-[[ "$(awk '$1 == "apply" {count++} END {print count+0}' \
-    "$runtime_dir/installed/state/mutations")" == 0 ]]
-[[ "$(awk '$1 == "reboot" {print $2}' "$runtime_dir/installed/state/mutations")" == \
+[[ "$(awk '$1 == "apply" {print $2}' "$runtime_dir/installed/state/mutations")" == \
     '10.25.10.111' ]]
-grep -Fqx 'bsd-k8s-01: installed configuration verified; apply skipped' \
+[[ "$(awk '$1 == "reboot" {count++} END {print count+0}' \
+    "$runtime_dir/installed/state/mutations")" == 0 ]]
+grep -Fqx 'bsd-k8s-01: installed configuration reconciled and verified' \
     "$runtime_dir/installed/stdout"
 
 run_case maintenance 1 bsd-k8s-02 DELAY_ROUTE_HOST=bsd-k8s-02
@@ -274,7 +280,7 @@ if run_case drift 1 bsd-k8s-01 DRIFT_HOST=bsd-k8s-01; then
     exit 1
 fi
 [[ ! -s "$runtime_dir/drift/state/mutations" ]]
-if run_case old-client 1 bsd-k8s-02 CLIENT_VERSION=v1.13.8; then
+if run_case old-client 1 bsd-k8s-02 CLIENT_VERSION=v1.14.0-rc.1; then
     echo 'mismatched talosctl client unexpectedly passed rendering' >&2
     exit 1
 fi
@@ -298,10 +304,8 @@ import sys
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
 for forbidden in (
-    ".private/",
     "talosctl bootstrap",
     "etcd snapshot",
-    "kubectl",
     "helmfile",
     "cilium",
     "01 02 03 04 05",
@@ -309,6 +313,10 @@ for forbidden in (
     assert forbidden not in source, forbidden
 assert "apply-all" not in source
 assert 'apply_one_node "$hostname"' in source
+assert 'apply_storage_network "$hostname"' in source
+assert 'backup_storage_network "$hostname"' in source
+assert "reviewed pre-storage Talos backup is absent or unsafe" in source
+assert "health failed; restoring reviewed pre-storage config" in source
 PY
 
 printf 'Talos per-node initial apply orchestration is fail-closed and restartable\n'
