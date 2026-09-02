@@ -41,7 +41,7 @@ assert 'if [[ "$count" == 0 ]]' in script
 assert "three_members_ready" in script and "expected exactly three etcd members" in script
 assert "revalidating bootstrap stage recorded by advisory checkpoint" in script
 assert "set_kubeconfig_server https://10.25.11.11:6443" in script
-assert "set_kubeconfig_server https://k8s.monosense.io:6443" in script
+assert script.count("set_kubeconfig_server https://k8s.monosense.io:6443") == 2
 assert "jsonpath='{.contexts[0].context.cluster}'" in script
 assert "pool-infrastructure pool-internal pool-edge-backend advertisement peers" in script
 assert "-l k8s-app=cilium -o name" in script

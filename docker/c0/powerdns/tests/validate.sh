@@ -19,7 +19,7 @@ for zone_file in "$project_dir"/zones/*.zone; do
         forward_zone=$zone
     fi
 done
-[[ "${#managed_zones[@]}" == 6 && -n "$forward_zone" ]]
+[[ "${#managed_zones[@]}" == 7 && -n "$forward_zone" ]]
 host_uid="$(id -u)"
 host_gid="$(id -g)"
 case "$(uname -s)" in

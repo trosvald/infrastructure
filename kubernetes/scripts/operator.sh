@@ -118,6 +118,8 @@ inventory_retired_data() {
 }
 
 require_command kubectl
+
+
 case "${1:-}" in
     status)
         [[ $# == 1 ]] || usage

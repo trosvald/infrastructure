@@ -20,6 +20,14 @@ render-root root:
 status:
     "{{ source_directory() }}/scripts/operator.sh" status
 
+[doc('Prune pods in Failed, Pending, or Succeeded state')]
+prune-pods:
+    for phase in Failed Pending Succeeded; do
+        kubectl delete pods -A --field-selector status.phase="$phase" \
+            --ignore-not-found=true
+    done
+
+
 [doc('Activate and verify the repository source root')]
 activate-repositories:
     "{{ source_directory() }}/scripts/operator.sh" activate flux-repositories
