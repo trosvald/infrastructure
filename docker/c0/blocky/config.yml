@@ -26,6 +26,7 @@ conditional:
     12.25.10.in-addr.arpa: 10.25.13.33
     13.25.10.in-addr.arpa: 10.25.13.33
     15.25.10.in-addr.arpa: 10.25.13.33
+    20.25.10.in-addr.arpa: 10.25.13.33
 
 blocking:
   denylists:
@@ -48,6 +49,8 @@ blocking:
         *.13.25.10.in-addr.arpa
         15.25.10.in-addr.arpa
         *.15.25.10.in-addr.arpa
+        20.25.10.in-addr.arpa
+        *.20.25.10.in-addr.arpa
         # Add future false-positive exceptions here, one domain per line.
   clientGroupsBlock:
     default:
