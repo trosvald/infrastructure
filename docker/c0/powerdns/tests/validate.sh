@@ -191,7 +191,10 @@ while IFS='|' read -r name address; do
     if [[ "$address" == 10.25.15.10 && "$name" == git.monosense.io ]]; then
         [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$reverse_zone' AND r.name='$host.$reverse_zone' AND r.type='PTR' AND r.content='edge.monosense.io';")" == 1 ]]
     else
-        [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$reverse_zone' AND r.name='$host.$reverse_zone' AND r.type='PTR' AND r.content='$name';")" == 1 ]]
+        [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$reverse_zone' AND r.name='$host.$reverse_zone' AND r.type='PTR' AND r.content='$name';")" == 1 ]] || {
+            printf '%s\n' "A record lacks its exact PTR: $name -> $address" >&2
+            exit 1
+        }
     fi
 done <<<"$a_inventory"
 
@@ -200,7 +203,10 @@ while IFS='|' read -r reverse_name target; do
     IFS=. read -r host third second first suffix <<<"$reverse_name"
     [[ "$suffix" == in-addr.arpa ]]
     address="$first.$second.$third.$host"
-    [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$forward_zone' AND r.name='$target' AND r.type='A' AND r.content='$address';")" == 1 ]]
+    [[ "$(sqlite "$data_dir" "SELECT COUNT(*) FROM records AS r JOIN domains AS d ON d.id=r.domain_id WHERE d.name='$forward_zone' AND r.name='$target' AND r.type='A' AND r.content='$address';")" == 1 ]] || {
+        printf '%s\n' "PTR record lacks its exact A: $reverse_name -> $target" >&2
+        exit 1
+    }
 done <<<"$ptr_inventory"
 
 "${docker_run[@]}" \
