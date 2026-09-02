@@ -7,5 +7,6 @@ components:
   - ../../components/alerts
 resources:
   - ./namespace.yaml
+  - ./ceph-csi-operator/ks.yaml
   - ./ceph-csi-drivers/ks.yaml
   - ./rook-ceph/ks.yaml

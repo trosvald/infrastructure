@@ -6,6 +6,9 @@ metadata:
   name: tuppr
   namespace: system-upgrade
 spec:
+  dependsOn:
+    - name: grafana-operator
+      namespace: observability
   interval: 1h
   path: ./kubernetes/apps/system-upgrade/tuppr/app
   prune: true
