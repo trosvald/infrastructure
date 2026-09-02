@@ -7,7 +7,8 @@ spec:
   chart:
     spec:
       chart: litellm-helm
-      version: 1.1.2
+      version: 1.99.0
+
       sourceRef: { kind: OCIRepository, name: litellm-helm, namespace: flux-system }
   values:
     replicaCount: 2

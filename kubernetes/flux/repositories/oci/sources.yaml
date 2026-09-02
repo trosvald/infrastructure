@@ -123,7 +123,7 @@ spec:
     operation: copy
   ref:
     tag: v1.6.1
-  url: oci://ghcr.io/dragonflydb/dragonfly-operator/helm
+  url: oci://ghcr.io/dragonflydb/dragonfly-operator/helm/dragonfly-operator
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: OCIRepository
@@ -430,5 +430,6 @@ spec:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
   ref:
-    tag: 1.1.2
+    tag: 1.99.0
+
   url: oci://ghcr.io/berriai/litellm-helm

@@ -931,7 +931,7 @@ def validate_ai_contracts() -> None:
     )[0]
     values = litellm["spec"]["values"]
     if (
-        litellm["spec"]["chart"]["spec"]["version"] != "1.1.2"
+        litellm["spec"]["chart"]["spec"]["version"] != "1.99.0"
         or values["replicaCount"] != 2
         or values["db"]["deployStandalone"] is not False
         or values["redis"]["enabled"] is not False
